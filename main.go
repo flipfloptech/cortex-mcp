@@ -4,10 +4,14 @@
 // serve as either a gateway (MCP-facing) or a fleet node (mesh-facing),
 // depending on how it was launched.
 //
+// Configuration is loaded from mesh.toml (see -config flag).
+// Credentials are loaded into the encrypted vault at startup.
+//
 // Usage:
 //
-//	# As the bootstrap/gateway node:
-//	./mesh-example
+//	# As the bootstrap/gateway node (default):
+//	go run ./example/
+//	go run ./example/ -config /path/to/mesh.toml
 //
 //	# As a deployed fleet node (set automatically by SelfDeployer):
 //	CORTEX_MESH_SPAWNED=1 ./mesh-example
@@ -15,37 +19,78 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
+	"github.com/cortex-mesh/cortex-mesh/example/config"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
+	"github.com/cortex-mesh/cortex-mesh/vault"
 )
 
 func main() {
+	// Parse CLI flags.
+	configPath := flag.String("config", "", "path to mesh.toml config file")
+	flag.Parse()
+
 	ctx := context.Background()
 
-	// Determine node identity. In production, this comes from the
-	// deployment system. For the example, fall back to hostname.
-	nodeID := os.Getenv("CORTEX_NODE_ID")
+	// --- Load configuration ---
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		slog.Warn("config not loaded, using defaults", "error", err)
+		cfg = &config.MeshConfig{}
+	}
+
+	// Determine node identity: config > env > hostname.
+	nodeID := cfg.Node.ID
+	if nodeID == "" {
+		nodeID = os.Getenv("CORTEX_NODE_ID")
+	}
 	if nodeID == "" {
 		hostname, _ := os.Hostname()
 		nodeID = hostname
 	}
 
-	// Create the mesh node.
+	// --- Initialize credential vault ---
+	// In production, the private key comes from the membrane's mTLS
+	// certificate. For the example, we generate an ephemeral key.
+	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: generate key: %v\n", err)
+		os.Exit(1)
+	}
+
+	v, err := vault.New(privKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: vault: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Load credentials from config into the vault.
+	if err := cfg.LoadCredentials(v); err != nil {
+		slog.Warn("some credentials failed to load", "error", err)
+	}
+
+	// Log loaded credentials (patterns only, never values).
+	patterns := v.AllPatterns()
+	if len(patterns) > 0 {
+		slog.Info("vault loaded", "credential_patterns", patterns)
+	}
+
+	// --- Create mesh node ---
 	node, err := api.NewNode(ctx, api.NodeConfig{
-		NodeID: nodeID,
-		KnownHosts: map[string][]string{
-			// Pre-seed known hosts for the mesh.
-			// In production, these come from inventory systems.
-			"mds-01": {"10.0.1.5"},
-			"oss-01": {"10.0.1.10"},
-		},
+		NodeID:     nodeID,
+		KnownHosts: cfg.KnownHosts(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
@@ -53,14 +98,13 @@ func main() {
 	}
 	defer node.Close()
 
+	// --- Register tools ---
 	// Create the tool registry — this handles local tool registration
 	// and capability advertisement across the mesh.
 	registry := tools.NewRegistry(node)
 
-	// --- Register local tools ---
 	// Every node offers the same tools. The mesh handles routing
 	// invocations to the right node based on impedance and capability.
-
 	registry.Register(tools.ToolDefinition{
 		Name:        "hello",
 		Description: "Say hello from this node",
@@ -100,7 +144,7 @@ func main() {
 	// deployer's connection over stdin/stdout and block forever,
 	// serving tools through the mesh.
 	if transport.WasDeployed() {
-		fmt.Fprintf(os.Stderr, "[%s] deployed fleet node — accepting mesh connection\n", nodeID)
+		slog.Info("deployed fleet node — accepting mesh connection", "node_id", nodeID)
 		if err := node.AcceptStdio(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "fatal: accept stdio: %v\n", err)
 			os.Exit(1)
@@ -123,7 +167,7 @@ func main() {
 	// In a real deployment, this would serve MCP over stdio:
 	//   gw.Serve(os.Stdin, os.Stdout)
 	//
-	// For the example, we just demonstrate invoking tools locally.
+	// For the example, we demonstrate invoking tools locally.
 	fmt.Fprintf(os.Stderr, "--- Local tool invocation demo ---\n")
 
 	// Invoke the hello tool.
@@ -157,4 +201,30 @@ func main() {
 	} else {
 		fmt.Fprintf(os.Stderr, "tool_help result: %s\n", helpResult.Content)
 	}
+}
+
+// loadConfig finds and loads mesh.toml from the given path or default locations.
+func loadConfig(path string) (*config.MeshConfig, error) {
+	if path != "" {
+		return config.Load(path)
+	}
+
+	// Try default locations in order.
+	defaults := []string{
+		"mesh.toml",
+		"example/mesh.toml",
+	}
+
+	// Also try relative to the executable.
+	if exe, err := os.Executable(); err == nil {
+		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))
+	}
+
+	for _, p := range defaults {
+		if _, err := os.Stat(p); err == nil {
+			return config.Load(p)
+		}
+	}
+
+	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", defaults)
 }

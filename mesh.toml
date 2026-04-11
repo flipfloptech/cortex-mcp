@@ -1,0 +1,58 @@
+# cortex-mesh example configuration
+#
+# This file configures the mesh node identity, seed hosts for peer
+# discovery, and SSH credentials for deployment.
+#
+# Usage:
+#   go run ./example/                          # uses ./example/mesh.toml
+#   go run ./example/ -config /path/to/mesh.toml
+
+# --- Node Identity ---
+# Optional. If not set, the hostname is used as the node ID.
+[node]
+# id = "gateway-01"
+
+# --- Seed Hosts ---
+# Pre-seed the mesh resolver with known node addresses.
+# These are starting points for peer discovery — the mesh grows
+# organically through gossip once initial connections are made.
+#
+# Format: [hosts.<node-id>]
+#   addresses = ["<ip-or-hostname>", ...]
+
+[hosts.mds-01]
+addresses = ["10.0.1.5"]
+
+[hosts.oss-01]
+addresses = ["10.0.1.10", "10.0.1.11"]
+
+# [hosts.mds-02]
+# addresses = ["10.0.2.5"]
+
+# --- Credentials ---
+# SSH credentials for deploying mesh nodes to remote hosts.
+# Pattern supports glob matching — most specific pattern wins.
+#
+# Supported types:
+#   ssh_key      — authenticate with an SSH private key file
+#   ssh_password — authenticate with username/password
+#   tls_cert     — TLS certificate for HTTPS transport
+#
+# Fields per type:
+#   ssh_key:      pattern, username, key_file
+#   ssh_password: pattern, username, password
+#   tls_cert:     pattern, cert_file
+
+# SSH key authentication for the 10.0.1.x subnet
+[[credentials]]
+pattern  = "10.0.1.*"
+type     = "ssh_key"
+username = "deploy"
+key_file = "~/.ssh/id_ed25519"
+
+# SSH password fallback for the corporate domain
+# [[credentials]]
+# pattern  = "*.internal.corp"
+# type     = "ssh_password"
+# username = "admin"
+# password = "changeme"
