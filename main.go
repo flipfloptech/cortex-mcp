@@ -208,6 +208,14 @@ func main() {
 	} else {
 		fmt.Fprintf(os.Stderr, "tool_help result: %s\n", helpResult.Content)
 	}
+
+	// Invoke a tool via call_tool (auto-route — no node_name, falls back to local).
+	callResult, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"hello","args":{"name":"mesh-gateway"}}`))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "call_tool failed: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "call_tool result: %s\n", callResult.Content)
+	}
 }
 
 // loadConfig finds and loads mesh.toml from the given path or default locations.

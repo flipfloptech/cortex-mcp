@@ -88,6 +88,7 @@ system_info result: {"arch":"amd64","cpus":8,"hostname":"hostname","os":"linux"}
 --- Gateway meta-tool demo ---
 list_tools result: {"tools":[...]}
 tool_help result: {"name":"system_info",...}
+call_tool result: {"text":"Hello, mesh-gateway! From node hostname"}
 ```
 
 ### Fleet node mode
