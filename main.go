@@ -96,7 +96,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
-	defer node.Close()
+	defer func() {
+		if err := node.Close(); err != nil {
+			slog.Warn("close node", "error", err)
+		}
+	}()
 
 	// --- Register tools ---
 	// Create the tool registry — this handles local tool registration
@@ -117,7 +121,10 @@ func main() {
 			Name string `json:"name"`
 		}
 		params.Name = "world"
-		json.Unmarshal(args, &params)
+		if err := json.Unmarshal(args, &params); err != nil {
+			// Ignore unmarshal errors — defaults are fine.
+			slog.Debug("hello: unmarshal args", "error", err)
+		}
 		return tools.NewTextResult(fmt.Sprintf("Hello, %s! From node %s", params.Name, node.NodeID())), nil
 	})
 
