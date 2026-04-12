@@ -101,7 +101,7 @@ CORTEX_MESH_SPAWNED=1 ./mesh-example
 
 In fleet mode, the binary:
 1. Accepts the deployer's connection over stdin/stdout
-2. Registers the same tools as the gateway
+2. Registers tools appropriate for this node (may vary by host type or role)
 3. Blocks forever, serving tools through the mesh
 
 ## Architecture

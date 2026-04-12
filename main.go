@@ -107,8 +107,9 @@ func main() {
 	// and capability advertisement across the mesh.
 	registry := tools.NewRegistry(node)
 
-	// Every node offers the same tools. The mesh handles routing
-	// invocations to the right node based on impedance and capability.
+	// Register tools appropriate for this node. Different nodes may
+	// offer different tools based on host type or role. The mesh
+	// handles routing invocations via impedance and capability discovery.
 	registry.Register(tools.ToolDefinition{
 		Name:        "hello",
 		Description: "Say hello from this node",
