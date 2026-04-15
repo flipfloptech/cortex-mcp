@@ -12,14 +12,15 @@
 //	 4. Create api.Node with full config (events, reconnect, known hosts)
 //	 5. Register tools locally with capability advertising
 //	 6. Deploy this binary to each seed host via SSH (SelfDeployer)
-//	 7. Bootstrap deployed nodes with cert material (pre-membrane)
-//	 8. Establish mesh connections via AddPeer (mTLS membrane handshake)
-//	 9. Start gossip ticker for impedance-cost-vector exchange
-//	10. Sonar discovery — broadcast to find tools across the mesh
-//	11. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
-//	12. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
-//	13. Fan-out invocation across all deployed nodes
-//	14. Clean teardown — close node, deployed nodes exit
+//	 7. Wait for readiness handshake (4-byte DeployReadyMagic)
+//	 8. Bootstrap deployed nodes with cert material (pre-membrane)
+//	 9. Establish mesh connections via AddPeer (mTLS membrane handshake)
+//	10. Start gossip ticker for impedance-cost-vector exchange
+//	11. Sonar discovery — broadcast to find tools across the mesh
+//	12. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
+//	13. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
+//	14. Fan-out invocation across all deployed nodes
+//	15. Clean teardown — close node, deployed nodes exit
 //
 // Configuration is loaded from mesh.toml (see -config flag).
 // Credentials are loaded into the encrypted vault at startup.

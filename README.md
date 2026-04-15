@@ -10,7 +10,7 @@ A complete, feature-rich example binary demonstrating the full cortex-mesh lifec
 | 2 | Node creation with lifecycle events + reconnect policy | `api` |
 | 3 | Local tool registration + invocation | `tools` |
 | 4 | Gateway meta-tools (list_tools, tool_help, call_tool) | `gateway` |
-| 5 | SSH deploy + cert bootstrap + mTLS mesh connect | `transport` + `membrane` |
+| 5 | SSH deploy + readiness handshake + cert bootstrap + mTLS mesh connect | `transport` + `membrane` |
 | 6 | Gossip ticker startup (3s impedance exchange) | `routing` |
 | 7 | Sonar broadcast discovery (`tool:*`) | `routing` |
 | 8 | Remote invocation via NeuronBridge (GrpcDialer + DialInvoke) | `tools` |
@@ -38,14 +38,14 @@ go build -o mesh-example ./example/
 │                                                                  │
 │  Gateway mode:                    Fleet node mode:               │
 │  ┌──────────────────┐             ┌──────────────────┐           │
-│  │ Phase 1: PKI     │             │ readCertBundle()  │           │
-│  │ Phase 2: Node    │             │ api.NewNode()     │           │
-│  │ Phase 3: Local   │             │ SetMembraneConfig │           │
-│  │ Phase 4: Gateway │             │ AcceptStdio()     │ ← mTLS   │
-│  │ Phase 5: Deploy  │──SSH/SCP──→ │ ServeToolListener │           │
-│  │ Phase 6: Gossip  │ cert boot   │ <block forever>   │           │
-│  │ Phase 7: Sonar   │             └──────────────────┘           │
-│  │ Phase 8: Invoke  │                                            │
+│  │ Phase 1: PKI     │             │ SignalReady()     │ → magic  │
+│  │ Phase 2: Node    │             │ readCertBundle()  │           │
+│  │ Phase 3: Local   │             │ api.NewNode()     │           │
+│  │ Phase 4: Gateway │             │ SetMembraneConfig │           │
+│  │ Phase 5: Deploy  │──SSH/SFTP─→ │ AcceptStdio()     │ ← mTLS   │
+│  │ Phase 6: Gossip  │ cert boot   │ ServeToolListener │           │
+│  │ Phase 7: Sonar   │             │ <block forever>   │           │
+│  │ Phase 8: Invoke  │             └──────────────────┘           │
 │  │ Phase 9: FanOut  │                                            │
 │  │ Phase 10: Close  │                                            │
 │  └──────────────────┘                                            │
@@ -58,9 +58,11 @@ go build -o mesh-example ./example/
 [node]
 id = "gateway-01"
 
-[[seeds]]
-id = "oss-01"
-address = "10.0.1.10"
+[hosts.oss-01]
+addresses = ["10.0.1.10"]
+
+[hosts.oss-02]
+addresses = ["10.0.1.11"]
 
 [[credentials]]
 type = "ssh_password"
@@ -137,12 +139,18 @@ When seed hosts are configured, the output continues with phases 5–10:
 Done.
 ```
 
-## Cert Bootstrap Protocol
+## Deploy + Cert Bootstrap Protocol
 
-Before the membrane (mTLS) handshake, the gateway sends ephemeral certificate material to each deployed node over the raw SSH deploy stream:
+After SSH deployment, the gateway waits for the fleet node's readiness signal before sending certificate material. This ensures the remote binary is alive and ready before any data exchange:
 
 ```
-Gateway                              Fleet Node
+Gateway (Deploy)                     Fleet Node
+   │                                      │
+   │── SSH + SCP binary ─────────────────→│  CORTEX_MESH_SPAWNED=1
+   │                                      │  transport.SignalReady()
+   │◄── [4B magic: "CM" 0x01 0x01] ──────│  (DeployReadyMagic)
+   │                                      │
+   │    Deploy() returns — stream ready    │
    │                                      │
    │──── [4B len][cert PEM] ─────────────→│
    │──── [4B len][key PEM] ──────────────→│  readCertBundle()
@@ -172,6 +180,7 @@ This is the same framing used by the control plane codec, keeping the protocol u
 - **api.ReconnectPolicy** — exponential backoff with timeout
 - **membrane.Config** — mTLS with ephemeral Ed25519 certs
 - **transport.SelfDeployer** — binary self-deployment via SSH/SFTP
+- **transport.SignalReady** — 4-byte readiness handshake from fleet nodes
 - **transport.WasDeployed** — detection of fleet vs gateway mode
 - **transport.NewStdioConn** — wrapping streams as net.Conn
 - **transport.SelfCleanup** — leave-no-trace binary deletion
