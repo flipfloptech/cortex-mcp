@@ -1,22 +1,25 @@
-// Package main demonstrates a minimal cortex-mesh consumer binary.
+// Package main demonstrates a complete cortex-mesh consumer binary.
 //
 // This is the reference integration pattern: a single binary that can
 // serve as either a gateway (bootstrap node) or a fleet node (deployed),
 // depending on how it was launched.
 //
-// The example demonstrates the FULL mesh lifecycle:
-//  1. Load config (mesh.toml) — node identity, seed hosts, credentials
-//  2. Initialize credential vault
-//  3. Register tools locally
-//  4. Deploy this binary to each seed host via SSH (SelfDeployer)
-//  5. Invoke tools remotely via the tool wire protocol
-//  6. Fan-out invocations across all deployed nodes
-//  7. Clean teardown — close connections, deployed nodes exit
+// The example demonstrates ALL mesh lifecycle features:
 //
-// The example uses the tool wire protocol directly over deploy streams.
-// In production, connections would go through the membrane (mTLS) and
-// yamux multiplexing layers for security and stream isolation. Those
-// layers are thoroughly tested in their own packages.
+//	 1. Load config (mesh.toml) — node identity, seed hosts, credentials
+//	 2. Generate ephemeral PKI (site CA + node certificates)
+//	 3. Initialize credential vault
+//	 4. Create api.Node with full config (events, reconnect, known hosts)
+//	 5. Register tools locally with capability advertising
+//	 6. Deploy this binary to each seed host via SSH (SelfDeployer)
+//	 7. Bootstrap deployed nodes with cert material (pre-membrane)
+//	 8. Establish mesh connections via AddPeer (mTLS membrane handshake)
+//	 9. Start gossip ticker for impedance-cost-vector exchange
+//	10. Sonar discovery — broadcast to find tools across the mesh
+//	11. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
+//	12. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
+//	13. Fan-out invocation across all deployed nodes
+//	14. Clean teardown — close node, deployed nodes exit
 //
 // Configuration is loaded from mesh.toml (see -config flag).
 // Credentials are loaded into the encrypted vault at startup.
@@ -26,7 +29,7 @@
 //	# Build first (so the binary can self-deploy):
 //	go build -o mesh-example ./example/
 //
-//	# Run the demo:
+//	# Run the full E2E demo:
 //	./mesh-example -config example/mesh.toml
 //
 //	# As a deployed fleet node (set automatically by SelfDeployer):
@@ -47,13 +50,22 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/example/config"
+	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
 	"golang.org/x/crypto/ssh"
 )
+
+// toolEntry pairs a definition with its handler for re-registration.
+type toolEntry struct {
+	def     tools.ToolDefinition
+	handler tools.ToolHandler
+}
 
 func main() {
 	// Parse CLI flags.
@@ -80,63 +92,203 @@ func main() {
 		nodeID = hostname
 	}
 
-	// --- Register tools ---
-	registry := tools.NewRegistry(nil)
-
-	registry.Register(tools.ToolDefinition{
-		Name:        "hello",
-		Description: "Say hello from this node",
-		Category:    "demo",
-		Parameters: []tools.ToolParam{
-			{Name: "name", Type: "string", Description: "Who to greet", Required: false, Default: "world"},
-		},
-	}, func(_ context.Context, args json.RawMessage) (*tools.ToolResult, error) {
-		var params struct {
-			Name string `json:"name"`
-		}
-		params.Name = "world"
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &params); err != nil {
-				slog.Debug("hello: unmarshal args", "error", err)
-			}
-		}
-		return tools.NewTextResult(fmt.Sprintf("Hello, %s! From node %s", params.Name, nodeID)), nil
-	})
-
-	registry.Register(tools.ToolDefinition{
-		Name:            "system_info",
-		Description:     "Get basic system information",
-		LongDescription: "Returns the hostname, OS, architecture, and number of CPUs for this node.",
-		Category:        "system",
-	}, func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-		info := map[string]interface{}{
-			"node_id":  nodeID,
-			"hostname": nodeID,
-			"os":       runtime.GOOS,
-			"arch":     runtime.GOARCH,
-			"cpus":     runtime.NumCPU(),
-		}
-		data, _ := json.Marshal(info)
-		return &tools.ToolResult{Content: data}, nil
-	})
+	// --- Define tools ---
+	// Tool definitions are shared between gateway and fleet nodes.
+	// Each mode creates its own Registry with the appropriate capability tracker.
+	entries := defineTools(nodeID)
 
 	// --- Fleet node mode ---
-	// When deployed via SelfDeployer, the binary serves tools over
-	// stdin/stdout using the length-prefixed protobuf wire protocol.
+	// When deployed via SelfDeployer, the binary:
+	//  1. Reads cert material from stdin (pre-membrane bootstrap)
+	//  2. Creates a mesh Node with membrane config
+	//  3. Accepts the deployer's connection via AcceptStdio (mTLS handshake)
+	//  4. Serves tools on the GrpcListener
+	//  5. Blocks until the connection closes
 	if transport.WasDeployed() {
-		slog.Info("deployed fleet node — serving tools", "node_id", nodeID)
-
-		// Wrap stdin/stdout as a net.Conn for the tool protocol.
-		conn := transport.NewStdioConn(os.Stdin, os.Stdout)
-
-		if err := tools.ServeToolConn(ctx, conn, registry); err != nil {
-			slog.Error("serve tools", "error", err)
-		}
+		runFleetNode(ctx, nodeID, entries)
 		return
 	}
 
 	// --- Gateway / Bootstrap mode ---
-	printHeader(nodeID, registry)
+	runGateway(ctx, cancel, nodeID, cfg, entries)
+}
+
+// defineTools returns the tool catalog shared by all modes.
+func defineTools(nodeID string) []toolEntry {
+	return []toolEntry{
+		{
+			def: tools.ToolDefinition{
+				Name:            "hello",
+				Description:     "Say hello from this node",
+				LongDescription: "Returns a greeting message from the node. Useful for verifying connectivity and tool invocation.",
+				Category:        "demo",
+				Parameters: []tools.ToolParam{
+					{Name: "name", Type: "string", Description: "Who to greet", Required: false, Default: "world"},
+				},
+			},
+			handler: func(_ context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+				var params struct {
+					Name string `json:"name"`
+				}
+				params.Name = "world"
+				if len(args) > 0 {
+					if err := json.Unmarshal(args, &params); err != nil {
+						slog.Debug("hello: unmarshal args", "error", err)
+					}
+				}
+				return tools.NewTextResult(fmt.Sprintf("Hello, %s! From node %s", params.Name, nodeID)), nil
+			},
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "system_info",
+				Description:     "Get basic system information",
+				LongDescription: "Returns the hostname, OS, architecture, and number of CPUs for this node.",
+				Category:        "system",
+			},
+			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+				hostname, _ := os.Hostname()
+				info := map[string]interface{}{
+					"node_id":  nodeID,
+					"hostname": hostname,
+					"os":       runtime.GOOS,
+					"arch":     runtime.GOARCH,
+					"cpus":     runtime.NumCPU(),
+				}
+				data, _ := json.Marshal(info)
+				return &tools.ToolResult{Content: data}, nil
+			},
+		},
+	}
+}
+
+// registerTools populates a registry with the given tool entries.
+func registerTools(registry *tools.Registry, entries []toolEntry) {
+	for _, e := range entries {
+		registry.Register(e.def, e.handler)
+	}
+}
+
+// runFleetNode handles the deployed fleet node lifecycle.
+func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
+	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID)
+
+	// Read cert bundle from stdin (sent by gateway before membrane handshake).
+	membraneCfg, err := readCertBundle(os.Stdin)
+	if err != nil {
+		slog.Error("read cert bundle", "error", err)
+		os.Exit(1)
+	}
+
+	// Create the mesh node with membrane config.
+	node, err := api.NewNode(ctx, api.NodeConfig{
+		NodeID: nodeID,
+		Events: api.NodeEvents{
+			OnPeerJoined: func(peerID string) {
+				slog.Info("fleet: peer joined", "peer", peerID)
+			},
+			OnPeerLost: func(peerID string) {
+				slog.Info("fleet: peer lost", "peer", peerID)
+			},
+			OnIsolated: func() {
+				slog.Warn("fleet: isolated — zero peers")
+			},
+		},
+	})
+	if err != nil {
+		slog.Error("create fleet node", "error", err)
+		os.Exit(1)
+	}
+	node.SetMembraneConfig(membraneCfg)
+
+	// Register tools with capability advertising.
+	registry := tools.NewRegistry(node)
+	registerTools(registry, entries)
+
+	// Accept the deployer's connection (mTLS handshake + yamux).
+	if err := node.AcceptStdio(os.Stdin, os.Stdout); err != nil {
+		slog.Error("accept stdio", "error", err)
+		os.Exit(1)
+	}
+
+	// Serve tools on the mesh listener.
+	lis, err := node.GrpcListener()
+	if err != nil {
+		slog.Error("grpc listener", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("fleet node ready — serving tools", "node_id", nodeID, "tools", len(registry.ListLocal()))
+	tools.ServeToolListener(ctx, lis, registry)
+}
+
+// runGateway handles the gateway (bootstrap) node lifecycle.
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry) {
+	printHeader(nodeID, entries)
+
+	// --- Phase 1: PKI ---
+	fmt.Fprintf(os.Stderr, "--- Phase 1: Ephemeral PKI ---\n")
+	pki, err := newEphemeralPKI()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+	gatewayCert, err := pki.generateNodeCert(nodeID, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "  ✓ Site CA generated (ephemeral, 24h validity)\n")
+	fmt.Fprintf(os.Stderr, "  ✓ Gateway cert: CN=%s\n", nodeID)
+
+	// --- Phase 2: Create mesh node ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 2: Create mesh node ---\n")
+	node, err := api.NewNode(ctx, api.NodeConfig{
+		NodeID:     nodeID,
+		KnownHosts: cfg.KnownHosts(),
+		Events: api.NodeEvents{
+			OnPeerJoined: func(peerID string) {
+				fmt.Fprintf(os.Stderr, "  [event] peer joined: %s\n", peerID)
+			},
+			OnPeerLost: func(peerID string) {
+				fmt.Fprintf(os.Stderr, "  [event] peer lost: %s\n", peerID)
+			},
+			OnIsolated: func() {
+				fmt.Fprintf(os.Stderr, "  [event] isolated — zero peers\n")
+			},
+			OnReconnected: func(peerID string) {
+				fmt.Fprintf(os.Stderr, "  [event] reconnected via %s\n", peerID)
+			},
+			OnOrphaned: func() {
+				fmt.Fprintf(os.Stderr, "  [event] orphaned — leaving no trace\n")
+				if err := transport.SelfCleanup(); err != nil {
+					slog.Debug("self-cleanup", "error", err)
+				}
+			},
+		},
+		Reconnect: api.ReconnectPolicy{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     30 * time.Second,
+			Timeout:      5 * time.Minute,
+		},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: create node: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := node.Close(); err != nil {
+			slog.Debug("close node", "error", err)
+		}
+	}()
+	node.SetMembraneConfig(pki.membraneConfig(gatewayCert))
+
+	// Register tools with capability advertising.
+	registry := tools.NewRegistry(node)
+	registerTools(registry, entries)
+
+	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(registry.ListLocal()))
+	fmt.Fprintf(os.Stderr, "  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
 
 	// Initialize the credential vault.
 	v, err := initVault(cfg)
@@ -145,11 +297,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- Phase 1: Local tool invocation ---
-	fmt.Fprintf(os.Stderr, "--- Phase 1: Local tool invocation ---\n")
+	// --- Phase 3: Local tool invocation ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 3: Local tool invocation ---\n")
 	runLocalDemo(ctx, registry)
 
-	// --- Phase 2: Deploy to seed hosts ---
+	// --- Phase 4: Gateway meta-tools ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Gateway meta-tools ---\n")
+	bridge := tools.NewNeuronBridge(node)
+	gw := gateway.New(registry, bridge)
+	runGatewayMetaTools(ctx, gw)
+
+	// --- Phase 5: Deploy to seed hosts ---
 	knownHosts := cfg.KnownHosts()
 	if len(knownHosts) == 0 {
 		fmt.Fprintf(os.Stderr, "\nNo seed hosts configured in mesh.toml. Skipping remote phases.\n")
@@ -157,18 +315,40 @@ func main() {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "\n--- Phase 2: Deploy to seed hosts ---\n")
-	deployedNodes := deployToHosts(ctx, knownHosts, v)
+	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Deploy + mesh connect ---\n")
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v)
 
 	if len(deployedNodes) == 0 {
 		fmt.Fprintf(os.Stderr, "\nNo nodes deployed successfully. Exiting.\n")
 		return
 	}
 
-	// --- Phase 3: Remote tool invocation (unicast) ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 3: Remote tool invocation ---\n")
+	// --- Phase 6: Start gossip ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 6: Gossip ---\n")
+	node.StartGossipTicker(ctx, 3*time.Second)
+	fmt.Fprintf(os.Stderr, "  ✓ Gossip ticker started (3s interval)\n")
+	fmt.Fprintf(os.Stderr, "  Waiting for gossip convergence...\n")
+	time.Sleep(4 * time.Second)
+	fmt.Fprintf(os.Stderr, "  ✓ Peers: %d\n", node.PeerCount())
+
+	// --- Phase 7: Sonar discovery ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 7: Sonar discovery ---\n")
+	sonarCtx, sonarCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer sonarCancel()
+	agents, err := node.Sonar(sonarCtx, "tool:system_info")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ Sonar error: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "  ✓ Discovered %d node(s) with tool:system_info\n", len(agents))
+		for _, a := range agents {
+			fmt.Fprintf(os.Stderr, "    - %s (impedance=%.1f)\n", a.NodeID, a.Impedance)
+		}
+	}
+
+	// --- Phase 8: Remote invocation via NeuronBridge ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 8: Remote invocation via NeuronBridge ---\n")
 	for _, dn := range deployedNodes {
-		result, err := tools.DialInvoke(ctx, dn.conn, "system_info", nil)
+		result, err := bridge.InvokeRemote(ctx, dn.nodeID, "system_info", nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  ✗ %s: invoke failed: %v\n", dn.nodeID, err)
 			continue
@@ -180,13 +360,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  ✓ %s: %s\n", dn.nodeID, result.Content)
 	}
 
-	// --- Phase 4: Fan-out hello ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Fan-out hello across all nodes ---\n")
-	fanOutHello(ctx, deployedNodes)
+	// --- Phase 9: Fan-out hello ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 9: Fan-out hello ---\n")
+	runGatewayFanOut(ctx, gw, deployedNodes)
 
-	// --- Phase 5: Cleanup ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Cleanup ---\n")
+	// --- Phase 10: Cleanup ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 10: Cleanup ---\n")
 	cancel()
+	if err := node.Close(); err != nil {
+		slog.Debug("close node", "error", err)
+	}
 	for _, dn := range deployedNodes {
 		if err := dn.conn.Close(); err != nil {
 			slog.Debug("close deploy conn", "node", dn.nodeID, "error", err)
@@ -203,12 +386,12 @@ type deployedNode struct {
 }
 
 // printHeader displays startup information.
-func printHeader(nodeID string, registry *tools.Registry) {
+func printHeader(nodeID string, entries []toolEntry) {
 	fmt.Fprintf(os.Stderr, "\n=== cortex-mesh E2E example ===\n")
 	fmt.Fprintf(os.Stderr, "Gateway node: %s\n", nodeID)
 	fmt.Fprintf(os.Stderr, "Registered tools:\n")
-	for _, t := range registry.ListLocal() {
-		fmt.Fprintf(os.Stderr, "  - %s (%s): %s\n", t.Name, t.Category, t.Description)
+	for _, e := range entries {
+		fmt.Fprintf(os.Stderr, "  - %s (%s): %s\n", e.def.Name, e.def.Category, e.def.Description)
 	}
 	fmt.Fprintf(os.Stderr, "\n")
 }
@@ -237,21 +420,19 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 	return v, nil
 }
 
-// deployToHosts deploys the mesh binary to each seed host.
-func deployToHosts(ctx context.Context, knownHosts map[string][]string, v *vault.Vault) []deployedNode {
+// deployAndConnect deploys the binary to each seed host and establishes
+// mesh connections via the membrane (mTLS) handshake.
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault) []deployedNode {
 	var deployed []deployedNode
-
 	deployer := &transport.SelfDeployer{}
 
-	for nodeID, addrs := range knownHosts {
+	for remoteNodeID, addrs := range knownHosts {
 		if len(addrs) == 0 {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: no addresses configured\n", nodeID)
+			fmt.Fprintf(os.Stderr, "  ✗ %s: no addresses configured\n", remoteNodeID)
 			continue
 		}
 
 		addr := addrs[0]
-
-		// Ensure addr has a port.
 		if !strings.Contains(addr, ":") {
 			addr = addr + ":22"
 		}
@@ -259,34 +440,62 @@ func deployToHosts(ctx context.Context, knownHosts map[string][]string, v *vault
 		// Look up credentials from the vault.
 		cred, ok := v.Match(addr)
 		if !ok {
-			// Try matching without port.
 			host := strings.Split(addr, ":")[0]
 			cred, ok = v.Match(host)
 		}
 		if !ok {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no matching credentials in vault\n", nodeID, addr)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no matching credentials in vault\n", remoteNodeID, addr)
 			continue
 		}
 
-		// Convert vault credential to deploy credential.
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", nodeID, addr, err)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "  → %s (%s): deploying...", nodeID, addr)
+		fmt.Fprintf(os.Stderr, "  → %s (%s): deploying...", remoteNodeID, addr)
 
-		stream, err := deployer.Deploy(ctx, addr, deployCred, nil) // nil host key = TOFU
+		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, " ✓ deployed\n")
+		// Generate cert bundle for the fleet node and send it
+		// over the raw stream BEFORE the membrane handshake.
+		bundle, err := pki.generateNodeBundle(remoteNodeID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ generate cert: %v\n", err)
+			if cerr := stream.Close(); cerr != nil {
+				slog.Debug("close stream", "error", cerr)
+			}
+			continue
+		}
+
+		if err := writeCertBundle(stream, bundle); err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ send certs: %v\n", err)
+			if cerr := stream.Close(); cerr != nil {
+				slog.Debug("close stream", "error", cerr)
+			}
+			continue
+		}
+
+		// Wrap the stream as a net.Conn and establish mesh connection
+		// via membrane handshake (mTLS + yamux).
+		conn := transport.NewStdioConn(stream, stream)
+		if err := node.AddPeer(ctx, conn, false); err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
+			if cerr := conn.Close(); cerr != nil {
+				slog.Debug("close conn", "error", cerr)
+			}
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, " ✓ deployed + connected (mTLS)\n")
 		deployed = append(deployed, deployedNode{
-			nodeID: nodeID,
-			conn:   transport.NewStdioConn(stream, stream),
+			nodeID: remoteNodeID,
+			conn:   conn,
 		})
 	}
 
@@ -319,7 +528,6 @@ func toDeployCredential(cred vault.Credential) (transport.DeployCredential, erro
 
 // runLocalDemo invokes tools locally on the gateway node.
 func runLocalDemo(ctx context.Context, registry *tools.Registry) {
-	// Invoke "hello" locally.
 	result, err := registry.InvokeLocal(ctx, "hello", json.RawMessage(`{"name":"cortex-mesh"}`))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  hello failed: %v\n", err)
@@ -327,7 +535,6 @@ func runLocalDemo(ctx context.Context, registry *tools.Registry) {
 		fmt.Fprintf(os.Stderr, "  hello: %s\n", result.Content)
 	}
 
-	// Invoke "system_info" locally.
 	result, err = registry.InvokeLocal(ctx, "system_info", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  system_info failed: %v\n", err)
@@ -336,8 +543,50 @@ func runLocalDemo(ctx context.Context, registry *tools.Registry) {
 	}
 }
 
-// fanOutHello invokes the "hello" tool on all deployed nodes concurrently.
-func fanOutHello(ctx context.Context, nodes []deployedNode) {
+// runGatewayMetaTools exercises the gateway's meta-tool dispatch.
+func runGatewayMetaTools(ctx context.Context, gw *gateway.Gateway) {
+	// list_tools — discover available tools.
+	result, err := gw.Dispatch(ctx, "list_tools", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  list_tools failed: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "  list_tools: %s\n", result.Content)
+	}
+
+	// tool_help — detailed help for system_info.
+	result, err = gw.Dispatch(ctx, "tool_help", json.RawMessage(`{"tool_name":"system_info"}`))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  tool_help failed: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "  tool_help: %s\n", result.Content)
+	}
+
+	// call_tool — invoke hello locally via the gateway.
+	result, err = gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"hello","args":{"name":"mesh-gateway"}}`))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  call_tool failed: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "  call_tool: %s\n", result.Content)
+	}
+}
+
+// runGatewayFanOut demonstrates fan-out dispatch across deployed nodes.
+func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployedNode) {
+	// Fan-out via call_tool with glob pattern.
+	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"hello","args":{"name":"mesh-gateway"},"node_name":"*"}`))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ fan-out via gateway error: %v\n", err)
+		// Fallback to direct fan-out via DialInvoke over deploy streams.
+		fmt.Fprintf(os.Stderr, "  Falling back to direct fan-out...\n")
+		fanOutDirect(ctx, nodes)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "  ✓ fan-out result: %s\n", result.Content)
+}
+
+// fanOutDirect invokes the "hello" tool on all deployed nodes concurrently.
+func fanOutDirect(ctx context.Context, nodes []deployedNode) {
 	type nodeResult struct {
 		nodeID  string
 		content string
@@ -380,13 +629,10 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 		return config.Load(path)
 	}
 
-	// Try default locations in order.
 	defaults := []string{
 		"mesh.toml",
 		"example/mesh.toml",
 	}
-
-	// Also try relative to the executable.
 	if exe, err := os.Executable(); err == nil {
 		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))
 	}

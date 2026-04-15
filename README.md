@@ -1,181 +1,186 @@
-# cortex-mesh Example
+# cortex-mesh E2E Example
 
-This is the reference integration for a cortex-mesh consumer binary. It demonstrates the **full mesh lifecycle** in a single binary that can serve as either a **gateway** (bootstrap node) or a **fleet node** (deployed node), depending on how it was launched.
+A complete, feature-rich example binary demonstrating the full cortex-mesh lifecycle. This binary serves as the reference integration pattern — a single Go program that operates as either a **gateway** (bootstrap node) or a **fleet node** (deployed), depending on how it was launched.
 
 ## What It Demonstrates
 
-The example runs the complete Deploy → Invoke → Cleanup cycle:
+| Phase | Feature | Layer |
+|-------|---------|-------|
+| 1 | Ephemeral PKI generation (site CA + node certs) | `membrane` |
+| 2 | Node creation with lifecycle events + reconnect policy | `api` |
+| 3 | Local tool registration + invocation | `tools` |
+| 4 | Gateway meta-tools (list_tools, tool_help, call_tool) | `gateway` |
+| 5 | SSH deploy + cert bootstrap + mTLS mesh connect | `transport` + `membrane` |
+| 6 | Gossip ticker startup (3s impedance exchange) | `routing` |
+| 7 | Sonar broadcast discovery (`tool:*`) | `routing` |
+| 8 | Remote invocation via NeuronBridge (GrpcDialer + DialInvoke) | `tools` |
+| 9 | Fan-out invocation across fleet | `gateway` + `tools` |
+| 10 | Clean teardown with node event callbacks | `api` |
 
-| Phase | What Happens |
-|-------|-------------|
-| **Config** | Load `mesh.toml` — node identity, seed hosts, credentials |
-| **Local** | Register tools (`hello`, `system_info`), invoke them locally |
-| **Deploy** | SelfDeployer copies this binary to each seed host via SSH |
-| **Invoke** | Call `system_info` on each deployed node via the tool wire protocol |
-| **Fan-out** | Concurrent `hello` across all deployed nodes |
-| **Cleanup** | Close connections, deployed nodes exit automatically |
-
-## Prerequisites
-
-- **Go 1.22+** (`go version`)
-- **SSH access** to your seed hosts (key-based or password auth)
-
-## Building
-
-> [!IMPORTANT]
-> You **must** build the binary before running the demo. The SelfDeployer copies the running binary to remote hosts via SFTP. If you use `go run`, it deploys a temporary file, which will not work as expected.
+## Quick Start
 
 ```bash
-# From the repository root:
+# Build first — the binary self-deploys via SelfDeployer:
 go build -o mesh-example ./example/
-```
 
-## Configuration
+# Run with a config file (enables remote deployment):
+./mesh-example -config example/mesh.toml
 
-The example reads its configuration from `mesh.toml`. By default, it searches for `mesh.toml` in the current directory and `example/mesh.toml`.
-
-```bash
-# Use the bundled config (run from repo root):
+# Run without config (local-only mode — demonstrates phases 1–4):
 ./mesh-example
-
-# Use a custom config:
-./mesh-example -config /path/to/mesh.toml
 ```
 
-### mesh.toml format
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  mesh-example binary                                             │
+│                                                                  │
+│  Gateway mode:                    Fleet node mode:               │
+│  ┌──────────────────┐             ┌──────────────────┐           │
+│  │ Phase 1: PKI     │             │ readCertBundle()  │           │
+│  │ Phase 2: Node    │             │ api.NewNode()     │           │
+│  │ Phase 3: Local   │             │ SetMembraneConfig │           │
+│  │ Phase 4: Gateway │             │ AcceptStdio()     │ ← mTLS   │
+│  │ Phase 5: Deploy  │──SSH/SCP──→ │ ServeToolListener │           │
+│  │ Phase 6: Gossip  │ cert boot   │ <block forever>   │           │
+│  │ Phase 7: Sonar   │             └──────────────────┘           │
+│  │ Phase 8: Invoke  │                                            │
+│  │ Phase 9: FanOut  │                                            │
+│  │ Phase 10: Close  │                                            │
+│  └──────────────────┘                                            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Configuration (`mesh.toml`)
 
 ```toml
-# Node identity (optional — defaults to hostname)
 [node]
 id = "gateway-01"
 
-# Seed hosts for mesh discovery
-[hosts.oss-01]
-addresses = ["10.0.2.30"]
+[[seeds]]
+id = "oss-01"
+address = "10.0.1.10"
 
-[hosts.oss-02]
-addresses = ["10.0.2.198"]
-
-# SSH credentials for deployment (glob patterns, most specific wins)
 [[credentials]]
-pattern  = "10.0.2.*"
-type     = "ssh_password"
-username = "root"
+type = "ssh_password"
+pattern = "10.0.1.*"
+username = "admin"
 password = "changeme"
 
-# SSH key authentication
-# [[credentials]]
-# pattern  = "10.0.1.*"
-# type     = "ssh_key"
-# username = "deploy"
-# key_file = "~/.ssh/id_ed25519"
+[[credentials]]
+type = "ssh_key"
+pattern = "10.0.2.*"
+username = "admin"
+key_file = "~/.ssh/id_ed25519"
 ```
 
-**Seed hosts** are starting points for deployment. The binary is deployed to each host and tools are invoked remotely.
-
-**Credentials** are loaded into the encrypted vault at startup. Pattern matching uses glob syntax — the most specific pattern wins (exact > glob > wildcard). SSH key files are read from disk; `~` expands to the home directory.
-
-## Running
-
-### Gateway mode (default)
-
-```bash
-./mesh-example -config example/mesh.toml
-```
-
-**Expected output (with seed hosts configured):**
+## Expected Output (local-only mode)
 
 ```
 === cortex-mesh E2E example ===
-Gateway node: myhost
+Gateway node: my-laptop
 Registered tools:
   - hello (demo): Say hello from this node
   - system_info (system): Get basic system information
 
---- Phase 1: Local tool invocation ---
-  hello: {"text":"Hello, cortex-mesh! From node myhost"}
-  system_info: {"arch":"amd64","cpus":8,"hostname":"myhost","os":"linux","node_id":"myhost"}
+--- Phase 1: Ephemeral PKI ---
+  ✓ Site CA generated (ephemeral, 24h validity)
+  ✓ Gateway cert: CN=my-laptop
 
---- Phase 2: Deploy to seed hosts ---
-  → oss1 (10.0.2.30:22): deploying... ✓ deployed
-  → oss2 (10.0.2.198:22): deploying... ✓ deployed
+--- Phase 2: Create mesh node ---
+  ✓ Node created: my-laptop (peers=0, caps=2)
+  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)
 
---- Phase 3: Remote tool invocation ---
-  ✓ oss1: {"arch":"amd64","cpus":64,"hostname":"oss1","node_id":"oss1","os":"linux"}
-  ✓ oss2: {"arch":"amd64","cpus":64,"hostname":"oss2","node_id":"oss2","os":"linux"}
+--- Phase 3: Local tool invocation ---
+  hello: {"text":"Hello, cortex-mesh! From node my-laptop"}
+  system_info: {"arch":"amd64","cpus":16,"hostname":"my-laptop","node_id":"my-laptop","os":"linux"}
 
---- Phase 4: Fan-out hello across all nodes ---
-  ✓ oss1: {"text":"Hello, mesh-gateway! From node oss1"}
-  ✓ oss2: {"text":"Hello, mesh-gateway! From node oss2"}
-
---- Phase 5: Cleanup ---
-  ✓ oss1: disconnected
-  ✓ oss2: disconnected
-
-Done.
-```
-
-**Expected output (no seed hosts / local-only):**
-
-```
---- Phase 1: Local tool invocation ---
-  hello: {"text":"Hello, cortex-mesh! From node myhost"}
-  system_info: {"arch":"amd64","cpus":8,...}
+--- Phase 4: Gateway meta-tools ---
+  list_tools: [{"name":"hello",...},{"name":"system_info",...}]
+  tool_help: {"name":"system_info","description":"Get basic system information",...}
+  call_tool: {"text":"Hello, mesh-gateway! From node my-laptop"}
 
 No seed hosts configured in mesh.toml. Skipping remote phases.
 
 Done (local-only mode).
 ```
 
-### Fleet node mode
+## Expected Output (with remote hosts)
 
-When the SelfDeployer copies and launches this binary on a remote host, it sets `CORTEX_MESH_SPAWNED=1`. The binary then serves tools over stdin/stdout:
-
-```bash
-CORTEX_MESH_SPAWNED=1 ./mesh-example
-```
-
-In fleet mode, the binary:
-1. Registers tools locally (`hello`, `system_info`)
-2. Wraps stdin/stdout as a `net.Conn`
-3. Serves tools via the length-prefixed protobuf wire protocol
-4. Exits when the gateway closes the connection
-
-## Architecture
+When seed hosts are configured, the output continues with phases 5–10:
 
 ```
-main.go
-├── Load mesh.toml config
-├── Initialize vault with credentials
-├── Register tools (hello, system_info)
-├── if CORTEX_MESH_SPAWNED=1:
-│   └── ServeToolConn(stdin/stdout) → serve tools, exit on EOF
-└── else (gateway mode):
-    ├── Phase 1: Local invocation demo
-    ├── Phase 2: SelfDeployer → deploy to seed hosts
-    ├── Phase 3: DialInvoke → remote tool calls
-    ├── Phase 4: Fan-out → concurrent calls
-    └── Phase 5: Cleanup → close connections
+--- Phase 5: Deploy + mesh connect ---
+  → oss-01 (10.0.1.10:22): deploying... ✓ deployed + connected (mTLS)
+  [event] peer joined: oss-01
+
+--- Phase 6: Gossip ---
+  ✓ Gossip ticker started (3s interval)
+  Waiting for gossip convergence...
+  ✓ Peers: 1
+
+--- Phase 7: Sonar discovery ---
+  ✓ Discovered 1 node(s) with tool:system_info
+    - oss-01 (impedance=5.0)
+
+--- Phase 8: Remote invocation via NeuronBridge ---
+  ✓ oss-01: {"node_id":"oss-01","hostname":"oss-01","os":"linux","arch":"amd64","cpus":32}
+
+--- Phase 9: Fan-out hello ---
+  ✓ fan-out result: [{"text":"Hello, mesh-gateway! From node oss-01"}]
+
+--- Phase 10: Cleanup ---
+  [event] peer lost: oss-01
+  ✓ oss-01: disconnected
+
+Done.
 ```
 
-The same binary runs everywhere — gateway and fleet nodes are identical code with different entry paths.
+## Cert Bootstrap Protocol
 
-### Tool Wire Protocol
-
-Remote tool invocation uses length-prefixed protobuf framing over raw byte streams:
+Before the membrane (mTLS) handshake, the gateway sends ephemeral certificate material to each deployed node over the raw SSH deploy stream:
 
 ```
-[4 bytes: big-endian payload length][protobuf: ToolRequest or ToolResponse]
+Gateway                              Fleet Node
+   │                                      │
+   │──── [4B len][cert PEM] ─────────────→│
+   │──── [4B len][key PEM] ──────────────→│  readCertBundle()
+   │──── [4B len][CA PEM] ───────────────→│
+   │                                      │
+   │◄════ membrane handshake (mTLS) ═════►│  AcceptStdio/AddPeer
+   │◄════ yamux multiplexing ════════════►│
+   │                                      │
+   │  Stream 0: gossip, sonar            │
+   │  Stream N: tool invocation           │
 ```
 
-This is the same framing pattern used by the control plane codec. In production, these streams would run over the membrane (mTLS) and yamux multiplexing layers for security and stream isolation. The example uses raw deploy streams for simplicity.
+## Tool Wire Protocol
 
-## Testing
+Remote tool invocation uses length-prefixed protobuf framing over mesh streams:
 
-```bash
-# Run config package tests:
-go test -race -v ./example/config/
-
-# Build check:
-go build -o /dev/null ./example/
 ```
+[4 bytes: big-endian length][protobuf: ToolRequest/ToolResponse]
+```
+
+This is the same framing used by the control plane codec, keeping the protocol uniform.
+
+## Library Features Demonstrated
+
+- **api.NewNode** — full NodeConfig with events, reconnect, known hosts
+- **api.NodeEvents** — OnPeerJoined, OnPeerLost, OnIsolated, OnReconnected, OnOrphaned
+- **api.ReconnectPolicy** — exponential backoff with timeout
+- **membrane.Config** — mTLS with ephemeral Ed25519 certs
+- **transport.SelfDeployer** — binary self-deployment via SSH/SFTP
+- **transport.WasDeployed** — detection of fleet vs gateway mode
+- **transport.NewStdioConn** — wrapping streams as net.Conn
+- **transport.SelfCleanup** — leave-no-trace binary deletion
+- **tools.Registry** — tool registration with capability advertising
+- **tools.ServeToolConn/Listener** — server-side wire protocol
+- **tools.DialInvoke** — client-side wire protocol
+- **tools.NeuronBridge** — mesh-aware remote invocation adapter
+- **gateway.Gateway** — MCP meta-tool dispatch (list_tools, tool_help, call_tool)
+- **vault.Vault** — encrypted credential storage
+- **vault.Credential** — SSH key and password authentication
+- **routing.Sonar** — broadcast capability discovery
+- **routing.GradientTable** — impedance-based gossip routing
