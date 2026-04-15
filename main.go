@@ -43,6 +43,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -483,11 +484,15 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
+		// Brief delay to let the fleet binary start and reach readCertBundle.
+		time.Sleep(500 * time.Millisecond)
+
 		// Generate cert bundle for the fleet node and send it
 		// over the raw stream BEFORE the membrane handshake.
 		bundle, err := pki.generateNodeBundle(remoteNodeID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ generate cert: %v\n", err)
+			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				slog.Debug("close stream", "error", cerr)
 			}
@@ -496,6 +501,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 
 		if err := writeCertBundle(stream, bundle); err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ send certs: %v\n", err)
+			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				slog.Debug("close stream", "error", cerr)
 			}
@@ -507,6 +513,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		conn := transport.NewStdioConn(stream, stream)
 		if err := node.AddPeer(ctx, conn, false); err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
+			dumpRemoteStderr(stream)
 			if cerr := conn.Close(); cerr != nil {
 				slog.Debug("close conn", "error", cerr)
 			}
@@ -521,6 +528,24 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 	}
 
 	return deployed
+}
+// dumpRemoteStderr extracts and displays the fleet node's stderr output
+// from the deploy stream. This is critical for diagnosing handshake failures —
+// if the remote binary crashes, its error output explains why.
+func dumpRemoteStderr(stream io.ReadWriteCloser) {
+	type stderrCapture interface {
+		Stderr() string
+	}
+	if sc, ok := stream.(stderrCapture); ok {
+		// Small delay to let remaining stderr drain.
+		time.Sleep(200 * time.Millisecond)
+		if stderr := sc.Stderr(); stderr != "" {
+			fmt.Fprintf(os.Stderr, "\n    remote stderr:\n")
+			for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+				fmt.Fprintf(os.Stderr, "      %s\n", line)
+			}
+		}
+	}
 }
 
 // toDeployCredential converts a vault.Credential to a transport.DeployCredential.
