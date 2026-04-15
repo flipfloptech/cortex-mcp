@@ -174,7 +174,15 @@ func registerTools(registry *tools.Registry, entries []toolEntry) {
 func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID)
 
-	// Read cert bundle from stdin (sent by gateway before membrane handshake).
+	// Signal readiness to the gateway: write a single 0x01 byte to stdout.
+	// The gateway blocks on reading this byte before sending the cert bundle.
+	// This eliminates the need for startup delays — no races, no hacks.
+	if _, err := os.Stdout.Write([]byte{0x01}); err != nil {
+		slog.Error("write ready signal", "error", err)
+		os.Exit(1)
+	}
+
+	// Read cert bundle from stdin (sent by gateway after receiving ready signal).
 	membraneCfg, err := readCertBundle(os.Stdin)
 	if err != nil {
 		slog.Error("read cert bundle", "error", err)
@@ -484,8 +492,25 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// Brief delay to let the fleet binary start and reach readCertBundle.
-		time.Sleep(500 * time.Millisecond)
+		// Wait for the fleet node to signal readiness (1 byte = 0x01).
+		// This blocks until the remote binary is up and ready for the cert bundle.
+		var readyBuf [1]byte
+		if _, err := io.ReadFull(stream, readyBuf[:]); err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ fleet node not ready: %v\n", err)
+			dumpRemoteStderr(stream)
+			if cerr := stream.Close(); cerr != nil {
+				slog.Debug("close stream", "error", cerr)
+			}
+			continue
+		}
+		if readyBuf[0] != 0x01 {
+			fmt.Fprintf(os.Stderr, " ✗ unexpected ready byte: 0x%02x\n", readyBuf[0])
+			dumpRemoteStderr(stream)
+			if cerr := stream.Close(); cerr != nil {
+				slog.Debug("close stream", "error", cerr)
+			}
+			continue
+		}
 
 		// Generate cert bundle for the fleet node and send it
 		// over the raw stream BEFORE the membrane handshake.
@@ -537,8 +562,6 @@ func dumpRemoteStderr(stream io.ReadWriteCloser) {
 		Stderr() string
 	}
 	if sc, ok := stream.(stderrCapture); ok {
-		// Small delay to let remaining stderr drain.
-		time.Sleep(200 * time.Millisecond)
 		if stderr := sc.Stderr(); stderr != "" {
 			fmt.Fprintf(os.Stderr, "\n    remote stderr:\n")
 			for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
