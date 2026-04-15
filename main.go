@@ -243,8 +243,9 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// --- Phase 2: Create mesh node ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 2: Create mesh node ---\n")
 	node, err := api.NewNode(ctx, api.NodeConfig{
-		NodeID:     nodeID,
-		KnownHosts: cfg.KnownHosts(),
+		NodeID:         nodeID,
+		KnownHosts:     cfg.KnownHosts(),
+		GossipInterval: 3 * time.Second, // configurable: 3s for HPC, 10s for WAN
 		Events: api.NodeEvents{
 			OnPeerJoined: func(peerID string) {
 				fmt.Fprintf(os.Stderr, "  [event] peer joined: %s\n", peerID)
@@ -325,24 +326,44 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 6: Start gossip ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 6: Gossip ---\n")
-	node.StartGossipTicker(ctx, 3*time.Second)
-	fmt.Fprintf(os.Stderr, "  ✓ Gossip ticker started (3s interval)\n")
+	gossipInterval := node.GossipIntervalDuration()
+	node.StartGossipTicker(ctx, gossipInterval)
+	fmt.Fprintf(os.Stderr, "  ✓ Gossip ticker started (%s interval)\n", gossipInterval)
 	fmt.Fprintf(os.Stderr, "  Waiting for gossip convergence...\n")
-	time.Sleep(4 * time.Second)
+	time.Sleep(gossipInterval + 1*time.Second)
 	fmt.Fprintf(os.Stderr, "  ✓ Peers: %d\n", node.PeerCount())
 
-	// --- Phase 7: Sonar discovery ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 7: Sonar discovery ---\n")
+	// --- Phase 7: Capability discovery ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 7: Capability discovery ---\n")
+
+	// Tier 1: Local capability index (zero traffic — populated by gossip).
+	indexEntries := node.LookupCapability("tool:system_info")
+	if len(indexEntries) > 0 {
+		fmt.Fprintf(os.Stderr, "  ✓ Capability index: %d node(s) with tool:system_info (zero traffic)\n", len(indexEntries))
+		for _, e := range indexEntries {
+			fmt.Fprintf(os.Stderr, "    - %s (impedance=%.1f)\n", e.NodeID, e.Impedance)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "  ⚠ Capability index empty — falling back to Sonar broadcast\n")
+	}
+
+	// Tier 2: Sonar broadcast (fallback — demonstrates backward compat).
 	sonarCtx, sonarCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer sonarCancel()
 	agents, err := node.Sonar(sonarCtx, "tool:system_info")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ✗ Sonar error: %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "  ✓ Discovered %d node(s) with tool:system_info\n", len(agents))
+		fmt.Fprintf(os.Stderr, "  ✓ Sonar discovered %d node(s) with tool:system_info\n", len(agents))
 		for _, a := range agents {
 			fmt.Fprintf(os.Stderr, "    - %s (impedance=%.1f)\n", a.NodeID, a.Impedance)
 		}
+	}
+
+	// Wildcard lookup: all tools in the mesh.
+	allTools := node.LookupCapabilityWildcard("tool:")
+	if len(allTools) > 0 {
+		fmt.Fprintf(os.Stderr, "  ✓ Wildcard 'tool:*' found %d entries across the mesh\n", len(allTools))
 	}
 
 	// --- Phase 8: Remote invocation via NeuronBridge ---
