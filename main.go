@@ -174,11 +174,10 @@ func registerTools(registry *tools.Registry, entries []toolEntry) {
 func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID)
 
-	// Signal readiness to the gateway: write a single 0x01 byte to stdout.
-	// The gateway blocks on reading this byte before sending the cert bundle.
-	// This eliminates the need for startup delays — no races, no hacks.
-	if _, err := os.Stdout.Write([]byte{0x01}); err != nil {
-		slog.Error("write ready signal", "error", err)
+	// Signal readiness to the deployer. Deploy() blocks until this
+	// magic arrives, so the stream is guaranteed ready for cert exchange.
+	if err := transport.SignalReady(os.Stdout); err != nil {
+		slog.Error("signal ready", "error", err)
 		os.Exit(1)
 	}
 
@@ -492,25 +491,8 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// Wait for the fleet node to signal readiness (1 byte = 0x01).
-		// This blocks until the remote binary is up and ready for the cert bundle.
-		var readyBuf [1]byte
-		if _, err := io.ReadFull(stream, readyBuf[:]); err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ fleet node not ready: %v\n", err)
-			dumpRemoteStderr(stream)
-			if cerr := stream.Close(); cerr != nil {
-				slog.Debug("close stream", "error", cerr)
-			}
-			continue
-		}
-		if readyBuf[0] != 0x01 {
-			fmt.Fprintf(os.Stderr, " ✗ unexpected ready byte: 0x%02x\n", readyBuf[0])
-			dumpRemoteStderr(stream)
-			if cerr := stream.Close(); cerr != nil {
-				slog.Debug("close stream", "error", cerr)
-			}
-			continue
-		}
+		// Deploy() already waited for the readiness handshake.
+		// The stream is ready for cert exchange.
 
 		// Generate cert bundle for the fleet node and send it
 		// over the raw stream BEFORE the membrane handshake.
