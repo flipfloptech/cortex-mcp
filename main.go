@@ -220,6 +220,11 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 		os.Exit(1)
 	}
 
+	// Start gossip ticker — propagate our capabilities to peers.
+	// Without this, the gateway's CapabilityIndex stays empty and
+	// all capability lookups fall back to Sonar broadcast.
+	node.StartGossipTicker(ctx, node.GossipIntervalDuration())
+
 	// Serve tools on the mesh listener.
 	lis, err := node.GrpcListener()
 	if err != nil {
