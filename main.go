@@ -200,7 +200,14 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 				slog.Info("fleet: peer lost", "peer", peerID)
 			},
 			OnIsolated: func() {
-				slog.Warn("fleet: isolated — zero peers")
+				slog.Warn("fleet: isolated — zero peers, reconnect loop starting")
+			},
+			OnReconnected: func(peerID string) {
+				slog.Info("fleet: reconnected!", "peer", peerID)
+			},
+			OnOrphaned: func() {
+				slog.Error("fleet: orphaned — reconnect exhausted, shutting down")
+				os.Exit(0)
 			},
 		},
 	})
