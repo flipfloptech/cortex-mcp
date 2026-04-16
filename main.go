@@ -27,8 +27,8 @@
 //
 // Usage:
 //
-//	# Build first (so the binary can self-deploy):
-//	go build -o mesh-example ./example/
+//	# Build first (static binary — required for cross-host deployment):
+//	CGO_ENABLED=0 go build -o mesh-example ./example/
 //
 //	# Run the full E2E demo:
 //	./mesh-example -config example/mesh.toml

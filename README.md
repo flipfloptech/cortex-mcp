@@ -166,7 +166,7 @@ After SSH deployment, the gateway waits for the fleet node's readiness signal be
 ```
 Gateway (Deploy)                     Fleet Node
    │                                      │
-   │── SSH + SCP binary ─────────────────→│  CORTEX_MESH_SPAWNED=1
+   │── SSH + SFTP binary ────────────────→│  CORTEX_MESH_SPAWNED=1
    │                                      │  transport.SignalReady()
    │◄── [4B magic: "CM" 0x01 0x01] ──────│  (DeployReadyMagic)
    │                                      │
