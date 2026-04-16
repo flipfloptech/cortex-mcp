@@ -20,8 +20,11 @@ A complete, feature-rich example binary demonstrating the full cortex-mesh lifec
 ## Quick Start
 
 ```bash
-# Build first — the binary self-deploys via SelfDeployer:
-go build -o mesh-example ./example/
+# Build first — static binary, no libc dependency:
+CGO_ENABLED=0 go build -o mesh-example ./example/
+
+# Or use task (CGO_ENABLED=0 is set automatically):
+task example
 
 # Run with a config file (enables remote deployment):
 ./mesh-example -config example/mesh.toml
@@ -76,6 +79,23 @@ pattern = "10.0.2.*"
 username = "admin"
 key_file = "~/.ssh/id_ed25519"
 ```
+
+## Static Builds
+
+The mesh binary **must** be statically linked. `SelfDeployer` copies `os.Executable()` to remote hosts that may have different (usually older) libc versions. A dynamically-linked binary will crash with `GLIBC_X.XX not found`.
+
+All project dependencies are pure Go — no cgo is required. Building with `CGO_ENABLED=0` produces a fully static binary:
+
+```bash
+# The cgo dependencies are only from stdlib (net, os/user) which have
+# pure Go fallbacks. No project dependencies require cgo.
+CGO_ENABLED=0 go build -o mesh-example ./example/
+
+# Verify:
+ldd ./mesh-example  # → "not a dynamic executable"
+```
+
+`SelfDeployer.Deploy()` validates this automatically — if the binary has a `PT_INTERP` program header (dynamic linker), it rejects the deploy with an actionable error before any SSH connection.
 
 ## Expected Output (local-only mode)
 
