@@ -6,21 +6,21 @@
 //
 // The example demonstrates ALL mesh lifecycle features:
 //
-//	 1. Load config (mesh.toml) — node identity, seed hosts, credentials
-//	 2. Generate ephemeral PKI (site CA + node certificates)
-//	 3. Initialize credential vault
-//	 4. Create api.Node with full config (events, reconnect, known hosts)
-//	 5. Register tools locally with capability advertising
-//	 6. Deploy this binary to each seed host via SSH (SelfDeployer)
-//	 7. Wait for readiness handshake (4-byte DeployReadyMagic)
-//	 8. Bootstrap deployed nodes with cert material (pre-membrane)
-//	 9. Establish mesh connections via AddPeer (mTLS membrane handshake)
-//	10. Start gossip ticker for impedance-cost-vector exchange
-//	11. Sonar discovery — broadcast to find tools across the mesh
-//	12. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
-//	13. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
-//	14. Fan-out invocation across all deployed nodes
-//	15. Clean teardown — close node, deployed nodes exit
+//  1. Load config (mesh.toml) — node identity, seed hosts, credentials
+//  2. Generate ephemeral PKI (site CA + node certificates)
+//  3. Initialize credential vault
+//  4. Create api.Node with full config (events, reconnect, known hosts)
+//  5. Register tools locally with capability advertising
+//  6. Deploy this binary to each seed host via SSH (SelfDeployer)
+//  7. Wait for readiness handshake (4-byte DeployReadyMagic)
+//  8. Bootstrap deployed nodes with cert material (pre-membrane)
+//  9. Establish mesh connections via AddPeer (mTLS membrane handshake)
+//  10. Start gossip ticker for impedance-cost-vector exchange
+//  11. Sonar discovery — broadcast to find tools across the mesh
+//  12. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
+//  13. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
+//  14. Fan-out invocation across all deployed nodes
+//  15. Clean teardown — close node, deployed nodes exit
 //
 // Configuration is loaded from mesh.toml (see -config flag).
 // Credentials are loaded into the encrypted vault at startup.
@@ -537,6 +537,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 
 	return deployed
 }
+
 // dumpRemoteStderr extracts and displays the fleet node's stderr output
 // from the deploy stream. This is critical for diagnosing handshake failures —
 // if the remote binary crashes, its error output explains why.
