@@ -189,32 +189,38 @@ func writeCertBundle(w io.Writer, bundle *certBundle) error {
 	return nil
 }
 
-// readCertBundle reads a cert bundle from a stream and returns a membrane.Config.
-func readCertBundle(r io.Reader) (*membrane.Config, error) {
+// readCertBundle reads a cert bundle from a stream, returning the raw bundle and the parsed membrane.Config.
+func readCertBundle(r io.Reader) (*certBundle, *membrane.Config, error) {
 	certPEM, err := readField(r)
 	if err != nil {
-		return nil, fmt.Errorf("read cert: %w", err)
+		return nil, nil, fmt.Errorf("read cert: %w", err)
 	}
 	keyPEM, err := readField(r)
 	if err != nil {
-		return nil, fmt.Errorf("read key: %w", err)
+		return nil, nil, fmt.Errorf("read key: %w", err)
 	}
 	caPEM, err := readField(r)
 	if err != nil {
-		return nil, fmt.Errorf("read CA: %w", err)
+		return nil, nil, fmt.Errorf("read CA: %w", err)
 	}
 
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return nil, fmt.Errorf("x509 key pair: %w", err)
+		return nil, nil, fmt.Errorf("x509 key pair: %w", err)
 	}
 
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to parse CA cert")
+		return nil, nil, fmt.Errorf("failed to parse CA cert")
 	}
 
-	return &membrane.Config{
+	bundle := &certBundle{
+		CertPEM: certPEM,
+		KeyPEM:  keyPEM,
+		CaPEM:   caPEM,
+	}
+
+	return bundle, &membrane.Config{
 		Certificate: cert,
 		CACert:      pool,
 	}, nil

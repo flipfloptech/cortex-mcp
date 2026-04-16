@@ -43,13 +43,13 @@ task example
 │  ┌──────────────────┐             ┌──────────────────┐           │
 │  │ Phase 1: PKI     │             │ SignalReady()     │ → magic  │
 │  │ Phase 2: Node    │             │ readCertBundle()  │           │
-│  │ Phase 3: Local   │             │ api.NewNode()     │           │
-│  │ Phase 4: Gateway │             │ SetMembraneConfig │           │
-│  │ Phase 5: Deploy  │──SSH/SFTP─→ │ AcceptStdio()     │ ← mTLS   │
-│  │ Phase 6: Gossip  │ cert boot   │ ServeToolListener │           │
-│  │ Phase 7: Sonar   │             │ <block forever>   │           │
-│  │ Phase 8: Invoke  │             └──────────────────┘           │
-│  │ Phase 9: FanOut  │                                            │
+│  │ Phase 3: Local   │             │ SaveIdentity()    │           │
+│  │ Phase 4: Gateway │             │ fork -daemon      │ → "Installed!"
+│  │ Phase 5: Deploy  │──SSH/SFTP─→ │ api.NewNode()     │           │
+│  │ Phase 6: Gossip  │ cert boot   │ Listen(4443)      │ ← TCP mTLS│
+│  │ Phase 7: Sonar   │             │ ServeToolListener │           │
+│  │ Phase 8: Invoke  │             │ <block forever>   │           │
+│  │ Phase 9: FanOut  │             └──────────────────┘           │
 │  │ Phase 10: Close  │                                            │
 │  └──────────────────┘                                            │
 └──────────────────────────────────────────────────────────────────┘
@@ -134,7 +134,7 @@ When seed hosts are configured, the output continues with phases 5–10:
 
 ```
 --- Phase 5: Deploy + mesh connect ---
-  → oss-01 (10.0.1.10:22): deploying... ✓ deployed + connected (mTLS)
+  → oss-01 (10.0.1.10:22): deploying... ✓ installed + connected (mTLS via TCP)
   [event] peer joined: oss-01
 
 --- Phase 6: Gossip ---
@@ -174,9 +174,16 @@ Gateway (Deploy)                     Fleet Node
    │                                      │
    │──── [4B len][cert PEM] ─────────────→│
    │──── [4B len][key PEM] ──────────────→│  readCertBundle()
-   │──── [4B len][CA PEM] ───────────────→│
+   │──── [4B len][CA PEM] ───────────────→│  SaveIdentity()
    │                                      │
-   │◄════ membrane handshake (mTLS) ═════►│  AcceptStdio/AddPeer
+   │◄─── "Installed!\n" ──────────────────│  fork -daemon process
+   │     SSH channel closed                │
+   │                                      │
+   │                                      │  -daemon node boots
+   │                                      │  Listen(ctx, "0.0.0.0:4443")
+   │                                      │
+   │ Gateway dials TCP host:4443          │
+   │◄════ membrane handshake (mTLS) ═════►│  AddPeer()
    │◄════ yamux multiplexing ════════════►│
    │                                      │
    │  Stream 0: gossip, sonar            │

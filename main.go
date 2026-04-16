@@ -48,6 +48,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -59,6 +60,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/example/config"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
+	"github.com/cortex-mesh/cortex-mesh/membrane"
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
@@ -75,7 +77,8 @@ func main() {
 	// Parse CLI flags.
 	configPath := flag.String("config", "", "path to mesh.toml config file")
 	skipDeploy := flag.Bool("skip-deploy", false, "skip SFTP upload when deploying nodes")
-	daemon := flag.Bool("daemon", false, "run as a persistent daemon independent of deployer")
+	daemon := flag.Bool("daemon", false, "run as a persistent daemon (reads identity from disk)")
+	install := flag.Bool("install", false, "install node identity via stdin and spawn daemon")
 	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
 	flag.Parse()
 
@@ -112,7 +115,7 @@ func main() {
 	}
 
 	// --- Gateway / Bootstrap mode ---
-	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, *daemon, *cleanup)
+	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, *daemon, *install, *cleanup)
 }
 
 // exampleGroupResolver implements a hardcoded static grouping.
@@ -244,18 +247,63 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 		signal.Ignore(syscall.SIGHUP)
 	}
 
-	// Signal readiness to the deployer. Deploy() blocks until this
-	// magic arrives, so the stream is guaranteed ready for cert exchange.
-	if err := transport.SignalReady(os.Stdout); err != nil {
-		slog.Error("signal ready", "error", err)
-		os.Exit(1)
-	}
+	var membraneCfg *membrane.Config
 
-	// Read cert bundle from stdin (sent by gateway after receiving ready signal).
-	membraneCfg, err := readCertBundle(os.Stdin)
-	if err != nil {
-		slog.Error("read cert bundle", "error", err)
-		os.Exit(1)
+	if isDaemon {
+		// Read identity strictly from disk cache
+		loadedNodeID, cfgMembrane, err := LoadIdentity()
+		if err != nil {
+			slog.Error("load identity from disk", "error", err)
+			os.Exit(1)
+		}
+		nodeID = loadedNodeID
+		membraneCfg = cfgMembrane
+	} else {
+		// Signal readiness to the deployer. Deploy() blocks until this
+		// magic arrives, so the stream is guaranteed ready for cert exchange.
+		if err := transport.SignalReady(os.Stdout); err != nil {
+			slog.Error("signal ready", "error", err)
+			os.Exit(1)
+		}
+
+		// Read deployment protocol mode byte.
+		var modeBuf [1]byte
+		if _, err := io.ReadFull(os.Stdin, modeBuf[:]); err != nil {
+			slog.Error("read deploy mode", "error", err)
+			os.Exit(1)
+		}
+		isInstall := modeBuf[0] == 0x01
+
+		// Read cert bundle from stdin (sent by gateway after receiving ready signal).
+		bundle, cfgMembrane, err := readCertBundle(os.Stdin)
+		if err != nil {
+			slog.Error("read cert bundle", "error", err)
+			os.Exit(1)
+		}
+		membraneCfg = cfgMembrane
+
+		if isInstall {
+			if err := SaveIdentity(nodeID, bundle); err != nil {
+				slog.Error("save identity bundle", "error", err)
+				os.Exit(1)
+			}
+
+			// ACK to gateway
+			_, _ = os.Stdout.Write([]byte{'O', 'K', 0x00, 0x06})
+
+			// Detach and fork `-daemon`
+			exe, _ := os.Executable()
+			cmd := exec.Command(exe, "-daemon")
+			// Pass environment variables down to trick WasDeployed
+			cmd.Env = append(os.Environ(), "CORTEX_MESH_SPAWNED=1")
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			if err := cmd.Start(); err != nil {
+				slog.Error("spawn detached daemon", "error", err)
+				os.Exit(1)
+			}
+			// Exit cleanly, dropping the SSH stream!
+			os.Exit(0)
+		}
 	}
 
 	reconnectPolicy := api.ReconnectPolicy{}
@@ -295,10 +343,12 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 	registry := tools.NewRegistry(node)
 	registerTools(registry, entries)
 
-	// Accept the deployer's connection (mTLS handshake + yamux).
-	if err := node.AcceptStdio(os.Stdin, os.Stdout); err != nil {
-		slog.Error("accept stdio", "error", err)
-		os.Exit(1)
+	if !isDaemon {
+		// For standard temporary stdioconns, accept the deployer's connection (mTLS handshake + yamux).
+		if err := node.AcceptStdio(os.Stdin, os.Stdout); err != nil {
+			slog.Error("accept stdio", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// Start gossip ticker — propagate our capabilities to peers.
@@ -325,7 +375,7 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy, daemon, cleanup bool) {
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy, daemon, install, cleanup bool) {
 	printHeader(nodeID, entries)
 
 	// --- Phase 1: PKI ---
@@ -429,7 +479,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Deploy + mesh connect ---\n")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, daemon)
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, daemon, install)
 
 	if len(deployedNodes) == 0 {
 		fmt.Fprintf(os.Stderr, "\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
@@ -592,7 +642,7 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
 		SkipUpload: skipDeploy,
@@ -653,6 +703,17 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
+		modeByte := byte(0x00)
+		if install {
+			modeByte = 0x01
+		}
+		if _, err := stream.Write([]byte{modeByte}); err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ send mode protocol: %v\n", err)
+			dumpRemoteStderr(stream)
+			_ = stream.Close()
+			continue
+		}
+
 		if err := writeCertBundle(stream, bundle); err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ send certs: %v\n", err)
 			dumpRemoteStderr(stream)
@@ -662,23 +723,59 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// Wrap the stream as a net.Conn and establish mesh connection
-		// via membrane handshake (mTLS + yamux).
-		conn := transport.NewStdioConn(stream, stream)
-		if err := node.AddPeer(ctx, conn, false); err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
-			dumpRemoteStderr(stream)
-			if cerr := conn.Close(); cerr != nil {
-				slog.Debug("close conn", "error", cerr)
+		if install {
+			ackBuf := make([]byte, 4)
+			if _, err := io.ReadFull(stream, ackBuf); err != nil || string(ackBuf) != string([]byte{'O', 'K', 0x00, 0x06}) {
+				fmt.Fprintf(os.Stderr, " ✗ install failed/invalid ack: %v\n", err)
+				dumpRemoteStderr(stream)
+				_ = stream.Close()
+				continue
 			}
-			continue
-		}
+			_ = stream.Close()
 
-		fmt.Fprintf(os.Stderr, " ✓ deployed + connected (mTLS)\n")
-		deployed = append(deployed, deployedNode{
-			nodeID: remoteNodeID,
-			conn:   conn,
-		})
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = strings.Split(addr, ":")[0]
+			}
+
+			// Dial the newly spawned daemon on its TCP port
+			var d net.Dialer
+			conn, err := d.DialContext(ctx, "tcp", host+":4443")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", err)
+				continue
+			}
+
+			if err := node.AddPeer(ctx, conn, false); err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				_ = conn.Close()
+				continue
+			}
+
+			fmt.Fprintf(os.Stderr, " ✓ installed + connected (mTLS via TCP)\n")
+			deployed = append(deployed, deployedNode{
+				nodeID: remoteNodeID,
+				conn:   conn,
+			})
+		} else {
+			// Wrap the stream as a net.Conn and establish mesh connection
+			// via membrane handshake (mTLS + yamux).
+			conn := transport.NewStdioConn(stream, stream)
+			if err := node.AddPeer(ctx, conn, false); err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
+				dumpRemoteStderr(stream)
+				if cerr := conn.Close(); cerr != nil {
+					slog.Debug("close conn", "error", cerr)
+				}
+				continue
+			}
+
+			fmt.Fprintf(os.Stderr, " ✓ deployed + connected (mTLS)\n")
+			deployed = append(deployed, deployedNode{
+				nodeID: remoteNodeID,
+				conn:   conn,
+			})
+		}
 	}
 
 	return deployed
