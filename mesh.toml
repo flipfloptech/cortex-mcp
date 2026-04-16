@@ -20,11 +20,11 @@
 # Format: [hosts.<node-id>]
 #   addresses = ["<ip-or-hostname>", ...]
 
-[hosts.mds-01]
-addresses = ["10.0.1.5"]
+[hosts.oss1]
+addresses = ["10.0.2.30"]
 
-[hosts.oss-01]
-addresses = ["10.0.1.10", "10.0.1.11"]
+[hosts.oss2]
+addresses = ["10.0.2.198"]
 
 # [hosts.mds-02]
 # addresses = ["10.0.2.5"]
@@ -44,11 +44,17 @@ addresses = ["10.0.1.10", "10.0.1.11"]
 #   tls_cert:     pattern, cert_file
 
 # SSH key authentication for the 10.0.1.x subnet
+#[[credentials]]
+#pattern  = "10.0.1.*"
+#type     = "ssh_key"
+#username = "deploy"
+#key_file = "~/.ssh/id_ed25519"
+
 [[credentials]]
-pattern  = "10.0.1.*"
-type     = "ssh_key"
-username = "deploy"
-key_file = "~/.ssh/id_ed25519"
+pattern = "10.0.2.*"
+type = "ssh_password"
+username = "root"
+password = "***REMOVED***"
 
 # SSH password fallback for the corporate domain
 # [[credentials]]
