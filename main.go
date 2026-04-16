@@ -115,9 +115,29 @@ func main() {
 	runGateway(ctx, cancel, nodeID, cfg, entries)
 }
 
+// exampleGroupResolver implements a hardcoded static grouping.
+type exampleGroupResolver struct {
+	groups map[string][]string
+}
+
+func (e *exampleGroupResolver) Resolve(source, group string) ([]string, error) {
+	if nodes, ok := e.groups[group]; ok {
+		return nodes, nil
+	}
+	return nil, fmt.Errorf("unknown group: %s", group)
+}
+
+func (e *exampleGroupResolver) List(source string) ([]string, error) {
+	var keys []string
+	for k := range e.groups {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
 // defineTools returns the tool catalog shared by all modes.
 func defineTools(nodeID string) []toolEntry {
-	return []toolEntry{
+	entries := []toolEntry{
 		{
 			def: tools.ToolDefinition{
 				Name:            "hello",
@@ -162,6 +182,34 @@ func defineTools(nodeID string) []toolEntry {
 			},
 		},
 	}
+
+	// Add node-specific capability for group demonstration
+	switch nodeID {
+	case "oss1":
+		entries = append(entries, toolEntry{
+			def: tools.ToolDefinition{
+				Name:        "storage_check",
+				Description: "Storage specific check",
+				Category:    "storage",
+			},
+			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+				return tools.NewTextResult("Storage OK from " + nodeID), nil
+			},
+		})
+	case "oss2":
+		entries = append(entries, toolEntry{
+			def: tools.ToolDefinition{
+				Name:        "network_check",
+				Description: "Network specific check",
+				Category:    "network",
+			},
+			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+				return tools.NewTextResult("Network OK from " + nodeID), nil
+			},
+		})
+	}
+
+	return entries
 }
 
 // registerTools populates a registry with the given tool entries.
@@ -326,7 +374,16 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// --- Phase 4: Gateway meta-tools ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Gateway meta-tools ---\n")
 	bridge := tools.NewNeuronBridge(node)
-	gw := gateway.New(registry, bridge)
+
+	// Create group resolver to inject into Gateway for nodeset processing
+	resolver := &exampleGroupResolver{
+		groups: map[string][]string{
+			"storage": {"oss1"},
+			"network": {"oss2"},
+		},
+	}
+
+	gw := gateway.New(registry, bridge, gateway.WithGroupResolver(resolver))
 	runGatewayMetaTools(ctx, gw)
 
 	// --- Phase 5: Deploy to seed hosts ---
@@ -368,6 +425,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		fmt.Fprintf(os.Stderr, "  ⚠ Capability index empty — falling back to Sonar broadcast\n")
 	}
 
+	helloEntries := node.LookupCapability("tool:hello")
+	if len(helloEntries) > 0 {
+		fmt.Fprintf(os.Stderr, "  ✓ Capability index: %d node(s) with tool:hello (zero traffic)\n", len(helloEntries))
+	}
+
 	// Tier 2: Sonar broadcast (fallback — demonstrates backward compat).
 	sonarCtx, sonarCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer sonarCancel()
@@ -381,10 +443,22 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		}
 	}
 
-	// Wildcard lookup: all tools in the mesh.
+	// Wildcard lookup: all nodes offering ANY tools in the mesh.
+	// Note: LookupCapabilityWildcard deduplicates by node, so this returns
+	// the number of *nodes* offering tools, not the total count of tools.
 	allTools := node.LookupCapabilityWildcard("tool:")
 	if len(allTools) > 0 {
-		fmt.Fprintf(os.Stderr, "  ✓ Wildcard 'tool:*' found %d entries across the mesh\n", len(allTools))
+		fmt.Fprintf(os.Stderr, "  ✓ Wildcard 'tool:*' found %d node(s) offering tool capabilities across the mesh:\n", len(allTools))
+		snap := node.CapabilityIndex().Snapshot()
+		for _, nt := range allTools {
+			var toolNames []string
+			for _, cap := range snap[nt.NodeID] {
+				if strings.HasPrefix(cap, "tool:") {
+					toolNames = append(toolNames, strings.TrimPrefix(cap, "tool:"))
+				}
+			}
+			fmt.Fprintf(os.Stderr, "    - %s offers tools: %s\n", nt.NodeID, strings.Join(toolNames, ", "))
+		}
 	}
 
 	// --- Phase 8: Remote invocation via NeuronBridge ---
@@ -646,8 +720,15 @@ func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployed
 		fanOutDirect(ctx, nodes)
 		return
 	}
+	fmt.Fprintf(os.Stderr, "  ✓ fan-out (*) result: %s\n", result.Content)
 
-	fmt.Fprintf(os.Stderr, "  ✓ fan-out result: %s\n", result.Content)
+	// Demonstration of fan-out via call_tool using a NodeSet @group
+	resultGroup, errGroup := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"storage_check","args":{},"node_name":"@storage"}`))
+	if errGroup != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ fan-out via group @storage error: %v\n", errGroup)
+	} else {
+		fmt.Fprintf(os.Stderr, "  ✓ fan-out (@storage) result: %s\n", resultGroup.Content)
+	}
 }
 
 // fanOutDirect invokes the "hello" tool on all deployed nodes concurrently.
