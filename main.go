@@ -48,10 +48,12 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
@@ -72,6 +74,9 @@ type toolEntry struct {
 func main() {
 	// Parse CLI flags.
 	configPath := flag.String("config", "", "path to mesh.toml config file")
+	skipDeploy := flag.Bool("skip-deploy", false, "skip SFTP upload when deploying nodes")
+	daemon := flag.Bool("daemon", false, "run as a persistent daemon independent of deployer")
+	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -100,19 +105,14 @@ func main() {
 	entries := defineTools(nodeID)
 
 	// --- Fleet node mode ---
-	// When deployed via SelfDeployer, the binary:
-	//  1. Reads cert material from stdin (pre-membrane bootstrap)
-	//  2. Creates a mesh Node with membrane config
-	//  3. Accepts the deployer's connection via AcceptStdio (mTLS handshake)
-	//  4. Serves tools on the GrpcListener
-	//  5. Blocks until the connection closes
+	// When deployed via SelfDeployer, the binary is launched via SSH.
 	if transport.WasDeployed() {
-		runFleetNode(ctx, nodeID, entries)
+		runFleetNode(ctx, nodeID, entries, cfg, *daemon)
 		return
 	}
 
 	// --- Gateway / Bootstrap mode ---
-	runGateway(ctx, cancel, nodeID, cfg, entries)
+	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, *daemon, *cleanup)
 }
 
 // exampleGroupResolver implements a hardcoded static grouping.
@@ -181,6 +181,22 @@ func defineTools(nodeID string) []toolEntry {
 				return &tools.ToolResult{Content: data}, nil
 			},
 		},
+		{
+			def: tools.ToolDefinition{
+				Name:        "cleanup_node",
+				Description: "Terminates the deployed fleet node cleanly",
+				Category:    "system",
+			},
+			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+				go func() {
+					time.Sleep(200 * time.Millisecond) // Give the RPC time to return
+					slog.Info("cleanup_node invoked, self-destructing")
+					_ = transport.SelfCleanup()
+					os.Exit(0)
+				}()
+				return tools.NewTextResult("Terminating " + nodeID), nil
+			},
+		},
 	}
 
 	// Add node-specific capability for group demonstration
@@ -220,8 +236,13 @@ func registerTools(registry *tools.Registry, entries []toolEntry) {
 }
 
 // runFleetNode handles the deployed fleet node lifecycle.
-func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
-	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID)
+func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *config.MeshConfig, isDaemon bool) {
+	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
+
+	if isDaemon {
+		// Ignore SIGHUP so we survive SSH terminal detachment.
+		signal.Ignore(syscall.SIGHUP)
+	}
 
 	// Signal readiness to the deployer. Deploy() blocks until this
 	// magic arrives, so the stream is guaranteed ready for cert exchange.
@@ -237,24 +258,29 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 		os.Exit(1)
 	}
 
+	reconnectPolicy := api.ReconnectPolicy{}
+	if isDaemon {
+		reconnectPolicy = api.ReconnectPolicy{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     30 * time.Second,
+			Timeout:      5 * time.Minute,
+		}
+	}
+
 	// Create the mesh node with membrane config.
 	node, err := api.NewNode(ctx, api.NodeConfig{
-		NodeID: nodeID,
+		NodeID:     nodeID,
+		KnownHosts: cfg.KnownHosts(),
+		Reconnect:  reconnectPolicy,
 		Events: api.NodeEvents{
-			OnPeerJoined: func(peerID string) {
-				slog.Info("fleet: peer joined", "peer", peerID)
-			},
-			OnPeerLost: func(peerID string) {
-				slog.Info("fleet: peer lost", "peer", peerID)
-			},
-			OnIsolated: func() {
-				slog.Warn("fleet: isolated — zero peers, reconnect loop starting")
-			},
-			OnReconnected: func(peerID string) {
-				slog.Info("fleet: reconnected!", "peer", peerID)
-			},
+			OnPeerJoined:  func(peerID string) { slog.Info("fleet: peer joined", "peer", peerID) },
+			OnPeerLost:    func(peerID string) { slog.Info("fleet: peer lost", "peer", peerID) },
+			OnIsolated:    func() { slog.Warn("fleet: isolated — zero peers") },
+			OnReconnected: func(peerID string) { slog.Info("fleet: reconnected!", "peer", peerID) },
 			OnOrphaned: func() {
 				slog.Error("fleet: orphaned — reconnect exhausted, shutting down")
+				_ = transport.SelfCleanup()
 				os.Exit(0)
 			},
 		},
@@ -276,8 +302,6 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 	}
 
 	// Start gossip ticker — propagate our capabilities to peers.
-	// Without this, the gateway's CapabilityIndex stays empty and
-	// all capability lookups fall back to Sonar broadcast.
 	node.StartGossipTicker(ctx, node.GossipIntervalDuration())
 
 	// Serve tools on the mesh listener.
@@ -286,12 +310,22 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry) {
 		slog.Error("grpc listener", "error", err)
 		os.Exit(1)
 	}
+
+	if isDaemon {
+		tcpLis, err := node.Listen(ctx, "0.0.0.0:4443")
+		if err != nil {
+			slog.Error("daemon listen 4443", "error", err)
+		} else {
+			slog.Info("daemon listening on TCP", "addr", tcpLis.Addr())
+		}
+	}
+
 	slog.Info("fleet node ready — serving tools", "node_id", nodeID, "tools", len(registry.ListLocal()))
 	tools.ServeToolListener(ctx, lis, registry)
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry) {
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy, daemon, cleanup bool) {
 	printHeader(nodeID, entries)
 
 	// --- Phase 1: PKI ---
@@ -395,10 +429,30 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Deploy + mesh connect ---\n")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v)
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, daemon)
 
 	if len(deployedNodes) == 0 {
-		fmt.Fprintf(os.Stderr, "\nNo nodes deployed successfully. Exiting.\n")
+		fmt.Fprintf(os.Stderr, "\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
+	}
+
+	if cleanup {
+		fmt.Fprintf(os.Stderr, "\n--- Phase [Cleanup]: Terminating Remote Nodes ---\n")
+
+		agents, _ := bridge.DiscoverTool(ctx, "cleanup_node")
+		var nodeIDs []string
+		for _, a := range agents {
+			nodeIDs = append(nodeIDs, a.NodeID)
+		}
+
+		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "cleanup_node", nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ cleanup dispatch failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ cleanup broadcast successful (%d nodes reported terminal)\n", len(res))
+		}
+		// Gracefully terminate the gateway locally
+		cancel()
+		time.Sleep(500 * time.Millisecond) // Give yamux streams a moment to flush replies
 		return
 	}
 
@@ -538,9 +592,15 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon bool) []deployedNode {
 	var deployed []deployedNode
-	deployer := &transport.SelfDeployer{}
+	deployer := &transport.SelfDeployer{
+		SkipUpload: skipDeploy,
+	}
+
+	if daemon {
+		deployer.ExecArgs = []string{"-daemon"}
+	}
 
 	for remoteNodeID, addrs := range knownHosts {
 		if len(addrs) == 0 {
