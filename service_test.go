@@ -135,4 +135,20 @@ func TestUninstallCommands(t *testing.T) {
 	if !strings.Contains(joined, "disable") {
 		t.Error("uninstall commands missing systemctl disable")
 	}
+
+	// Must remove the service unit file.
+	if !strings.Contains(joined, "rm") || !strings.Contains(joined, "cortex-mesh.service") {
+		t.Error("uninstall commands missing service unit file removal")
+	}
+
+	// Must remove the binary.
+	if !strings.Contains(joined, defaultInstallPath) {
+		t.Error("uninstall commands missing binary removal")
+	}
+
+	// Must daemon-reload after removing the unit file.
+	if !strings.Contains(joined, "daemon-reload") {
+		t.Error("uninstall commands missing daemon-reload after unit removal")
+	}
 }
+
