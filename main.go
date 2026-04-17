@@ -38,6 +38,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -616,8 +617,12 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	fmt.Fprintf(os.Stderr, "\n--- Phase 9: Fan-out hello ---\n")
 	runGatewayFanOut(ctx, gw, deployedNodes)
 
-	// --- Phase 10: Cleanup ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 10: Cleanup ---\n")
+	// --- Phase 10: Mesh topology print ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 10: Mesh topology ---\n")
+	runGatewayTopology(ctx, gw)
+
+	// --- Phase 11: Cleanup ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 11: Cleanup ---\n")
 	cancel()
 	if err := node.Close(); err != nil {
 		slog.Debug("close node", "error", err)
@@ -918,6 +923,24 @@ func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployed
 	} else {
 		fmt.Fprintf(os.Stderr, "  ✓ fan-out (@storage) result: %s\n", resultGroup.Content)
 	}
+}
+
+// runGatewayTopology invokes the mesh_topology tool via the gateway and pretty-prints the output.
+func runGatewayTopology(ctx context.Context, gw *gateway.Gateway) {
+	// Call the built-in mesh_topology tool locally
+	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"mesh_topology","args":{}}`))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ mesh_topology error: %v\n", err)
+		return
+	}
+
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, result.Content, "  ", "  "); err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ failed to format topology JSON: %v\n", err)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\n", prettyJSON.String())
 }
 
 // fanOutDirect invokes the "hello" tool on all deployed nodes concurrently.
