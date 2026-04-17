@@ -246,7 +246,8 @@ func TestNodeDeployToolHandler_MissingTarget(t *testing.T) {
 	t.Parallel()
 
 	// Invoking node_deploy without a target should return an error result.
-	result, err := handleNodeDeploy(context.Background(), json.RawMessage(`{}`))
+	handler := buildNodeDeployHandler(nil)
+	result, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("handleNodeDeploy returned Go error: %v", err)
 	}
@@ -259,27 +260,19 @@ func TestNodeDeployToolHandler_WithTarget(t *testing.T) {
 	t.Parallel()
 
 	args := json.RawMessage(`{"target": "10.0.1.5"}`)
-	result, err := handleNodeDeploy(context.Background(), args)
+	handler := buildNodeDeployHandler(nil)
+	result, err := handler(context.Background(), args)
 	if err != nil {
 		t.Fatalf("handleNodeDeploy returned Go error: %v", err)
 	}
-	// Without a live mesh connection, the handler should return an error
-	// indicating it cannot deploy (no deployer configured). But it should
-	// at least parse the target correctly and not panic.
-	// The exact behavior depends on whether a deployer is available.
-	// For unit tests, we accept either success or a structured error.
 	if result == nil {
 		t.Fatal("handleNodeDeploy returned nil result")
 	}
 
-	var resp map[string]interface{}
-	if err := json.Unmarshal(result.Content, &resp); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-
-	target, ok := resp["target"].(string)
-	if !ok || target != "10.0.1.5" {
-		t.Errorf("expected target=10.0.1.5, got %v", resp["target"])
+	// Because we passed a nil node to buildNodeDeployHandler, it should
+	// return a tool error indicating a live mesh node is required.
+	if !result.IsError {
+		t.Error("expected IsError=true when node is nil")
 	}
 }
 

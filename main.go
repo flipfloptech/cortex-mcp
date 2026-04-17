@@ -145,35 +145,16 @@ func main() {
 		isDaemon := cmd.Name == "daemon"
 		runFleetNode(ctx, nodeID, entries, cfg, isDaemon)
 		return
-	case "install":
-		binaryPath, _ := os.Executable()
-		ops := selfInstallOps(binaryPath)
-		if err := executeOps(ops); err != nil {
-			fmt.Fprintf(os.Stderr, "install: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
-		return
-	case "uninstall":
-		binaryPath, _ := os.Executable()
-		var ops []lifecycleOp
-		if strings.HasPrefix(binaryPath, "/opt/") {
-			ops = selfUninstallOps()
-		} else {
-			ops = ephemeralCleanupOps(binaryPath)
-		}
-		if err := executeOps(ops); err != nil {
-			fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Uninstalled\n")
-		return
 	}
 
-	// --- Uninstall mode ---
-	// SSH to each node and remove the systemd service + binary.
+	// --- Remote Lifecycle Modes ---
+	// Operations that target the fleet directly via SSH from the gateway.
 	if cmd.Name == "uninstall" {
 		uninstallFleet(ctx, cfg, cmd.Target)
+		return
+	}
+	if cmd.Name == "start" {
+		startFleet(ctx, cfg, cmd.Target)
 		return
 	}
 
@@ -295,18 +276,6 @@ func defineTools(nodeID string) []toolEntry {
 			},
 			handler: handleNodeUpgrade,
 		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_deploy",
-				Description:     "Deploy this binary to another host via the mesh",
-				LongDescription: "Deploys the mesh binary to the specified target host using SelfDeployer. Any node in the fabric can act as a jumphost, enabling deployment to hosts unreachable from the gateway.",
-				Category:        "lifecycle",
-				Parameters: []tools.ToolParam{
-					{Name: "target", Type: "string", Description: "Target host address (e.g., 10.0.1.5 or host:port)", Required: true},
-				},
-			},
-			handler: handleNodeDeploy,
-		},
 	}
 
 	// Add node-specific capability for group demonstration
@@ -364,6 +333,16 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 		}
 		return &tools.ToolResult{Content: data}, nil
 	})
+
+	registry.Register(tools.ToolDefinition{
+		Name:            "node_deploy",
+		Description:     "Deploy this binary to another host via the mesh",
+		LongDescription: "Deploys the mesh binary to the specified target host using SelfDeployer. Any node in the fabric can act as a jumphost, enabling deployment to hosts unreachable from the gateway.",
+		Category:        "lifecycle",
+		Parameters: []tools.ToolParam{
+			{Name: "target", Type: "string", Description: "Target host address (e.g., 10.0.1.5 or host:port)", Required: true},
+		},
+	}, buildNodeDeployHandler(node))
 }
 
 // runFleetNode handles the deployed fleet node lifecycle.
@@ -443,9 +422,22 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 		}
 	}
 
+	privKey, ok := membraneCfg.Certificate.PrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		slog.Error("node private key is not ed25519")
+		os.Exit(1)
+	}
+
+	v, err := vault.New(privKey)
+	if err != nil {
+		slog.Error("failed to create vault", "error", err)
+		os.Exit(1)
+	}
+
 	// Create the mesh node with membrane config.
 	node, err := api.NewNode(ctx, api.NodeConfig{
 		NodeID:     nodeID,
+		Vault:      v, // Empty vault enables fleet nodes to request credentials for node_deploy
 		KnownHosts: cfg.KnownHosts(),
 		Reconnect:  reconnectPolicy,
 		Events: api.NodeEvents{
@@ -1278,4 +1270,72 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 	}
 
 	fmt.Fprintf(os.Stderr, "--- Uninstall complete ---\n")
+}
+
+// startFleet connects to known persistent nodes via SSH and runs systemctl start.
+// This is used to reactivate nodes that were previously stopped and are off the mesh.
+func startFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
+	fmt.Fprintf(os.Stderr, "\n--- Starting Persistent Nodes ---\n")
+
+	v, err := initVault(cfg)
+	if err != nil {
+		slog.Error("failed to init vault", "error", err)
+		return
+	}
+	if err := cfg.LoadCredentials(v); err != nil {
+		slog.Warn("some credentials failed to load", "error", err)
+	}
+
+	knownHosts := cfg.KnownHosts()
+
+	for remoteNodeID, addrs := range knownHosts {
+		// Skip nodes that don't match the target filter.
+		if target != "" && remoteNodeID != target {
+			continue
+		}
+		if len(addrs) == 0 {
+			continue
+		}
+
+		addr := addrs[0]
+		if !strings.Contains(addr, ":") {
+			addr = addr + ":22"
+		}
+
+		cred, ok := v.Match(addr)
+		if !ok {
+			host := strings.Split(addr, ":")[0]
+			cred, ok = v.Match(host)
+		}
+		if !ok {
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, addr)
+			continue
+		}
+
+		deployCred, err := toDeployCredential(cred)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "  → %s (%s): starting service...", remoteNodeID, addr)
+
+		client, err := dialSSH(ctx, addr, deployCred)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
+			continue
+		}
+
+		startCmd := fmt.Sprintf("sudo systemctl start %s", serviceName)
+		if err := execSSHCommand(client, startCmd); err != nil {
+			_ = client.Close()
+			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+			continue
+		}
+
+		_ = client.Close()
+		fmt.Fprintf(os.Stderr, " ✓ started\n")
+	}
+
+	fmt.Fprintf(os.Stderr, "--- Start complete ---\n")
 }
