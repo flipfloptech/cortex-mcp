@@ -34,14 +34,14 @@ func TestProbeExistingNode_Unreachable(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := lis.Addr().String()
-	lis.Close() // Close immediately so nothing is listening.
+	_ = lis.Close() // Close immediately so nothing is listening.
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	conn := probeExistingNode(ctx, addr)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 		t.Fatal("probeExistingNode should return nil for unreachable host")
 	}
 }
@@ -54,7 +54,7 @@ func TestProbeExistingNode_Reachable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer lis.Close()
+	defer func() { _ = lis.Close() }()
 
 	// Accept one connection in the background.
 	go func() {
@@ -62,7 +62,7 @@ func TestProbeExistingNode_Reachable(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		// Hold the connection open until test ends.
 		<-time.After(5 * time.Second)
 	}()
@@ -74,7 +74,7 @@ func TestProbeExistingNode_Reachable(t *testing.T) {
 	if conn == nil {
 		t.Fatal("probeExistingNode should return a connection for reachable host")
 	}
-	conn.Close()
+	_ = conn.Close()
 }
 
 // --- needsUpgrade tests ---

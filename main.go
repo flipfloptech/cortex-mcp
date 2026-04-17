@@ -709,6 +709,56 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
+		// --- Upgrade path: check if node is already running ---
+		host, _, splitErr := net.SplitHostPort(addr)
+		if splitErr != nil {
+			host = strings.Split(addr, ":")[0]
+		}
+
+		meshAddr := host + ":4443"
+		probeConn := probeExistingNode(ctx, meshAddr)
+		if probeConn != nil {
+			// Node is already listening on :4443 — upgrade path.
+			_ = probeConn.Close()
+
+			if needsUpgrade(skipDeploy) {
+				fmt.Fprintf(os.Stderr, "  → %s (%s): upgrading...", remoteNodeID, addr)
+				remotePath := installRemotePath("")
+				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
+					fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, " binary pushed, restarting...")
+
+				// Wait for the service to come back up.
+				time.Sleep(upgradeWaitAfterRestart)
+			} else {
+				fmt.Fprintf(os.Stderr, "  → %s (%s): reconnecting (skip-deploy)...", remoteNodeID, addr)
+			}
+
+			// Connect via mTLS to the (re)started node.
+			var d net.Dialer
+			conn, err := d.DialContext(ctx, "tcp", meshAddr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", err)
+				continue
+			}
+
+			if err := node.AddPeer(ctx, conn, false); err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				_ = conn.Close()
+				continue
+			}
+
+			fmt.Fprintf(os.Stderr, " ✓ upgraded + connected (mTLS)\n")
+			deployed = append(deployed, deployedNode{
+				nodeID: remoteNodeID,
+				conn:   conn,
+			})
+			continue
+		}
+
+		// --- Fresh deploy path: node is not running ---
 		fmt.Fprintf(os.Stderr, "  → %s (%s): deploying...", remoteNodeID, addr)
 
 		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
