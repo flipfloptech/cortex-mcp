@@ -2,6 +2,40 @@
 
 A complete, feature-rich example binary demonstrating the full cortex-mesh lifecycle. This binary serves as the reference integration pattern — a single Go program that operates as either a **gateway** (bootstrap node) or a **fleet node** (deployed), depending on how it was launched.
 
+## Operational Modes
+
+### Test Mode (default, temporary)
+
+```bash
+./mesh-example -config example/mesh.toml
+```
+
+Deploys to **only** the seed hosts in `mesh.toml`. Nodes are temporary processes
+that die when the gateway disconnects. Great for validating connectivity,
+credentials, and tool execution.
+
+### Persistent Mode (install + systemd)
+
+```bash
+./mesh-example -config example/mesh.toml -install
+```
+
+Deploys to seed hosts **and** installs as a systemd service. Nodes persist
+across reboots and are managed via standard `systemctl` commands:
+
+```bash
+systemctl status cortex-mesh   # check node health
+systemctl restart cortex-mesh  # restart the mesh node
+systemctl stop cortex-mesh     # graceful shutdown
+```
+
+### Fleet Node Mode (automatic)
+
+```bash
+# Set automatically by SelfDeployer — never run manually:
+CORTEX_MESH_SPAWNED=1 ./mesh-example -daemon
+```
+
 ## What It Demonstrates
 
 | Phase | Feature | Layer |
@@ -15,7 +49,8 @@ A complete, feature-rich example binary demonstrating the full cortex-mesh lifec
 | 7 | Sonar broadcast discovery (`tool:*`) | `routing` |
 | 8 | Remote invocation via NeuronBridge (GrpcDialer + DialInvoke) | `tools` |
 | 9 | Fan-out invocation across fleet | `gateway` + `tools` |
-| 10 | Clean teardown with node event callbacks | `api` |
+| 10 | Mesh topology snapshot | `api` |
+| 11 | Clean teardown with node event callbacks | `api` |
 
 ## Quick Start
 
@@ -26,10 +61,13 @@ CGO_ENABLED=0 go build -o mesh-example ./example/
 # Or use task (CGO_ENABLED=0 is set automatically):
 task example
 
-# Run with a config file (enables remote deployment):
+# Test mode — deploy to seed hosts, run demo, exit:
 ./mesh-example -config example/mesh.toml
 
-# Run without config (local-only mode — demonstrates phases 1–4):
+# Persistent mode — install systemd services on remote hosts:
+./mesh-example -config example/mesh.toml -install
+
+# Local-only mode (no remote hosts):
 ./mesh-example
 ```
 
@@ -50,10 +88,25 @@ task example
 │  │ Phase 7: Sonar   │             │ ServeToolListener │           │
 │  │ Phase 8: Invoke  │             │ <block forever>   │           │
 │  │ Phase 9: FanOut  │             └──────────────────┘           │
-│  │ Phase 10: Close  │                                            │
+│  │ Phase 10: Topo   │                                            │
+│  │ Phase 11: Close  │                                            │
 │  └──────────────────┘                                            │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+## Deployment Model
+
+The deployer works **strictly from the config file**:
+
+1. Reads seed hosts from `mesh.toml` `[hosts.*]` sections
+2. Resolves each target: config IPs first, DNS fallback for hostnames
+3. Deploys the binary via SSH/SFTP to each target
+4. In persistent mode (`-install`): installs a systemd service unit
+5. Connects to each deployed node via mTLS
+
+**No `/etc/hosts` scraping. No autonomous spreading. No background discovery loops.**
+
+The deployer does exactly what the config says — no more, no less.
 
 ## Configuration (`mesh.toml`)
 
@@ -61,6 +114,7 @@ task example
 [node]
 id = "gateway-01"
 
+# Deployment targets — these are the ONLY hosts that will be deployed to.
 [hosts.oss-01]
 addresses = ["10.0.1.10"]
 
@@ -97,68 +151,6 @@ ldd ./mesh-example  # → "not a dynamic executable"
 
 `SelfDeployer.Deploy()` validates this automatically — if the binary has a `PT_INTERP` program header (dynamic linker), it rejects the deploy with an actionable error before any SSH connection.
 
-## Expected Output (local-only mode)
-
-```
-=== cortex-mesh E2E example ===
-Gateway node: my-laptop
-Registered tools:
-  - hello (demo): Say hello from this node
-  - system_info (system): Get basic system information
-
---- Phase 1: Ephemeral PKI ---
-  ✓ Site CA generated (ephemeral, 24h validity)
-  ✓ Gateway cert: CN=my-laptop
-
---- Phase 2: Create mesh node ---
-  ✓ Node created: my-laptop (peers=0, caps=2)
-  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)
-
---- Phase 3: Local tool invocation ---
-  hello: {"text":"Hello, cortex-mesh! From node my-laptop"}
-  system_info: {"arch":"amd64","cpus":16,"hostname":"my-laptop","node_id":"my-laptop","os":"linux"}
-
---- Phase 4: Gateway meta-tools ---
-  list_tools: [{"name":"hello",...},{"name":"system_info",...}]
-  tool_help: {"name":"system_info","description":"Get basic system information",...}
-  call_tool: {"text":"Hello, mesh-gateway! From node my-laptop"}
-
-No seed hosts configured in mesh.toml. Skipping remote phases.
-
-Done (local-only mode).
-```
-
-## Expected Output (with remote hosts)
-
-When seed hosts are configured, the output continues with phases 5–10:
-
-```
---- Phase 5: Deploy + mesh connect ---
-  → oss-01 (10.0.1.10:22): deploying... ✓ deployed + connected (mTLS via TCP)
-  [event] peer joined: oss-01
-
---- Phase 6: Gossip ---
-  ✓ Gossip ticker started (3s interval)
-  Waiting for gossip convergence...
-  ✓ Peers: 1
-
---- Phase 7: Sonar discovery ---
-  ✓ Discovered 1 node(s) with tool:system_info
-    - oss-01 (impedance=5.0)
-
---- Phase 8: Remote invocation via NeuronBridge ---
-  ✓ oss-01: {"node_id":"oss-01","hostname":"oss-01","os":"linux","arch":"amd64","cpus":32}
-
---- Phase 9: Fan-out hello ---
-  ✓ fan-out result: [{"text":"Hello, mesh-gateway! From node oss-01"}]
-
---- Phase 10: Cleanup ---
-  [event] peer lost: oss-01
-  ✓ oss-01: disconnected
-
-Done.
-```
-
 ## Deploy + Cert Bootstrap Protocol
 
 After SSH deployment, the gateway waits for the fleet node's readiness signal before sending certificate material. This ensures the remote binary is alive and ready before any data exchange:
@@ -189,6 +181,30 @@ Gateway (Deploy)                     Fleet Node
    │  Stream 0: gossip, sonar            │
    │  Stream N: tool invocation           │
 ```
+
+## Systemd Service (Persistent Mode)
+
+When `-install` is used, the deployer writes a systemd unit to each remote host:
+
+```ini
+[Unit]
+Description=Cortex Mesh Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/cortex-mesh/bin/cortex-mesh -daemon
+Environment=CORTEX_MESH_SPAWNED=1
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The binary is installed to `/opt/cortex-mesh/bin/cortex-mesh` (permanent) instead of `/tmp/cortex-mesh-node` (ephemeral).
 
 ## Tool Wire Protocol
 

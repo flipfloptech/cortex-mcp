@@ -13,9 +13,9 @@
 # id = "gateway-01"
 
 # --- Seed Hosts ---
-# Pre-seed the mesh resolver with known node addresses.
-# These are starting points for peer discovery — the mesh grows
-# organically through gossip once initial connections are made.
+# Deployment targets. The deployer will connect to (or deploy to)
+# exactly these hosts — no more, no less. In persistent mode
+# (-install), these hosts get systemd service installation.
 #
 # Format: [hosts.<node-id>]
 #   addresses = ["<ip-or-hostname>", ...]
