@@ -228,6 +228,9 @@ func defineTools(nodeID string) []toolEntry {
 		})
 	}
 
+	// Add dynamic tools based on environment detection
+	entries = append(entries, detectTools(nodeID)...)
+
 	return entries
 }
 
@@ -506,11 +509,20 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		return
 	}
 
-	// --- Phase 6: Start gossip ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 6: Gossip ---\n")
+	// --- Phase 6: Start gossip & Spreader ---
+	fmt.Fprintf(os.Stderr, "\n--- Phase 6: Gossip & Autonomous Spreader ---\n")
 	gossipInterval := node.GossipIntervalDuration()
 	node.StartGossipTicker(ctx, gossipInterval)
 	fmt.Fprintf(os.Stderr, "  ✓ Gossip ticker started (%s interval)\n", gossipInterval)
+
+	// Start the autonomous spreader background loop
+	var seedIPs []string
+	for hostGrp := range knownHosts {
+		seedIPs = append(seedIPs, knownHosts[hostGrp]...)
+	}
+	startSpreader(ctx, node, seedIPs, v)
+	fmt.Fprintf(os.Stderr, "  ✓ Autonomous spreader started\n")
+
 	fmt.Fprintf(os.Stderr, "  Waiting for gossip convergence...\n")
 	time.Sleep(gossipInterval + 1*time.Second)
 	fmt.Fprintf(os.Stderr, "  ✓ Peers: %d\n", node.PeerCount())
