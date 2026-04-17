@@ -24,8 +24,12 @@ import (
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/tools"
-	"github.com/cortex-mesh/cortex-mesh/transport"
 )
+
+// liveMode is set to true when the binary enters "serve" or "daemon" mode.
+// This guards deferred execution (systemctl, os.Exit) so handlers return
+// structured responses without side effects during tests.
+var liveMode bool
 
 // lifecycleOp represents a single lifecycle operation that the binary
 // performs on the local system. Operations are structured data, not
@@ -172,7 +176,7 @@ func splitSimple(s string) []string {
 //
 // The actual execution is deferred (goroutine + sleep) so the RPC
 // response is sent before the node restarts/exits. Execution only
-// fires when running on a deployed node (CORTEX_MESH_SPAWNED=1).
+// fires when running on a deployed node (liveMode == true).
 
 // handleNodeRestart restarts the cortex-mesh systemd service locally.
 func handleNodeRestart(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
@@ -183,7 +187,7 @@ func handleNodeRestart(_ context.Context, _ json.RawMessage) (*tools.ToolResult,
 	}
 	data, _ := json.Marshal(resp)
 
-	if transport.WasDeployed() {
+	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			_ = executeOp(lifecycleOp{Action: "systemctl", Args: cmd})
@@ -202,7 +206,7 @@ func handleNodeStop(_ context.Context, _ json.RawMessage) (*tools.ToolResult, er
 	}
 	data, _ := json.Marshal(resp)
 
-	if transport.WasDeployed() {
+	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			_ = executeOp(lifecycleOp{Action: "systemctl", Args: cmd})
@@ -236,7 +240,7 @@ func handleNodeUninstall(_ context.Context, _ json.RawMessage) (*tools.ToolResul
 	}
 	data, _ := json.Marshal(resp)
 
-	if transport.WasDeployed() {
+	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if execErr := executeOps(ops); execErr != nil {
@@ -266,7 +270,7 @@ func handleNodeInstall(_ context.Context, _ json.RawMessage) (*tools.ToolResult,
 	}
 	data, _ := json.Marshal(resp)
 
-	if transport.WasDeployed() {
+	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if execErr := executeOps(ops); execErr != nil {
@@ -301,7 +305,7 @@ func handleNodeUpgrade(_ context.Context, args json.RawMessage) (*tools.ToolResu
 	}
 	data, _ := json.Marshal(resp)
 
-	if transport.WasDeployed() {
+	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if err := executeOps(ops); err != nil {

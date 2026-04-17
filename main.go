@@ -136,38 +136,37 @@ func main() {
 	// Each mode creates its own Registry with the appropriate capability tracker.
 	entries := defineTools(nodeID)
 
-	// --- Fleet node mode ---
-	// When deployed via SelfDeployer, the binary is launched via SSH.
-	if transport.WasDeployed() {
-		// Local lifecycle subcommands — execute directly and exit.
-		switch cmd.Name {
-		case "uninstall":
-			binaryPath, _ := os.Executable()
-			var ops []lifecycleOp
-			if strings.HasPrefix(binaryPath, "/opt/") {
-				ops = selfUninstallOps()
-			} else {
-				ops = ephemeralCleanupOps(binaryPath)
-			}
-			if err := executeOps(ops); err != nil {
-				fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Fprintf(os.Stderr, "Uninstalled\n")
-			return
-		case "install":
-			binaryPath, _ := os.Executable()
-			ops := selfInstallOps(binaryPath)
-			if err := executeOps(ops); err != nil {
-				fmt.Fprintf(os.Stderr, "install: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
-			return
-		}
-
+	// --- Subcommand dispatch ---
+	// SelfDeployer defaults ExecArgs to ["serve"], so deployed nodes
+	// arrive here via subcommand dispatch instead of env var detection.
+	switch cmd.Name {
+	case "serve", "daemon":
+		liveMode = true
 		isDaemon := cmd.Name == "daemon"
 		runFleetNode(ctx, nodeID, entries, cfg, isDaemon)
+		return
+	case "install":
+		binaryPath, _ := os.Executable()
+		ops := selfInstallOps(binaryPath)
+		if err := executeOps(ops); err != nil {
+			fmt.Fprintf(os.Stderr, "install: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
+		return
+	case "uninstall":
+		binaryPath, _ := os.Executable()
+		var ops []lifecycleOp
+		if strings.HasPrefix(binaryPath, "/opt/") {
+			ops = selfUninstallOps()
+		} else {
+			ops = ephemeralCleanupOps(binaryPath)
+		}
+		if err := executeOps(ops); err != nil {
+			fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Uninstalled\n")
 		return
 	}
 
@@ -420,11 +419,10 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 			// ACK to gateway
 			_, _ = os.Stdout.Write([]byte{'O', 'K', 0x00, 0x06})
 
-			// Detach and fork `-daemon`
+			// Detach and fork with "daemon" subcommand
 			exe, _ := os.Executable()
-			cmd := exec.Command(exe, "-daemon")
-			// Pass environment variables down to trick WasDeployed
-			cmd.Env = append(os.Environ(), "CORTEX_MESH_SPAWNED=1")
+			cmd := exec.Command(exe, "daemon")
+			cmd.Env = os.Environ()
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			if err := cmd.Start(); err != nil {
 				slog.Error("spawn detached daemon", "error", err)
@@ -1268,7 +1266,7 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 			continue
 		}
 
-		uninstallCmd := fmt.Sprintf("CORTEX_MESH_SPAWNED=1 %s uninstall", remotePath)
+		uninstallCmd := fmt.Sprintf("%s uninstall", remotePath)
 		if err := execSSHCommand(client, uninstallCmd); err != nil {
 			_ = client.Close()
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)

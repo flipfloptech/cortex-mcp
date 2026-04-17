@@ -8,13 +8,14 @@
 //	./mesh-example stop [node_id]      — stop persistent services via mesh/SSH
 //	./mesh-example bridge <addr>       — raw TCP bridge for firewall traversal
 //	./mesh-example daemon              — run as persistent daemon (systemd entry)
+//	./mesh-example serve               — ephemeral fleet node (SelfDeployer sets this)
 //	./mesh-example                     — default: connect or deploy ephemerally
 package main
 
 // subcommand represents a parsed CLI subcommand with optional target.
 type subcommand struct {
 	// Name is the subcommand name: "install", "uninstall", "start", "stop",
-	// "bridge", "daemon", or "" for default mode.
+	// "bridge", "daemon", "serve", or "" for default mode.
 	Name string
 
 	// Target is the optional node ID or address argument.
@@ -39,7 +40,7 @@ func parseSubcommand(args []string) subcommand {
 
 	name := args[0]
 	switch name {
-	case "install", "uninstall", "start", "stop", "bridge", "daemon":
+	case "install", "uninstall", "start", "stop", "bridge", "daemon", "serve":
 		cmd := subcommand{Name: name}
 		if len(args) > 1 {
 			cmd.Target = args[1]

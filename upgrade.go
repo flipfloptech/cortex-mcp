@@ -61,7 +61,7 @@ func needsUpgrade(skipDeploy bool) bool {
 // after a binary upgrade. Execs the binary with the install subcommand
 // which handles daemon-reload + enable + restart.
 func upgradeRestartCommand(remotePath string) string {
-	return fmt.Sprintf("CORTEX_MESH_SPAWNED=1 %s install", remotePath)
+	return fmt.Sprintf("%s install", remotePath)
 }
 
 // upgradeRemoteNode pushes a new binary to an existing node via SSH/SFTP

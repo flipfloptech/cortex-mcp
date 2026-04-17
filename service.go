@@ -39,8 +39,8 @@ func serviceUnitPath() string {
 }
 
 // generateServiceUnit produces a systemd unit file for a persistent mesh node.
-// The binary is expected at binaryPath and will run with -daemon and
-// CORTEX_MESH_SPAWNED=1 to enter fleet node mode.
+// The binary is expected at binaryPath and will run with the "daemon" subcommand
+// to enter persistent fleet node mode.
 func generateServiceUnit(binaryPath string) string {
 	return fmt.Sprintf(`[Unit]
 Description=Cortex Mesh Node
@@ -49,8 +49,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%s -daemon
-Environment=CORTEX_MESH_SPAWNED=1
+ExecStart=%s daemon
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535
