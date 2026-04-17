@@ -70,11 +70,14 @@ func installCommands() []string {
 	}
 }
 
-// uninstallCommands returns the shell commands to stop and remove
-// the cortex-mesh systemd service.
+// uninstallCommands returns the shell commands to fully remove
+// the cortex-mesh systemd service and binary.
 func uninstallCommands() []string {
 	return []string{
 		fmt.Sprintf("systemctl stop %s", serviceName),
 		fmt.Sprintf("systemctl disable %s", serviceName),
+		fmt.Sprintf("rm -f %s", serviceUnitPath()),
+		"systemctl daemon-reload",
+		fmt.Sprintf("rm -f %s", defaultInstallPath),
 	}
 }

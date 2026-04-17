@@ -81,6 +81,7 @@ func main() {
 	daemon := flag.Bool("daemon", false, "run as a persistent daemon (reads identity from disk)")
 	install := flag.Bool("install", false, "install node identity via stdin and spawn daemon")
 	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
+	uninstall := flag.Bool("uninstall", false, "uninstall cortex-mesh from all seed hosts (stop service, remove binary)")
 	bridgeAddr := flag.String("bridge", "", "bridge stdin/stdout to a local TCP address (e.g. localhost:4443)")
 	flag.Parse()
 
@@ -125,6 +126,13 @@ func main() {
 	// When deployed via SelfDeployer, the binary is launched via SSH.
 	if transport.WasDeployed() {
 		runFleetNode(ctx, nodeID, entries, cfg, *daemon)
+		return
+	}
+
+	// --- Uninstall mode ---
+	// SSH to each seed host and remove the systemd service + binary.
+	if *uninstall {
+		uninstallFleet(ctx, cfg)
 		return
 	}
 
@@ -1104,4 +1112,78 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 	}
 
 	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", defaults)
+}
+
+// uninstallFleet SSHes to each seed host and removes the cortex-mesh
+// systemd service, unit file, and binary. This provides a clean slate
+// for re-running E2E tests or transitioning between deployment modes.
+func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
+	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mesh from fleet ---\n")
+
+	// Build vault for SSH credentials.
+	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ generate key: %v\n", err)
+		return
+	}
+
+	v, err := vault.New(privKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ vault: %v\n", err)
+		return
+	}
+
+	if err := cfg.LoadCredentials(v); err != nil {
+		slog.Warn("some credentials failed to load", "error", err)
+	}
+
+	knownHosts := cfg.KnownHosts()
+	cmds := uninstallCommands()
+	cmdLine := strings.Join(cmds, " && ")
+
+	for remoteNodeID, addrs := range knownHosts {
+		if len(addrs) == 0 {
+			continue
+		}
+
+		addr := addrs[0]
+		if !strings.Contains(addr, ":") {
+			addr = addr + ":22"
+		}
+
+		cred, ok := v.Match(addr)
+		if !ok {
+			host := strings.Split(addr, ":")[0]
+			cred, ok = v.Match(host)
+		}
+		if !ok {
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, addr)
+			continue
+		}
+
+		deployCred, err := toDeployCredential(cred)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, addr)
+
+		client, err := dialSSH(ctx, addr, deployCred)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
+			continue
+		}
+
+		if err := execSSHCommand(client, cmdLine); err != nil {
+			_ = client.Close()
+			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+			continue
+		}
+
+		_ = client.Close()
+		fmt.Fprintf(os.Stderr, " ✓ removed\n")
+	}
+
+	fmt.Fprintf(os.Stderr, "--- Uninstall complete ---\n")
 }

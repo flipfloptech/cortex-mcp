@@ -151,4 +151,3 @@ func TestUninstallCommands(t *testing.T) {
 		t.Error("uninstall commands missing daemon-reload after unit removal")
 	}
 }
-
