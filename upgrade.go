@@ -89,33 +89,10 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		}
 	}()
 
-	// Build SSH client config.
-	authMethods, err := buildSSHAuth(cred)
+	client, err := dialSSH(ctx, targetHost, cred)
 	if err != nil {
 		return fmt.Errorf("upgrade: %w", err)
 	}
-
-	clientConf := &ssh.ClientConfig{
-		User:            cred.SSHUser,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	// Dial TCP.
-	var dialer net.Dialer
-	tcpConn, err := dialer.DialContext(ctx, "tcp", targetHost)
-	if err != nil {
-		return fmt.Errorf("upgrade: dial %q: %w", targetHost, err)
-	}
-
-	// SSH handshake.
-	sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, targetHost, clientConf)
-	if err != nil {
-		_ = tcpConn.Close()
-		return fmt.Errorf("upgrade: SSH handshake with %q: %w", targetHost, err)
-	}
-
-	client := ssh.NewClient(sshConn, chans, reqs)
 	defer func() {
 		if cerr := client.Close(); cerr != nil {
 			slog.Debug("upgrade: close SSH", "error", cerr)
@@ -212,4 +189,119 @@ func buildSSHAuth(cred transport.DeployCredential) ([]ssh.AuthMethod, error) {
 	}
 
 	return methods, nil
+}
+
+// dialSSH establishes an SSH connection to targetHost using cred.
+// The caller must close the returned client.
+func dialSSH(ctx context.Context, targetHost string, cred transport.DeployCredential) (*ssh.Client, error) {
+	authMethods, err := buildSSHAuth(cred)
+	if err != nil {
+		return nil, err
+	}
+
+	clientConf := &ssh.ClientConfig{
+		User:            cred.SSHUser,
+		Auth:            authMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	var dialer net.Dialer
+	tcpConn, err := dialer.DialContext(ctx, "tcp", targetHost)
+	if err != nil {
+		return nil, fmt.Errorf("dial %q: %w", targetHost, err)
+	}
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, targetHost, clientConf)
+	if err != nil {
+		_ = tcpConn.Close()
+		return nil, fmt.Errorf("SSH handshake with %q: %w", targetHost, err)
+	}
+
+	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+// checkServiceActive uses SSH to check if the cortex-mesh systemd service
+// is running on a remote host. Returns true only if the service is "active".
+func checkServiceActive(ctx context.Context, targetHost string, cred transport.DeployCredential) bool {
+	client, err := dialSSH(ctx, targetHost, cred)
+	if err != nil {
+		slog.Debug("checkServiceActive: SSH failed", "host", targetHost, "error", err)
+		return false
+	}
+	defer func() { _ = client.Close() }()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = session.Close() }()
+
+	output, _ := session.CombinedOutput(serviceActiveCommand())
+	return parseServiceActive(string(output))
+}
+
+// sshExecBridge SSHes to targetHost and execs the mesh binary in bridge
+// mode. Returns the SSH session's stdin/stdout as an io.ReadWriteCloser
+// that can be wrapped in a StdioConn for AddPeer.
+//
+// The bridge command: /opt/cortex-mesh/bin/cortex-mesh -bridge localhost:4443
+//
+// The caller is responsible for closing the returned stream, which will
+// also close the SSH session.
+func sshExecBridge(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string) (io.ReadWriteCloser, error) {
+	client, err := dialSSH(ctx, targetHost, cred)
+	if err != nil {
+		return nil, fmt.Errorf("sshExecBridge: %w", err)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("sshExecBridge: open session: %w", err)
+	}
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		_ = session.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("sshExecBridge: stdin pipe: %w", err)
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		_ = session.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("sshExecBridge: stdout pipe: %w", err)
+	}
+
+	bridgeCmd := fmt.Sprintf("%s -bridge localhost:4443", remotePath)
+	if err := session.Start(bridgeCmd); err != nil {
+		_ = session.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("sshExecBridge: start bridge on %q: %w", targetHost, err)
+	}
+
+	return &bridgeStream{
+		Reader:  stdout,
+		Writer:  stdin,
+		session: session,
+		client:  client,
+	}, nil
+}
+
+// bridgeStream wraps an SSH session's stdin/stdout as an io.ReadWriteCloser.
+type bridgeStream struct {
+	io.Reader
+	io.Writer
+	session *ssh.Session
+	client  *ssh.Client
+}
+
+func (bs *bridgeStream) Close() error {
+	// Signal the bridge to exit by closing stdin.
+	if w, ok := bs.Writer.(io.Closer); ok {
+		_ = w.Close()
+	}
+	_ = bs.session.Close()
+	return bs.client.Close()
 }

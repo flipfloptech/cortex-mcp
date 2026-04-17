@@ -81,10 +81,23 @@ func main() {
 	daemon := flag.Bool("daemon", false, "run as a persistent daemon (reads identity from disk)")
 	install := flag.Bool("install", false, "install node identity via stdin and spawn daemon")
 	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
+	bridgeAddr := flag.String("bridge", "", "bridge stdin/stdout to a local TCP address (e.g. localhost:4443)")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// --- Bridge mode ---
+	// Dumb pipe: stdin/stdout ↔ local TCP. No mesh logic, no tools.
+	// Used when the gateway SSHes to a firewalled host to reach its
+	// locally-running mesh node.
+	if *bridgeAddr != "" {
+		if err := runBridge(ctx, *bridgeAddr, os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// --- Load configuration ---
 	cfg, err := loadConfig(*configPath)
@@ -709,7 +722,10 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// --- Upgrade path: check if node is already running ---
+		// --- Connectivity decision tree ---
+		// 1. TCP:4443 reachable → direct connect (upgrade if needed)
+		// 2. TCP:4443 firewalled, service active → SSH bridge
+		// 3. Neither → fresh deploy
 		host, _, splitErr := net.SplitHostPort(addr)
 		if splitErr != nil {
 			host = strings.Split(addr, ":")[0]
@@ -717,8 +733,9 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 
 		meshAddr := host + ":4443"
 		probeConn := probeExistingNode(ctx, meshAddr)
+
 		if probeConn != nil {
-			// Node is already listening on :4443 — upgrade path.
+			// --- Path 1: TCP reachable, direct connect ---
 			_ = probeConn.Close()
 
 			if needsUpgrade(skipDeploy) {
@@ -729,14 +746,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 					continue
 				}
 				fmt.Fprintf(os.Stderr, " binary pushed, restarting...")
-
-				// Wait for the service to come back up.
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				fmt.Fprintf(os.Stderr, "  → %s (%s): reconnecting (skip-deploy)...", remoteNodeID, addr)
+				fmt.Fprintf(os.Stderr, "  → %s (%s): reconnecting...", remoteNodeID, addr)
 			}
 
-			// Connect via mTLS to the (re)started node.
 			var d net.Dialer
 			conn, err := d.DialContext(ctx, "tcp", meshAddr)
 			if err != nil {
@@ -750,7 +764,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, " ✓ upgraded + connected (mTLS)\n")
+			fmt.Fprintf(os.Stderr, " ✓ connected (mTLS via TCP)\n")
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -758,7 +772,53 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// --- Fresh deploy path: node is not running ---
+		// TCP:4443 unreachable — check if service is installed but firewalled.
+		if checkServiceActive(ctx, addr, deployCred) {
+			// --- Path 2: Service active, port firewalled → SSH bridge ---
+			if needsUpgrade(skipDeploy) {
+				fmt.Fprintf(os.Stderr, "  → %s (%s): upgrading (SSH)...", remoteNodeID, addr)
+				remotePath := installRemotePath("")
+				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
+					fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, " binary pushed, restarting...")
+				time.Sleep(upgradeWaitAfterRestart)
+			} else {
+				fmt.Fprintf(os.Stderr, "  → %s (%s): bridging (SSH)...", remoteNodeID, addr)
+			}
+
+			remotePath := installRemotePath("")
+			stream, err := sshExecBridge(ctx, addr, deployCred, remotePath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ bridge: %v\n", err)
+				continue
+			}
+
+			// Wait for bridge readiness (same 4-byte magic as deploy).
+			readyBuf := make([]byte, 4)
+			if _, err := io.ReadFull(stream, readyBuf); err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ bridge ready: %v\n", err)
+				_ = stream.Close()
+				continue
+			}
+
+			conn := transport.NewStdioConn(stream, stream)
+			if err := node.AddPeer(ctx, conn, false); err != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				_ = conn.Close()
+				continue
+			}
+
+			fmt.Fprintf(os.Stderr, " ✓ connected (mTLS via SSH bridge)\n")
+			deployed = append(deployed, deployedNode{
+				nodeID: remoteNodeID,
+				conn:   conn,
+			})
+			continue
+		}
+
+		// --- Path 3: No existing node → fresh deploy ---
 		fmt.Fprintf(os.Stderr, "  → %s (%s): deploying...", remoteNodeID, addr)
 
 		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
