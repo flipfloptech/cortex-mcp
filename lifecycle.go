@@ -32,10 +32,10 @@ import (
 // shell commands — this is the key abstraction over raw SSH exec.
 type lifecycleOp struct {
 	Action  string `json:"action"`            // "systemctl", "write_file", "remove_file", "copy_binary", "copy_file"
-	Args    string `json:"args,omitempty"`     // e.g. "daemon-reload", "restart cortex-mesh"
-	Path    string `json:"path,omitempty"`     // file path for write/remove/copy
-	Src     string `json:"src,omitempty"`      // source path for copy_file
-	Content string `json:"content,omitempty"`  // file content for write_file
+	Args    string `json:"args,omitempty"`    // e.g. "daemon-reload", "restart cortex-mesh"
+	Path    string `json:"path,omitempty"`    // file path for write/remove/copy
+	Src     string `json:"src,omitempty"`     // source path for copy_file
+	Content string `json:"content,omitempty"` // file content for write_file
 }
 
 // selfInstallOps returns the sequence of operations to install the

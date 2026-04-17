@@ -30,11 +30,23 @@
 //	# Build first (static binary — required for cross-host deployment):
 //	CGO_ENABLED=0 go build -o mesh-example ./example/
 //
-//	# Run the full E2E demo:
+//	# Connect to existing mesh or deploy ephemerally:
 //	./mesh-example -config example/mesh.toml
 //
-//	# As a deployed fleet node (set automatically by SelfDeployer):
-//	CORTEX_MESH_SPAWNED=1 ./mesh-example
+//	# Install persistent services on fleet nodes:
+//	./mesh-example install [node_id]
+//
+//	# Uninstall from fleet nodes:
+//	./mesh-example uninstall [node_id]
+//
+//	# Stop fleet nodes without uninstalling:
+//	./mesh-example stop [node_id]
+//
+//	# Bridge stdin/stdout to a local TCP address:
+//	./mesh-example bridge localhost:4443
+//
+//	# Run as a persistent daemon (systemd entry point):
+//	./mesh-example daemon
 package main
 
 import (

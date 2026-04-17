@@ -1,6 +1,6 @@
 // Package main provides systemd service installation for persistent mesh nodes.
 //
-// When the -install flag is used, the deployer:
+// When the install subcommand is used, the deployer:
 //  1. Uploads the binary to /opt/cortex-mesh/bin/cortex-mesh
 //  2. Writes cortex-mesh.service to /etc/systemd/system/
 //  3. Runs systemctl daemon-reload && systemctl enable --now cortex-mesh
@@ -58,26 +58,4 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 `, binaryPath)
-}
-
-// installCommands returns the shell commands to install and start
-// the cortex-mesh systemd service.
-func installCommands() []string {
-	return []string{
-		"systemctl daemon-reload",
-		fmt.Sprintf("systemctl enable %s", serviceName),
-		fmt.Sprintf("systemctl restart %s", serviceName),
-	}
-}
-
-// uninstallCommands returns the shell commands to fully remove
-// the cortex-mesh systemd service and binary.
-func uninstallCommands() []string {
-	return []string{
-		fmt.Sprintf("systemctl stop %s", serviceName),
-		fmt.Sprintf("systemctl disable %s", serviceName),
-		fmt.Sprintf("rm -f %s", serviceUnitPath()),
-		"systemctl daemon-reload",
-		fmt.Sprintf("rm -f %s", defaultInstallPath),
-	}
 }

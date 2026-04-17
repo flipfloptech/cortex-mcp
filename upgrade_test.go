@@ -8,7 +8,7 @@ import (
 )
 
 // --- upgradeRestartCommand tests ---
-// The restart command should exec the binary with -self-install, not
+// The restart command should exec the binary with the install subcommand, not
 // construct raw shell commands.
 
 func TestUpgradeRestartCommand_Systemd(t *testing.T) {

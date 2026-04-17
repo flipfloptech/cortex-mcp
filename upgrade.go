@@ -71,7 +71,7 @@ func upgradeRestartCommand(remotePath string) string {
 // Flow:
 //  1. SSH to targetHost using cred
 //  2. SFTP the local binary to remotePath (overwrites existing)
-//  3. Exec "<remotePath> -self-install" to re-register and restart
+//  3. Exec the binary with the install subcommand to re-register and restart
 //  4. Close SSH connection
 func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string) error {
 	// Resolve the local binary path.
@@ -105,7 +105,7 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		return fmt.Errorf("upgrade: upload to %q: %w", targetHost, err)
 	}
 
-	// Phase 2: Restart via the binary's self-install flag.
+	// Phase 2: Restart via the binary's install subcommand.
 	if err := execSSHCommand(client, upgradeRestartCommand(remotePath)); err != nil {
 		return fmt.Errorf("upgrade: restart on %q: %w", targetHost, err)
 	}
