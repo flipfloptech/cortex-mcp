@@ -31,7 +31,7 @@
 //	CGO_ENABLED=0 go build -o mesh-example ./example/
 //
 //	# Connect to existing mesh or deploy ephemerally:
-//	./mesh-example -config example/mesh.toml
+//	./mesh-example --config example/mesh.toml
 //
 //	# Install persistent services on fleet nodes:
 //	./mesh-example install [node_id]
@@ -55,7 +55,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -77,6 +76,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
+	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -86,42 +86,144 @@ type toolEntry struct {
 	handler tools.ToolHandler
 }
 
+// GatewayOptions contains operation modes for the bootstrap node.
+type GatewayOptions struct {
+	Install bool
+	Stop    bool
+	Target  string
+}
+
 func main() {
-	// Parse CLI flags — only global flags remain.
-	configPath := flag.String("config", "", "path to mesh.toml config file")
-	skipDeploy := flag.Bool("skip-deploy", false, "skip SFTP upload when deploying nodes")
-	flag.Parse()
+	var configPath string
+	var skipDeploy bool
 
-	// Parse subcommand from remaining args.
-	cmd := parseSubcommand(flag.Args())
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// --- Bridge mode ---
-	// Dumb pipe: stdin/stdout ↔ local TCP. No mesh logic, no tools.
-	// Used when the gateway SSHes to a firewalled host to reach its
-	// locally-running mesh node.
-	if cmd.Name == "bridge" {
-		if cmd.Target == "" {
-			fmt.Fprintf(os.Stderr, "usage: mesh-example bridge <addr>\n")
-			os.Exit(1)
-		}
-		if err := runBridge(ctx, cmd.Target, os.Stdin, os.Stdout); err != nil {
-			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
-			os.Exit(1)
-		}
-		return
+	rootCmd := &cobra.Command{
+		Use:   "mesh-example",
+		Short: "Cortex Mesh Example Application",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			defer cancel()
+			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, GatewayOptions{})
+		},
 	}
 
-	// --- Load configuration ---
-	cfg, err := loadConfig(*configPath)
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to mesh.toml config file")
+	rootCmd.PersistentFlags().BoolVar(&skipDeploy, "skip-deploy", false, "skip SFTP upload when deploying nodes")
+
+	bridgeCmd := &cobra.Command{
+		Use:   "bridge <addr>",
+		Short: "Raw TCP bridge for firewall traversal",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, _, _, _ := initEnv(configPath)
+			defer cancel()
+			if err := runBridge(ctx, args[0], os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	serveCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run as an ephemeral fleet node",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			defer cancel()
+			liveMode = true
+			runFleetNode(ctx, nodeID, entries, cfg, false)
+		},
+	}
+
+	daemonCmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Run as a persistent daemon (systemd entry)",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			defer cancel()
+			liveMode = true
+			runFleetNode(ctx, nodeID, entries, cfg, true)
+		},
+	}
+
+	uninstallCmd := &cobra.Command{
+		Use:   "uninstall [target]",
+		Short: "Remove nodes (ephemeral or persistent)",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, _, cfg, _ := initEnv(configPath)
+			defer cancel()
+			target := ""
+			if len(args) > 0 {
+				target = args[0]
+			}
+			uninstallFleet(ctx, cfg, target)
+		},
+	}
+
+	startCmd := &cobra.Command{
+		Use:   "start [target]",
+		Short: "Start persistent services via SSH",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, _, cfg, _ := initEnv(configPath)
+			defer cancel()
+			target := ""
+			if len(args) > 0 {
+				target = args[0]
+			}
+			startFleet(ctx, cfg, target)
+		},
+	}
+
+	stopCmd := &cobra.Command{
+		Use:   "stop [target]",
+		Short: "Stop fleet nodes without uninstalling",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			defer cancel()
+			target := ""
+			if len(args) > 0 {
+				target = args[0]
+			}
+			opts := GatewayOptions{Stop: true, Target: target}
+			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, opts)
+		},
+	}
+
+	installCmd := &cobra.Command{
+		Use:   "install [target]",
+		Short: "Persist nodes as systemd services",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			defer cancel()
+			target := ""
+			if len(args) > 0 {
+				target = args[0]
+			}
+			opts := GatewayOptions{Install: true, Target: target}
+			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, opts)
+		},
+	}
+
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// initEnv bootstraps the common context, configuration, nodeID and tool definitions.
+func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, []toolEntry) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg, err := loadConfig(configPath)
 	if err != nil {
 		slog.Warn("config not loaded, using defaults", "error", err)
 		cfg = &config.MeshConfig{}
 	}
 
-	// Determine node identity: config > env > hostname.
 	nodeID := cfg.Node.ID
 	if nodeID == "" {
 		nodeID = os.Getenv("CORTEX_NODE_ID")
@@ -131,35 +233,8 @@ func main() {
 		nodeID = hostname
 	}
 
-	// --- Define tools ---
-	// Tool definitions are shared between gateway and fleet nodes.
-	// Each mode creates its own Registry with the appropriate capability tracker.
 	entries := defineTools(nodeID)
-
-	// --- Subcommand dispatch ---
-	// SelfDeployer defaults ExecArgs to ["serve"], so deployed nodes
-	// arrive here via subcommand dispatch instead of env var detection.
-	switch cmd.Name {
-	case "serve", "daemon":
-		liveMode = true
-		isDaemon := cmd.Name == "daemon"
-		runFleetNode(ctx, nodeID, entries, cfg, isDaemon)
-		return
-	}
-
-	// --- Remote Lifecycle Modes ---
-	// Operations that target the fleet directly via SSH from the gateway.
-	if cmd.Name == "uninstall" {
-		uninstallFleet(ctx, cfg, cmd.Target)
-		return
-	}
-	if cmd.Name == "start" {
-		startFleet(ctx, cfg, cmd.Target)
-		return
-	}
-
-	// --- Gateway / Bootstrap mode ---
-	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, cmd)
+	return ctx, cancel, nodeID, cfg, entries
 }
 
 // exampleGroupResolver implements a hardcoded static grouping.
@@ -495,9 +570,8 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy bool, cmd subcommand) {
-	install := cmd.Name == "install"
-	daemon := cmd.Name == "daemon"
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy bool, opts GatewayOptions) {
+	install := opts.Install
 	printHeader(nodeID, entries)
 
 	// --- Phase 1: PKI ---
@@ -602,19 +676,19 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Deploy + mesh connect ---\n")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, daemon, install)
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install)
 
 	if len(deployedNodes) == 0 {
 		fmt.Fprintf(os.Stderr, "\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
 	}
 
-	if cmd.Name == "stop" {
+	if opts.Stop {
 		fmt.Fprintf(os.Stderr, "\n--- Stopping Remote Nodes ---\n")
 
 		agents, _ := bridge.DiscoverTool(ctx, "node_stop")
 		var nodeIDs []string
 		for _, a := range agents {
-			if cmd.Target == "" || a.NodeID == cmd.Target {
+			if opts.Target == "" || a.NodeID == opts.Target {
 				nodeIDs = append(nodeIDs, a.NodeID)
 			}
 		}

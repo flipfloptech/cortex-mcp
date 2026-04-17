@@ -7,7 +7,7 @@ A complete, feature-rich example binary demonstrating the full cortex-mesh lifec
 ### Test Mode (default, temporary)
 
 ```bash
-./mesh-example -config example/mesh.toml
+./mesh-example --config example/mesh.toml
 ```
 
 Deploys to **only** the seed hosts in `mesh.toml`. Nodes are temporary processes
@@ -17,23 +17,23 @@ credentials, and tool execution.
 ### Persistent Mode (install + systemd)
 
 ```bash
-./mesh-example -config example/mesh.toml -install
+./mesh-example install --config example/mesh.toml
 ```
 
 Deploys to seed hosts **and** installs as a systemd service. Nodes persist
-across reboots and are managed via standard `systemctl` commands:
+across reboots and are managed via standard commands:
 
 ```bash
-systemctl status cortex-mesh   # check node health
-systemctl restart cortex-mesh  # restart the mesh node
-systemctl stop cortex-mesh     # graceful shutdown
+./mesh-example start       # start the mesh node
+./mesh-example stop        # graceful shutdown
+./mesh-example uninstall   # uninstall the mesh node
 ```
 
 ### Fleet Node Mode (automatic)
 
 ```bash
 # Set automatically by SelfDeployer — never run manually:
-CORTEX_MESH_SPAWNED=1 ./mesh-example -daemon
+CORTEX_MESH_SPAWNED=1 ./mesh-example daemon
 ```
 
 ## What It Demonstrates
