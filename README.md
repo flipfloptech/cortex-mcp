@@ -41,10 +41,10 @@ task example
 │                                                                  │
 │  Gateway mode:                    Fleet node mode:               │
 │  ┌──────────────────┐             ┌──────────────────┐           │
-│  │ Phase 1: PKI     │             │ SignalReady()     │ → magic  │
+│  │ Phase 1: PKI     │             │ SignalReady()     │ → DeployReadyMagic
 │  │ Phase 2: Node    │             │ readCertBundle()  │           │
 │  │ Phase 3: Local   │             │ SaveIdentity()    │           │
-│  │ Phase 4: Gateway │             │ fork -daemon      │ → "Installed!"
+│  │ Phase 4: Gateway │             │ fork -daemon      │           │
 │  │ Phase 5: Deploy  │──SSH/SFTP─→ │ api.NewNode()     │           │
 │  │ Phase 6: Gossip  │ cert boot   │ Listen(4443)      │ ← TCP mTLS│
 │  │ Phase 7: Sonar   │             │ ServeToolListener │           │
@@ -134,7 +134,7 @@ When seed hosts are configured, the output continues with phases 5–10:
 
 ```
 --- Phase 5: Deploy + mesh connect ---
-  → oss-01 (10.0.1.10:22): deploying... ✓ installed + connected (mTLS via TCP)
+  → oss-01 (10.0.1.10:22): deploying... ✓ deployed + connected (mTLS via TCP)
   [event] peer joined: oss-01
 
 --- Phase 6: Gossip ---
@@ -176,8 +176,8 @@ Gateway (Deploy)                     Fleet Node
    │──── [4B len][key PEM] ──────────────→│  readCertBundle()
    │──── [4B len][CA PEM] ───────────────→│  SaveIdentity()
    │                                      │
-   │◄─── "Installed!\n" ──────────────────│  fork -daemon process
-   │     SSH channel closed                │
+   │                                      │  fork -daemon process
+   │◄─── Process exits 0 ─────────────────│  SSH channel closed
    │                                      │
    │                                      │  -daemon node boots
    │                                      │  Listen(ctx, "0.0.0.0:4443")
