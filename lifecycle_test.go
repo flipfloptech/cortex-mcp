@@ -160,3 +160,150 @@ func TestNodeUninstallToolHandler(t *testing.T) {
 		t.Error("expected non-empty operations list")
 	}
 }
+
+// --- New tool handler tests ---
+// These cover the new lifecycle tools added in the subcommand refactor.
+
+func TestNodeStopToolHandler(t *testing.T) {
+	t.Parallel()
+
+	result, err := handleNodeStop(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("handleNodeStop returned error: %v", err)
+	}
+	if result.IsError {
+		t.Error("handleNodeStop should not return IsError")
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(result.Content, &resp); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	cmd, ok := resp["command"].(string)
+	if !ok || !strings.Contains(cmd, "stop") {
+		t.Errorf("expected stop command, got %v", resp["command"])
+	}
+
+	status, ok := resp["status"].(string)
+	if !ok || status != "scheduled" {
+		t.Errorf("expected status=scheduled, got %v", resp["status"])
+	}
+}
+
+func TestNodeUpgradeToolHandler_MissingPath(t *testing.T) {
+	t.Parallel()
+
+	// Invoking node_upgrade without a path arg should return an error result.
+	result, err := handleNodeUpgrade(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleNodeUpgrade returned Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("handleNodeUpgrade with empty path should return IsError=true")
+	}
+}
+
+func TestNodeUpgradeToolHandler_WithPath(t *testing.T) {
+	t.Parallel()
+
+	args := json.RawMessage(`{"path": "/tmp/cortex-mesh-new"}`)
+	result, err := handleNodeUpgrade(context.Background(), args)
+	if err != nil {
+		t.Fatalf("handleNodeUpgrade returned Go error: %v", err)
+	}
+	if result.IsError {
+		t.Error("handleNodeUpgrade should not return IsError with valid path")
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(result.Content, &resp); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	// Should produce operations: copy_binary + restart.
+	ops, ok := resp["operations"]
+	if !ok {
+		t.Fatal("expected operations in response")
+	}
+
+	opsSlice, ok := ops.([]interface{})
+	if !ok || len(opsSlice) < 2 {
+		t.Errorf("expected at least 2 operations (copy + restart), got %d", len(opsSlice))
+	}
+
+	// Verify first op is copy from the provided path.
+	firstOp, ok := opsSlice[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("could not parse first operation")
+	}
+	if firstOp["action"] != "copy_file" {
+		t.Errorf("expected first action=copy_file, got %v", firstOp["action"])
+	}
+}
+
+func TestNodeDeployToolHandler_MissingTarget(t *testing.T) {
+	t.Parallel()
+
+	// Invoking node_deploy without a target should return an error result.
+	result, err := handleNodeDeploy(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("handleNodeDeploy returned Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Error("handleNodeDeploy with empty target should return IsError=true")
+	}
+}
+
+func TestNodeDeployToolHandler_WithTarget(t *testing.T) {
+	t.Parallel()
+
+	args := json.RawMessage(`{"target": "10.0.1.5"}`)
+	result, err := handleNodeDeploy(context.Background(), args)
+	if err != nil {
+		t.Fatalf("handleNodeDeploy returned Go error: %v", err)
+	}
+	// Without a live mesh connection, the handler should return an error
+	// indicating it cannot deploy (no deployer configured). But it should
+	// at least parse the target correctly and not panic.
+	// The exact behavior depends on whether a deployer is available.
+	// For unit tests, we accept either success or a structured error.
+	if result == nil {
+		t.Fatal("handleNodeDeploy returned nil result")
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(result.Content, &resp); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	target, ok := resp["target"].(string)
+	if !ok || target != "10.0.1.5" {
+		t.Errorf("expected target=10.0.1.5, got %v", resp["target"])
+	}
+}
+
+// --- Ephemeral cleanup ops ---
+// When a node is running ephemerally (from /tmp), uninstall should
+// self-destruct rather than try systemd operations.
+
+func TestEphemeralCleanupOps(t *testing.T) {
+	t.Parallel()
+
+	ops := ephemeralCleanupOps("/tmp/cortex-mesh-abc123")
+
+	if len(ops) == 0 {
+		t.Fatal("expected at least one cleanup op")
+	}
+
+	var hasRemove bool
+	for _, op := range ops {
+		if op.Action == "remove_file" && op.Path == "/tmp/cortex-mesh-abc123" {
+			hasRemove = true
+		}
+	}
+
+	if !hasRemove {
+		t.Error("ephemeralCleanupOps should remove the binary path")
+	}
+}
