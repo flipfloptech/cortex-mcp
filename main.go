@@ -241,6 +241,24 @@ func registerTools(registry *tools.Registry, entries []toolEntry) {
 	}
 }
 
+// registerNodeTools registers tools that depend on a live *api.Node instance.
+// These can't go in defineTools() because the node hasn't been created yet.
+func registerNodeTools(registry *tools.Registry, node *api.Node) {
+	registry.Register(tools.ToolDefinition{
+		Name:            "mesh_topology",
+		Description:     "Reports the current mesh topology: peer count, known nodes, resolver entries, and per-node details",
+		LongDescription: "Returns a point-in-time snapshot of the mesh topology as seen by this node. Includes directly connected peers, all nodes learned via gossip (with impedance and capabilities), and the resolver cache size. Useful for verifying deployment completeness and debugging connectivity.",
+		Category:        "mesh",
+	}, func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+		snap := node.MeshTopology()
+		data, err := json.Marshal(snap)
+		if err != nil {
+			return nil, fmt.Errorf("marshal topology: %w", err)
+		}
+		return &tools.ToolResult{Content: data}, nil
+	})
+}
+
 // runFleetNode handles the deployed fleet node lifecycle.
 func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *config.MeshConfig, isDaemon bool) {
 	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
@@ -345,6 +363,7 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 	// Register tools with capability advertising.
 	registry := tools.NewRegistry(node)
 	registerTools(registry, entries)
+	registerNodeTools(registry, node)
 
 	if !isDaemon {
 		// For standard temporary stdioconns, accept the deployer's connection (mTLS handshake + yamux).
@@ -443,6 +462,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// Register tools with capability advertising.
 	registry := tools.NewRegistry(node)
 	registerTools(registry, entries)
+	registerNodeTools(registry, node)
 
 	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(registry.ListLocal()))
 	fmt.Fprintf(os.Stderr, "  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
