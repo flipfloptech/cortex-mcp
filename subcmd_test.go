@@ -43,7 +43,7 @@ func TestParseSubcommand_InstallWithTarget(t *testing.T) {
 func TestParseSubcommand_AllSubcommands(t *testing.T) {
 	t.Parallel()
 
-	names := []string{"install", "uninstall", "start", "stop", "bridge", "daemon"}
+	names := []string{"install", "uninstall", "start", "stop", "bridge", "daemon", "serve"}
 	for _, name := range names {
 		cmd := parseSubcommand([]string{name})
 		if cmd.Name != name {

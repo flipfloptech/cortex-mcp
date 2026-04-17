@@ -25,14 +25,14 @@ func TestGenerateServiceUnit_DefaultPaths(t *testing.T) {
 		t.Error("unit does not reference correct binary path in ExecStart")
 	}
 
-	// Must set CORTEX_MESH_SPAWNED=1 so WasDeployed() returns true.
-	if !strings.Contains(unit, "CORTEX_MESH_SPAWNED=1") {
-		t.Error("unit missing CORTEX_MESH_SPAWNED=1 environment")
+	// Must use the daemon subcommand.
+	if !strings.Contains(unit, "daemon") {
+		t.Error("unit missing daemon subcommand in ExecStart")
 	}
 
-	// Must include -daemon flag.
-	if !strings.Contains(unit, "-daemon") {
-		t.Error("unit missing -daemon flag in ExecStart")
+	// Must NOT set CORTEX_MESH_SPAWNED (replaced by subcommand dispatch).
+	if strings.Contains(unit, "CORTEX_MESH_SPAWNED") {
+		t.Error("unit should not set CORTEX_MESH_SPAWNED (use daemon subcommand instead)")
 	}
 
 	// Must restart on failure.
