@@ -57,10 +57,11 @@ func needsUpgrade(skipDeploy bool) bool {
 	return !skipDeploy
 }
 
-// upgradeRestartCommand returns the shell command to restart the
-// cortex-mesh systemd service on a remote host.
-func upgradeRestartCommand() string {
-	return fmt.Sprintf("systemctl restart %s", serviceName)
+// upgradeRestartCommand returns the command to restart the service
+// after a binary upgrade. Execs the (new) binary with -self-install
+// which handles daemon-reload + enable + restart.
+func upgradeRestartCommand(remotePath string) string {
+	return fmt.Sprintf("%s -self-install", remotePath)
 }
 
 // upgradeRemoteNode pushes a new binary to an existing node via SSH/SFTP
@@ -70,7 +71,7 @@ func upgradeRestartCommand() string {
 // Flow:
 //  1. SSH to targetHost using cred
 //  2. SFTP the local binary to remotePath (overwrites existing)
-//  3. Exec "systemctl restart cortex-mesh" on the remote host
+//  3. Exec "<remotePath> -self-install" to re-register and restart
 //  4. Close SSH connection
 func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string) error {
 	// Resolve the local binary path.
@@ -104,8 +105,8 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		return fmt.Errorf("upgrade: upload to %q: %w", targetHost, err)
 	}
 
-	// Phase 2: Restart the service.
-	if err := execSSHCommand(client, upgradeRestartCommand()); err != nil {
+	// Phase 2: Restart via the binary's self-install flag.
+	if err := execSSHCommand(client, upgradeRestartCommand(remotePath)); err != nil {
 		return fmt.Errorf("upgrade: restart on %q: %w", targetHost, err)
 	}
 

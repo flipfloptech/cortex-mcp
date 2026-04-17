@@ -8,14 +8,16 @@ import (
 )
 
 // --- upgradeRestartCommand tests ---
-// The restart command must be correct for systemd-managed nodes.
+// The restart command should exec the binary with -self-install, not
+// construct raw shell commands.
 
 func TestUpgradeRestartCommand_Systemd(t *testing.T) {
 	t.Parallel()
 
-	cmd := upgradeRestartCommand()
-	if cmd != "systemctl restart cortex-mesh" {
-		t.Errorf("expected 'systemctl restart cortex-mesh', got %q", cmd)
+	cmd := upgradeRestartCommand("/opt/cortex-mesh/bin/cortex-mesh")
+	expected := "/opt/cortex-mesh/bin/cortex-mesh -self-install"
+	if cmd != expected {
+		t.Errorf("expected %q, got %q", expected, cmd)
 	}
 }
 

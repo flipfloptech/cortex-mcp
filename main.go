@@ -81,7 +81,9 @@ func main() {
 	daemon := flag.Bool("daemon", false, "run as a persistent daemon (reads identity from disk)")
 	install := flag.Bool("install", false, "install node identity via stdin and spawn daemon")
 	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
-	uninstall := flag.Bool("uninstall", false, "uninstall cortex-mesh from all seed hosts (stop service, remove binary)")
+	uninstall := flag.Bool("uninstall", false, "uninstall cortex-mesh from all seed hosts via SSH")
+	selfInstall := flag.Bool("self-install", false, "install this binary as a local systemd service")
+	selfUninstall := flag.Bool("self-uninstall", false, "remove the local systemd service and binary")
 	bridgeAddr := flag.String("bridge", "", "bridge stdin/stdout to a local TCP address (e.g. localhost:4443)")
 	flag.Parse()
 
@@ -97,6 +99,33 @@ func main() {
 			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
 			os.Exit(1)
 		}
+		return
+	}
+
+	// --- Self-install mode ---
+	// Install this binary as a local systemd service.
+	if *selfInstall {
+		binaryPath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "self-install: %v\n", err)
+			os.Exit(1)
+		}
+		if err := executeOps(selfInstallOps(binaryPath)); err != nil {
+			fmt.Fprintf(os.Stderr, "self-install: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
+		return
+	}
+
+	// --- Self-uninstall mode ---
+	// Remove the local systemd service, unit file, and binary.
+	if *selfUninstall {
+		if err := executeOps(selfUninstallOps()); err != nil {
+			fmt.Fprintf(os.Stderr, "self-uninstall: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Uninstalled\n")
 		return
 	}
 
@@ -208,19 +237,47 @@ func defineTools(nodeID string) []toolEntry {
 		},
 		{
 			def: tools.ToolDefinition{
-				Name:        "cleanup_node",
-				Description: "Terminates the deployed fleet node cleanly",
-				Category:    "system",
+				Name:            "node_cleanup",
+				Description:     "Terminates the deployed fleet node cleanly",
+				LongDescription: "Removes the binary and exits the process. Use for ephemeral nodes that should leave no trace.",
+				Category:        "lifecycle",
 			},
 			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
 				go func() {
 					time.Sleep(200 * time.Millisecond) // Give the RPC time to return
-					slog.Info("cleanup_node invoked, self-destructing")
+					slog.Info("node_cleanup invoked, self-destructing")
 					_ = transport.SelfCleanup()
 					os.Exit(0)
 				}()
 				return tools.NewTextResult("Terminating " + nodeID), nil
 			},
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_install",
+				Description:     "Install this node as a persistent systemd service",
+				LongDescription: "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. The node will survive reboots.",
+				Category:        "lifecycle",
+			},
+			handler: handleNodeInstall,
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_uninstall",
+				Description:     "Remove the systemd service, unit file, and binary",
+				LongDescription: "Stops and disables the service, removes the unit file, reloads systemd, and deletes the binary. Complete cleanup.",
+				Category:        "lifecycle",
+			},
+			handler: handleNodeUninstall,
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_restart",
+				Description:     "Restart the local cortex-mesh systemd service",
+				LongDescription: "Runs systemctl restart cortex-mesh. Use after binary upgrades or configuration changes.",
+				Category:        "lifecycle",
+			},
+			handler: handleNodeRestart,
 		},
 	}
 
@@ -533,13 +590,13 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	if cleanup {
 		fmt.Fprintf(os.Stderr, "\n--- Phase [Cleanup]: Terminating Remote Nodes ---\n")
 
-		agents, _ := bridge.DiscoverTool(ctx, "cleanup_node")
+		agents, _ := bridge.DiscoverTool(ctx, "node_cleanup")
 		var nodeIDs []string
 		for _, a := range agents {
 			nodeIDs = append(nodeIDs, a.NodeID)
 		}
 
-		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "cleanup_node", nil)
+		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_cleanup", nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "✗ cleanup dispatch failed: %v\n", err)
 		} else {
@@ -1138,8 +1195,7 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
 	}
 
 	knownHosts := cfg.KnownHosts()
-	cmds := uninstallCommands()
-	cmdLine := strings.Join(cmds, " && ")
+	remotePath := installRemotePath("")
 
 	for remoteNodeID, addrs := range knownHosts {
 		if len(addrs) == 0 {
@@ -1169,13 +1225,15 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
 
 		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, addr)
 
+		// SSH exec the binary with -self-uninstall — no raw shell commands.
 		client, err := dialSSH(ctx, addr, deployCred)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
 			continue
 		}
 
-		if err := execSSHCommand(client, cmdLine); err != nil {
+		uninstallCmd := fmt.Sprintf("%s -self-uninstall", remotePath)
+		if err := execSSHCommand(client, uninstallCmd); err != nil {
 			_ = client.Close()
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
 			continue
