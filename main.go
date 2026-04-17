@@ -75,17 +75,13 @@ type toolEntry struct {
 }
 
 func main() {
-	// Parse CLI flags.
+	// Parse CLI flags — only global flags remain.
 	configPath := flag.String("config", "", "path to mesh.toml config file")
 	skipDeploy := flag.Bool("skip-deploy", false, "skip SFTP upload when deploying nodes")
-	daemon := flag.Bool("daemon", false, "run as a persistent daemon (reads identity from disk)")
-	install := flag.Bool("install", false, "install node identity via stdin and spawn daemon")
-	cleanup := flag.Bool("cleanup", false, "instruct all remote mesh nodes to gracefully shutdown")
-	uninstall := flag.Bool("uninstall", false, "uninstall cortex-mesh from all seed hosts via SSH")
-	selfInstall := flag.Bool("self-install", false, "install this binary as a local systemd service")
-	selfUninstall := flag.Bool("self-uninstall", false, "remove the local systemd service and binary")
-	bridgeAddr := flag.String("bridge", "", "bridge stdin/stdout to a local TCP address (e.g. localhost:4443)")
 	flag.Parse()
+
+	// Parse subcommand from remaining args.
+	cmd := parseSubcommand(flag.Args())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -94,38 +90,15 @@ func main() {
 	// Dumb pipe: stdin/stdout ↔ local TCP. No mesh logic, no tools.
 	// Used when the gateway SSHes to a firewalled host to reach its
 	// locally-running mesh node.
-	if *bridgeAddr != "" {
-		if err := runBridge(ctx, *bridgeAddr, os.Stdin, os.Stdout); err != nil {
+	if cmd.Name == "bridge" {
+		if cmd.Target == "" {
+			fmt.Fprintf(os.Stderr, "usage: mesh-example bridge <addr>\n")
+			os.Exit(1)
+		}
+		if err := runBridge(ctx, cmd.Target, os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
 			os.Exit(1)
 		}
-		return
-	}
-
-	// --- Self-install mode ---
-	// Install this binary as a local systemd service.
-	if *selfInstall {
-		binaryPath, err := os.Executable()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "self-install: %v\n", err)
-			os.Exit(1)
-		}
-		if err := executeOps(selfInstallOps(binaryPath)); err != nil {
-			fmt.Fprintf(os.Stderr, "self-install: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
-		return
-	}
-
-	// --- Self-uninstall mode ---
-	// Remove the local systemd service, unit file, and binary.
-	if *selfUninstall {
-		if err := executeOps(selfUninstallOps()); err != nil {
-			fmt.Fprintf(os.Stderr, "self-uninstall: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Uninstalled\n")
 		return
 	}
 
@@ -154,19 +127,47 @@ func main() {
 	// --- Fleet node mode ---
 	// When deployed via SelfDeployer, the binary is launched via SSH.
 	if transport.WasDeployed() {
-		runFleetNode(ctx, nodeID, entries, cfg, *daemon)
+		// Local lifecycle subcommands — execute directly and exit.
+		switch cmd.Name {
+		case "uninstall":
+			binaryPath, _ := os.Executable()
+			var ops []lifecycleOp
+			if strings.HasPrefix(binaryPath, "/opt/") {
+				ops = selfUninstallOps()
+			} else {
+				ops = ephemeralCleanupOps(binaryPath)
+			}
+			if err := executeOps(ops); err != nil {
+				fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "Uninstalled\n")
+			return
+		case "install":
+			binaryPath, _ := os.Executable()
+			ops := selfInstallOps(binaryPath)
+			if err := executeOps(ops); err != nil {
+				fmt.Fprintf(os.Stderr, "install: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "Installed as systemd service\n")
+			return
+		}
+
+		isDaemon := cmd.Name == "daemon"
+		runFleetNode(ctx, nodeID, entries, cfg, isDaemon)
 		return
 	}
 
 	// --- Uninstall mode ---
-	// SSH to each seed host and remove the systemd service + binary.
-	if *uninstall {
-		uninstallFleet(ctx, cfg)
+	// SSH to each node and remove the systemd service + binary.
+	if cmd.Name == "uninstall" {
+		uninstallFleet(ctx, cfg, cmd.Target)
 		return
 	}
 
 	// --- Gateway / Bootstrap mode ---
-	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, *daemon, *install, *cleanup)
+	runGateway(ctx, cancel, nodeID, cfg, entries, *skipDeploy, cmd)
 }
 
 // exampleGroupResolver implements a hardcoded static grouping.
@@ -237,26 +238,9 @@ func defineTools(nodeID string) []toolEntry {
 		},
 		{
 			def: tools.ToolDefinition{
-				Name:            "node_cleanup",
-				Description:     "Terminates the deployed fleet node cleanly",
-				LongDescription: "Removes the binary and exits the process. Use for ephemeral nodes that should leave no trace.",
-				Category:        "lifecycle",
-			},
-			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-				go func() {
-					time.Sleep(200 * time.Millisecond) // Give the RPC time to return
-					slog.Info("node_cleanup invoked, self-destructing")
-					_ = transport.SelfCleanup()
-					os.Exit(0)
-				}()
-				return tools.NewTextResult("Terminating " + nodeID), nil
-			},
-		},
-		{
-			def: tools.ToolDefinition{
 				Name:            "node_install",
 				Description:     "Install this node as a persistent systemd service",
-				LongDescription: "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. The node will survive reboots.",
+				LongDescription: "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. Converts an ephemeral node into persistent infrastructure.",
 				Category:        "lifecycle",
 			},
 			handler: handleNodeInstall,
@@ -264,8 +248,8 @@ func defineTools(nodeID string) []toolEntry {
 		{
 			def: tools.ToolDefinition{
 				Name:            "node_uninstall",
-				Description:     "Remove the systemd service, unit file, and binary",
-				LongDescription: "Stops and disables the service, removes the unit file, reloads systemd, and deletes the binary. Complete cleanup.",
+				Description:     "Remove this node — handles both persistent (systemd) and ephemeral (/tmp) nodes",
+				LongDescription: "Detects whether the node is persistent or ephemeral. Persistent: stops/disables service, removes unit + binary. Ephemeral: removes the /tmp binary and exits.",
 				Category:        "lifecycle",
 			},
 			handler: handleNodeUninstall,
@@ -278,6 +262,39 @@ func defineTools(nodeID string) []toolEntry {
 				Category:        "lifecycle",
 			},
 			handler: handleNodeRestart,
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_stop",
+				Description:     "Stop the cortex-mesh systemd service without uninstalling",
+				LongDescription: "Gracefully stops the service. The node remains installed and can be restarted. Use for maintenance windows.",
+				Category:        "lifecycle",
+			},
+			handler: handleNodeStop,
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_upgrade",
+				Description:     "Upgrade the node binary and restart the service",
+				LongDescription: "Copies a new binary from the specified path over the installed binary, reloads systemd, and restarts the service.",
+				Category:        "lifecycle",
+				Parameters: []tools.ToolParam{
+					{Name: "path", Type: "string", Description: "Path to the new binary (e.g., /tmp/cortex-mesh-new)", Required: true},
+				},
+			},
+			handler: handleNodeUpgrade,
+		},
+		{
+			def: tools.ToolDefinition{
+				Name:            "node_deploy",
+				Description:     "Deploy this binary to another host via the mesh",
+				LongDescription: "Deploys the mesh binary to the specified target host using SelfDeployer. Any node in the fabric can act as a jumphost, enabling deployment to hosts unreachable from the gateway.",
+				Category:        "lifecycle",
+				Parameters: []tools.ToolParam{
+					{Name: "target", Type: "string", Description: "Target host address (e.g., 10.0.1.5 or host:port)", Required: true},
+				},
+			},
+			handler: handleNodeDeploy,
 		},
 	}
 
@@ -476,7 +493,9 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy, daemon, install, cleanup bool) {
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy bool, cmd subcommand) {
+	install := cmd.Name == "install"
+	daemon := cmd.Name == "daemon"
 	printHeader(nodeID, entries)
 
 	// --- Phase 1: PKI ---
@@ -587,24 +606,25 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		fmt.Fprintf(os.Stderr, "\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
 	}
 
-	if cleanup {
-		fmt.Fprintf(os.Stderr, "\n--- Phase [Cleanup]: Terminating Remote Nodes ---\n")
+	if cmd.Name == "stop" {
+		fmt.Fprintf(os.Stderr, "\n--- Stopping Remote Nodes ---\n")
 
-		agents, _ := bridge.DiscoverTool(ctx, "node_cleanup")
+		agents, _ := bridge.DiscoverTool(ctx, "node_stop")
 		var nodeIDs []string
 		for _, a := range agents {
-			nodeIDs = append(nodeIDs, a.NodeID)
+			if cmd.Target == "" || a.NodeID == cmd.Target {
+				nodeIDs = append(nodeIDs, a.NodeID)
+			}
 		}
 
-		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_cleanup", nil)
+		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_stop", nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "✗ cleanup dispatch failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "✗ stop dispatch failed: %v\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "✓ cleanup broadcast successful (%d nodes reported terminal)\n", len(res))
+			fmt.Fprintf(os.Stderr, "✓ stop broadcast successful (%d nodes)\n", len(res))
 		}
-		// Gracefully terminate the gateway locally
 		cancel()
-		time.Sleep(500 * time.Millisecond) // Give yamux streams a moment to flush replies
+		time.Sleep(500 * time.Millisecond)
 		return
 	}
 
@@ -1171,10 +1191,10 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", defaults)
 }
 
-// uninstallFleet SSHes to each seed host and removes the cortex-mesh
-// systemd service, unit file, and binary. This provides a clean slate
-// for re-running E2E tests or transitioning between deployment modes.
-func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
+// uninstallFleet SSHes to each node and removes the cortex-mesh
+// systemd service, unit file, and binary. If target is non-empty,
+// only the specified node is uninstalled.
+func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mesh from fleet ---\n")
 
 	// Build vault for SSH credentials.
@@ -1198,6 +1218,10 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
 	remotePath := installRemotePath("")
 
 	for remoteNodeID, addrs := range knownHosts {
+		// Skip nodes that don't match the target filter.
+		if target != "" && remoteNodeID != target {
+			continue
+		}
 		if len(addrs) == 0 {
 			continue
 		}
@@ -1225,14 +1249,14 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig) {
 
 		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, addr)
 
-		// SSH exec the binary with -self-uninstall — no raw shell commands.
+		// SSH exec the binary with the uninstall subcommand.
 		client, err := dialSSH(ctx, addr, deployCred)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
 			continue
 		}
 
-		uninstallCmd := fmt.Sprintf("%s -self-uninstall", remotePath)
+		uninstallCmd := fmt.Sprintf("CORTEX_MESH_SPAWNED=1 %s uninstall", remotePath)
 		if err := execSSHCommand(client, uninstallCmd); err != nil {
 			_ = client.Close()
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)

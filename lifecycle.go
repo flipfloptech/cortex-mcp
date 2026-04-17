@@ -1,13 +1,16 @@
 // Package main provides agent-level lifecycle management for mesh nodes.
 //
-// Instead of running raw shell commands over SSH, lifecycle operations
-// are modeled as structured operations (lifecycleOp) that the binary
-// executes locally. This keeps all systemd interaction inside the
-// binary itself — the gateway never constructs shell commands.
+// Lifecycle operations are modeled as structured operations (lifecycleOp)
+// that the binary executes locally. This keeps all systemd interaction
+// inside the binary itself — the gateway never constructs shell commands.
 //
-// Two interfaces:
-//   - Binary flags (-self-install, -self-uninstall): for pre-mesh bootstrap
-//   - Mesh tools (node_install, node_uninstall, node_restart): for runtime
+// Tool handlers:
+//   - node_install:   convert ephemeral → persistent (systemd service)
+//   - node_uninstall: remove persistent service OR cleanup ephemeral binary
+//   - node_restart:   restart the systemd service
+//   - node_stop:      stop the systemd service without uninstalling
+//   - node_upgrade:   replace the binary and restart
+//   - node_deploy:    deploy this binary to another host via the mesh
 package main
 
 import (
@@ -17,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/tools"
@@ -27,10 +31,11 @@ import (
 // performs on the local system. Operations are structured data, not
 // shell commands — this is the key abstraction over raw SSH exec.
 type lifecycleOp struct {
-	Action  string `json:"action"`            // "systemctl", "write_file", "remove_file", "copy_binary"
-	Args    string `json:"args,omitempty"`    // e.g. "daemon-reload", "restart cortex-mesh"
-	Path    string `json:"path,omitempty"`    // file path for write/remove/copy
-	Content string `json:"content,omitempty"` // file content for write_file
+	Action  string `json:"action"`            // "systemctl", "write_file", "remove_file", "copy_binary", "copy_file"
+	Args    string `json:"args,omitempty"`     // e.g. "daemon-reload", "restart cortex-mesh"
+	Path    string `json:"path,omitempty"`     // file path for write/remove/copy
+	Src     string `json:"src,omitempty"`      // source path for copy_file
+	Content string `json:"content,omitempty"`  // file content for write_file
 }
 
 // selfInstallOps returns the sequence of operations to install the
@@ -54,6 +59,25 @@ func selfUninstallOps() []lifecycleOp {
 		{Action: "remove_file", Path: serviceUnitPath()},
 		{Action: "systemctl", Args: "daemon-reload"},
 		{Action: "remove_file", Path: defaultInstallPath},
+	}
+}
+
+// ephemeralCleanupOps returns operations to self-destruct an ephemeral
+// node running from a temporary path (e.g., /tmp/cortex-mesh-abc123).
+func ephemeralCleanupOps(binaryPath string) []lifecycleOp {
+	return []lifecycleOp{
+		{Action: "remove_file", Path: binaryPath},
+	}
+}
+
+// nodeUpgradeOps returns the sequence of operations to upgrade an
+// installed node: copy the new binary from src to the install path,
+// then restart the service.
+func nodeUpgradeOps(srcPath string) []lifecycleOp {
+	return []lifecycleOp{
+		{Action: "copy_file", Src: srcPath, Path: defaultInstallPath},
+		{Action: "systemctl", Args: "daemon-reload"},
+		{Action: "systemctl", Args: fmt.Sprintf("restart %s", serviceName)},
 	}
 }
 
@@ -96,6 +120,14 @@ func executeOp(op lifecycleOp) error {
 		data, err := os.ReadFile(src)
 		if err != nil {
 			return fmt.Errorf("read binary: %w", err)
+		}
+		return os.WriteFile(op.Path, data, 0755)
+
+	case "copy_file":
+		slog.Info("lifecycle", "action", "copy_file", "src", op.Src, "dest", op.Path)
+		data, err := os.ReadFile(op.Src)
+		if err != nil {
+			return fmt.Errorf("read source: %w", err)
 		}
 		return os.WriteFile(op.Path, data, 0755)
 
@@ -161,10 +193,43 @@ func handleNodeRestart(_ context.Context, _ json.RawMessage) (*tools.ToolResult,
 	return &tools.ToolResult{Content: data}, nil
 }
 
-// handleNodeUninstall returns the uninstall operations that will be
-// executed. The actual uninstall is deferred so the RPC can return.
+// handleNodeStop stops the cortex-mesh systemd service without uninstalling.
+func handleNodeStop(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
+	cmd := fmt.Sprintf("stop %s", serviceName)
+	resp := map[string]string{
+		"command": cmd,
+		"status":  "scheduled",
+	}
+	data, _ := json.Marshal(resp)
+
+	if transport.WasDeployed() {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			_ = executeOp(lifecycleOp{Action: "systemctl", Args: cmd})
+		}()
+	}
+
+	return &tools.ToolResult{Content: data}, nil
+}
+
+// handleNodeUninstall detects whether the node is running as a persistent
+// daemon (from /opt/...) or ephemerally (from /tmp/...) and generates
+// the appropriate cleanup operations.
 func handleNodeUninstall(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-	ops := selfUninstallOps()
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return tools.NewErrorResult(fmt.Sprintf("resolve executable: %v", err)), nil
+	}
+
+	var ops []lifecycleOp
+	if strings.HasPrefix(binaryPath, defaultInstallPath) || strings.HasPrefix(binaryPath, "/opt/") {
+		// Persistent install — full systemd teardown.
+		ops = selfUninstallOps()
+	} else {
+		// Ephemeral — just remove the binary.
+		ops = ephemeralCleanupOps(binaryPath)
+	}
+
 	resp := map[string]interface{}{
 		"operations": ops,
 		"status":     "scheduled",
@@ -174,8 +239,12 @@ func handleNodeUninstall(_ context.Context, _ json.RawMessage) (*tools.ToolResul
 	if transport.WasDeployed() {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := executeOps(ops); err != nil {
-				slog.Error("node_uninstall failed", "error", err)
+			if execErr := executeOps(ops); execErr != nil {
+				slog.Error("node_uninstall failed", "error", execErr)
+			}
+			// For ephemeral nodes, exit after cleanup.
+			if !strings.HasPrefix(binaryPath, "/opt/") {
+				os.Exit(0)
 			}
 		}()
 	}
@@ -200,11 +269,79 @@ func handleNodeInstall(_ context.Context, _ json.RawMessage) (*tools.ToolResult,
 	if transport.WasDeployed() {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := executeOps(ops); err != nil {
-				slog.Error("node_install failed", "error", err)
+			if execErr := executeOps(ops); execErr != nil {
+				slog.Error("node_install failed", "error", execErr)
 			}
 		}()
 	}
+
+	return &tools.ToolResult{Content: data}, nil
+}
+
+// handleNodeUpgrade accepts a path to a new binary, generates operations
+// to copy it over the installed binary and restart the service.
+func handleNodeUpgrade(_ context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &params); err != nil {
+			return tools.NewErrorResult(fmt.Sprintf("parse args: %v", err)), nil
+		}
+	}
+
+	if params.Path == "" {
+		return tools.NewErrorResult("path is required: provide the path to the new binary"), nil
+	}
+
+	ops := nodeUpgradeOps(params.Path)
+	resp := map[string]interface{}{
+		"operations": ops,
+		"status":     "scheduled",
+	}
+	data, _ := json.Marshal(resp)
+
+	if transport.WasDeployed() {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			if err := executeOps(ops); err != nil {
+				slog.Error("node_upgrade failed", "error", err)
+			}
+		}()
+	}
+
+	return &tools.ToolResult{Content: data}, nil
+}
+
+// handleNodeDeploy accepts a target host and returns a structured response.
+// When invoked on a live mesh node, it uses SelfDeployer to deploy this
+// binary to the target host and wraps the resulting stream as a new peer.
+//
+// This allows any mesh node to act as a "jumphost" for deploying deeper
+// nodes that the gateway cannot directly SSH to.
+func handleNodeDeploy(_ context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+	var params struct {
+		Target string `json:"target"`
+	}
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &params); err != nil {
+			return tools.NewErrorResult(fmt.Sprintf("parse args: %v", err)), nil
+		}
+	}
+
+	if params.Target == "" {
+		return tools.NewErrorResult("target is required: provide the host to deploy to"), nil
+	}
+
+	// In a live mesh environment, this would invoke SelfDeployer.Deploy()
+	// against the target and wrap the resulting stream as a new peer.
+	// For now, return the structured response so the gateway can validate
+	// the target was parsed correctly.
+	resp := map[string]interface{}{
+		"target": params.Target,
+		"status": "accepted",
+	}
+	data, _ := json.Marshal(resp)
 
 	return &tools.ToolResult{Content: data}, nil
 }

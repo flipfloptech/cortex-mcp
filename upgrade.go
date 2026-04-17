@@ -58,10 +58,10 @@ func needsUpgrade(skipDeploy bool) bool {
 }
 
 // upgradeRestartCommand returns the command to restart the service
-// after a binary upgrade. Execs the (new) binary with -self-install
+// after a binary upgrade. Execs the binary with the install subcommand
 // which handles daemon-reload + enable + restart.
 func upgradeRestartCommand(remotePath string) string {
-	return fmt.Sprintf("%s -self-install", remotePath)
+	return fmt.Sprintf("CORTEX_MESH_SPAWNED=1 %s install", remotePath)
 }
 
 // upgradeRemoteNode pushes a new binary to an existing node via SSH/SFTP
@@ -275,7 +275,7 @@ func sshExecBridge(ctx context.Context, targetHost string, cred transport.Deploy
 		return nil, fmt.Errorf("sshExecBridge: stdout pipe: %w", err)
 	}
 
-	bridgeCmd := fmt.Sprintf("%s -bridge localhost:4443", remotePath)
+	bridgeCmd := fmt.Sprintf("%s bridge localhost:4443", remotePath)
 	if err := session.Start(bridgeCmd); err != nil {
 		_ = session.Close()
 		_ = client.Close()
