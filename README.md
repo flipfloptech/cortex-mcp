@@ -56,7 +56,9 @@ CORTEX_MESH_SPAWNED=1 ./cortex-mcp daemon
 
 ```bash
 # Build first — static binary, no libc dependency:
-CGO_ENABLED=0 go build -o cortex-mcp .
+# You can use the task runner: `task build`
+# Or manually:
+CGO_ENABLED=0 go build -o cortex-mcp ./cmd/cortex-mcp/...
 
 # Test mode — deploy to seed hosts, run demo, exit:
 ./cortex-mcp -config mesh.toml

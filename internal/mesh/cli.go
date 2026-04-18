@@ -70,12 +70,12 @@ import (
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
-	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/membrane"
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
+	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
