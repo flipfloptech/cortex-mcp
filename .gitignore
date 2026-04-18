@@ -1,0 +1,17 @@
+# Binaries
+cortex-mcp
+
+# OS and IDE files
+.DS_Store
+.vscode/
+.idea/
+
+# Go workspaces
+go.work
+go.work.sum
+
+# Go build and test artifacts
+*.test
+*.prof
+*.out
+coverage.out

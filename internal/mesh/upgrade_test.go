@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"context"
@@ -23,8 +23,8 @@ func TestUpgradeRestartCommand_Systemd(t *testing.T) {
 
 // --- probeExistingNode tests ---
 // probeExistingNode tries a quick TCP dial to see if the node is already
-// listening. It does NOT do mTLS — that requires a membrane config that
-// the example owns. It simply checks TCP reachability.
+// listening. It does NOT do mTLS — that requires a membrane config.
+// It simply checks TCP reachability.
 
 func TestProbeExistingNode_Unreachable(t *testing.T) {
 	t.Parallel()

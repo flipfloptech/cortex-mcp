@@ -13,7 +13,7 @@
 //   - stdin/stdout relay data bidirectionally
 //   - When stdin closes (SSH session drops), bridge exits immediately
 //   - No stale processes: bridge lifetime = SSH session lifetime
-package main
+package mesh
 
 import (
 	"context"

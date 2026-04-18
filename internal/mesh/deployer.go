@@ -12,7 +12,7 @@
 // This replaces the former "spreader" pattern which autonomously
 // propagated to every reachable host. The deployer is deliberate:
 // it does exactly what the config says, no more.
-package main
+package mesh
 
 import (
 	"fmt"

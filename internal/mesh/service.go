@@ -9,7 +9,7 @@
 //
 // This transforms the mesh from a temporary process into permanent infrastructure
 // that survives reboots and is managed via standard systemctl commands.
-package main
+package mesh
 
 import "fmt"
 

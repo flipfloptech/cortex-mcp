@@ -1,11 +1,11 @@
-# cortex-mesh example configuration
+# cortex-mcp configuration
 #
 # This file configures the mesh node identity, seed hosts for peer
 # discovery, and SSH credentials for deployment.
 #
 # Usage:
-#   go run ./example/                          # uses ./example/mesh.toml
-#   go run ./example/ -config /path/to/mesh.toml
+#   ./cortex-mcp                               # uses ./mesh.toml
+#   ./cortex-mcp -config /path/to/mesh.toml
 
 # --- Node Identity ---
 # Optional. If not set, the hostname is used as the node ID.

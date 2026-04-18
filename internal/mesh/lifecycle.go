@@ -11,7 +11,7 @@
 //   - node_stop:      stop the systemd service without uninstalling
 //   - node_upgrade:   replace the binary and restart
 //   - node_deploy:    deploy this binary to another host via the mesh
-package main
+package mesh
 
 import (
 	"context"

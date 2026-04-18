@@ -1,9 +1,6 @@
 // Package config provides TOML-based configuration loading for the
-// cortex-mesh example binary. It handles mesh.toml parsing, host
+// cortex-mcp application. It handles mesh.toml parsing, host
 // resolution seeding, and credential vault population.
-//
-// This package is scoped to the example — real consumers will likely
-// have their own configuration formats and integration patterns.
 package config
 
 import (
@@ -31,7 +28,7 @@ type MeshConfig struct {
 // NodeConfig holds node identity settings.
 type NodeConfig struct {
 	// ID is the node's unique identifier in the mesh.
-	// If empty, the example falls back to the hostname.
+	// If empty, it falls back to the hostname.
 	ID string `toml:"id"`
 }
 

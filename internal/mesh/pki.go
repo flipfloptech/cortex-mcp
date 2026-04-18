@@ -1,10 +1,9 @@
-// Package main provides ephemeral PKI generation for the E2E example.
+// Package main provides ephemeral PKI generation for the Cortex MCP.
 // This generates a site CA and node certificates for mTLS mesh admission.
 //
 // In production, the site CA would be managed externally (offline HSM,
-// Vault, etc.). This example generates ephemeral certs that last 24 hours
-// for demonstration purposes.
-package main
+// Vault, etc.). This implementation generates ephemeral certs that last 24 hours.
+package mesh
 
 import (
 	"crypto/ed25519"

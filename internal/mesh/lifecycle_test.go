@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 func TestSelfInstallOps(t *testing.T) {
 	t.Parallel()
 
-	ops := selfInstallOps("/usr/local/bin/mesh-example")
+	ops := selfInstallOps("/usr/local/bin/cortex-mcp")
 
 	// Must write a service unit file.
 	var hasWriteUnit bool

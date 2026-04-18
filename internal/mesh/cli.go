@@ -1,10 +1,10 @@
-// Package main demonstrates a complete cortex-mesh consumer binary.
+// Package main provides the Cortex MCP server application.
 //
-// This is the reference integration pattern: a single binary that can
+// This application is a single binary that can
 // serve as either a gateway (bootstrap node) or a fleet node (deployed),
 // depending on how it was launched.
 //
-// The example demonstrates ALL mesh lifecycle features:
+// The application demonstrates ALL mesh lifecycle features:
 //
 //  1. Load config (mesh.toml) — node identity, seed hosts, credentials
 //  2. Generate ephemeral PKI (site CA + node certificates)
@@ -28,26 +28,26 @@
 // Usage:
 //
 //	# Build first (static binary — required for cross-host deployment):
-//	CGO_ENABLED=0 go build -o mesh-example ./example/
+//	CGO_ENABLED=0 go build -o cortex-mcp .
 //
 //	# Connect to existing mesh or deploy ephemerally:
-//	./mesh-example --config example/mesh.toml
+//	./cortex-mcp --config mesh.toml
 //
 //	# Install persistent services on fleet nodes:
-//	./mesh-example install [node_id]
+//	./cortex-mcp install [node_id]
 //
 //	# Uninstall from fleet nodes:
-//	./mesh-example uninstall [node_id]
+//	./cortex-mcp uninstall [node_id]
 //
 //	# Stop fleet nodes without uninstalling:
-//	./mesh-example stop [node_id]
+//	./cortex-mcp stop [node_id]
 //
 //	# Bridge stdin/stdout to a local TCP address:
-//	./mesh-example bridge localhost:4443
+//	./cortex-mcp bridge localhost:4443
 //
 //	# Run as a persistent daemon (systemd entry point):
-//	./mesh-example daemon
-package main
+//	./cortex-mcp daemon
+package mesh
 
 import (
 	"bytes"
@@ -70,7 +70,7 @@ import (
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
-	"github.com/cortex-mesh/cortex-mesh/example/config"
+	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/membrane"
 	"github.com/cortex-mesh/cortex-mesh/tools"
@@ -93,13 +93,13 @@ type GatewayOptions struct {
 	Target  string
 }
 
-func main() {
+func Execute() {
 	var configPath string
 	var skipDeploy bool
 
 	rootCmd := &cobra.Command{
-		Use:   "mesh-example",
-		Short: "Cortex Mesh Example Application",
+		Use:   "cortex-mcp",
+		Short: "Cortex MCP Application",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
 			defer cancel()
@@ -237,19 +237,19 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 	return ctx, cancel, nodeID, cfg, entries
 }
 
-// exampleGroupResolver implements a hardcoded static grouping.
-type exampleGroupResolver struct {
+// staticGroupResolver implements a hardcoded static grouping.
+type staticGroupResolver struct {
 	groups map[string][]string
 }
 
-func (e *exampleGroupResolver) Resolve(source, group string) ([]string, error) {
+func (e *staticGroupResolver) Resolve(source, group string) ([]string, error) {
 	if nodes, ok := e.groups[group]; ok {
 		return nodes, nil
 	}
 	return nil, fmt.Errorf("unknown group: %s", group)
 }
 
-func (e *exampleGroupResolver) List(source string) ([]string, error) {
+func (e *staticGroupResolver) List(source string) ([]string, error) {
 	var keys []string
 	for k := range e.groups {
 		keys = append(keys, k)
@@ -657,7 +657,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	bridge := tools.NewNeuronBridge(node)
 
 	// Create group resolver to inject into Gateway for nodeset processing
-	resolver := &exampleGroupResolver{
+	resolver := &staticGroupResolver{
 		groups: map[string][]string{
 			"storage": {"oss1"},
 			"network": {"oss2"},
@@ -810,7 +810,7 @@ type deployedNode struct {
 
 // printHeader displays startup information.
 func printHeader(nodeID string, entries []toolEntry) {
-	fmt.Fprintf(os.Stderr, "\n=== cortex-mesh E2E example ===\n")
+	fmt.Fprintf(os.Stderr, "\n=== Cortex MCP Application ===\n")
 	fmt.Fprintf(os.Stderr, "Gateway node: %s\n", nodeID)
 	fmt.Fprintf(os.Stderr, "Registered tools:\n")
 	for _, e := range entries {
@@ -1252,7 +1252,6 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 
 	defaults := []string{
 		"mesh.toml",
-		"example/mesh.toml",
 	}
 	if exe, err := os.Executable(); err == nil {
 		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))

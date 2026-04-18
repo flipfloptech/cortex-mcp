@@ -1,13 +1,13 @@
-# cortex-mesh E2E Example
+# Cortex MCP Application
 
-A complete, feature-rich example binary demonstrating the full cortex-mesh lifecycle. This binary serves as the reference integration pattern — a single Go program that operates as either a **gateway** (bootstrap node) or a **fleet node** (deployed), depending on how it was launched.
+A complete, feature-rich binary demonstrating the full cortex-mesh lifecycle. This application serves as the production integration pattern — a single Go program that operates as either a **gateway** (bootstrap node) or a **fleet node** (deployed), depending on how it was launched.
 
 ## Operational Modes
 
 ### Test Mode (default, temporary)
 
 ```bash
-./mesh-example --config example/mesh.toml
+./cortex-mcp --config mesh.toml
 ```
 
 Deploys to **only** the seed hosts in `mesh.toml`. Nodes are temporary processes
@@ -17,23 +17,23 @@ credentials, and tool execution.
 ### Persistent Mode (install + systemd)
 
 ```bash
-./mesh-example install --config example/mesh.toml
+./cortex-mcp install --config mesh.toml
 ```
 
 Deploys to seed hosts **and** installs as a systemd service. Nodes persist
 across reboots and are managed via standard commands:
 
 ```bash
-./mesh-example start       # start the mesh node
-./mesh-example stop        # graceful shutdown
-./mesh-example uninstall   # uninstall the mesh node
+./cortex-mcp start       # start the mesh node
+./cortex-mcp stop        # graceful shutdown
+./cortex-mcp uninstall   # uninstall the mesh node
 ```
 
 ### Fleet Node Mode (automatic)
 
 ```bash
 # Set automatically by SelfDeployer — never run manually:
-CORTEX_MESH_SPAWNED=1 ./mesh-example daemon
+CORTEX_MESH_SPAWNED=1 ./cortex-mcp daemon
 ```
 
 ## What It Demonstrates
@@ -56,26 +56,23 @@ CORTEX_MESH_SPAWNED=1 ./mesh-example daemon
 
 ```bash
 # Build first — static binary, no libc dependency:
-CGO_ENABLED=0 go build -o mesh-example ./example/
-
-# Or use task (CGO_ENABLED=0 is set automatically):
-task example
+CGO_ENABLED=0 go build -o cortex-mcp .
 
 # Test mode — deploy to seed hosts, run demo, exit:
-./mesh-example -config example/mesh.toml
+./cortex-mcp -config mesh.toml
 
 # Persistent mode — install systemd services on remote hosts:
-./mesh-example -config example/mesh.toml -install
+./cortex-mcp -config mesh.toml -install
 
 # Local-only mode (no remote hosts):
-./mesh-example
+./cortex-mcp
 ```
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  mesh-example binary                                             │
+│  cortex-mcp binary                                             │
 │                                                                  │
 │  Gateway mode:                    Fleet node mode:               │
 │  ┌──────────────────┐             ┌──────────────────┐           │
@@ -143,10 +140,10 @@ All project dependencies are pure Go — no cgo is required. Building with `CGO_
 ```bash
 # The cgo dependencies are only from stdlib (net, os/user) which have
 # pure Go fallbacks. No project dependencies require cgo.
-CGO_ENABLED=0 go build -o mesh-example ./example/
+CGO_ENABLED=0 go build -o cortex-mcp .
 
 # Verify:
-ldd ./mesh-example  # → "not a dynamic executable"
+ldd ./cortex-mcp  # → "not a dynamic executable"
 ```
 
 `SelfDeployer.Deploy()` validates this automatically — if the binary has a `PT_INTERP` program header (dynamic linker), it rejects the deploy with an actionable error before any SSH connection.

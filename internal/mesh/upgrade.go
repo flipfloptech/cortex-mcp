@@ -10,7 +10,7 @@
 //  1. Probe TCP :4443 — is the node already running?
 //  2. If yes: SSH in, SFTP new binary, systemctl restart, reconnect via mTLS
 //  3. If no: full deploy (SelfDeployer + cert bootstrap)
-package main
+package mesh
 
 import (
 	"context"

@@ -1,0 +1,125 @@
+version: "3"
+
+vars:
+  BINARY_NAME: cortex-mcp
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+
+tasks:
+  default:
+    desc: Run all tests
+    cmds:
+      - task: check
+
+  build:
+    desc: Build the cortex-mcp binary
+    cmds:
+      - CGO_ENABLED=0 go build -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+    sources:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+    generates:
+      - {{.BINARY_NAME}}
+
+  test:
+    desc: Run tests with race detection
+    deps: [fmt, vet]
+    cmds:
+      - go test -v -race -timeout 60s ./...
+
+  test-coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - |
+        echo ""
+        echo "Coverage report: coverage.html"
+
+  lint:
+    desc: Run golangci-lint
+    vars:
+      GOLANGCI_LINT:
+        sh: which golangci-lint 2>/dev/null || find "$HOME/.local/share/mise/installs/golangci-lint" -name golangci-lint -type f 2>/dev/null | head -1 || echo ""
+    preconditions:
+      - sh: test -n "{{.GOLANGCI_LINT}}"
+        msg: |
+          golangci-lint is not installed. Install with:
+            mise install golangci-lint
+          or:
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+    cmds:
+      - "{{.GOLANGCI_LINT}} run ./..."
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  fmt-check:
+    desc: Check formatting (fails if any files need formatting)
+    cmds:
+      - |
+        UNFORMATTED=$(gofmt -l .)
+        if [ -n "$UNFORMATTED" ]; then
+          echo "The following files are not formatted:"
+          echo "$UNFORMATTED"
+          echo ""
+          echo "Run 'task fmt' to fix."
+          exit 1
+        fi
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Tidy go.mod
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Run all quality gates (fmt, vet, lint, test)
+    cmds:
+      - task: fmt-check
+      - task: vet
+      - task: lint
+      - task: test
+
+  pre-commit:
+    desc: Alias for check — run before committing
+    cmds:
+      - task: check
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -f coverage.out coverage.html
+
+  run:
+    desc: Run the binary locally
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}} {{.CLI_ARGS}}
+
+  doctor:
+    desc: Check development environment
+    vars:
+      GOLANGCI_LINT:
+        sh: which golangci-lint 2>/dev/null || find "$HOME/.local/share/mise/installs/golangci-lint" -name golangci-lint -type f 2>/dev/null | head -1 || echo "golangci-lint"
+    cmds:
+      - go version
+      - "{{.GOLANGCI_LINT}} --version || echo 'golangci-lint not found (install: mise install golangci-lint)'"
+      - |
+        echo ""
+        echo "=== Package Count ==="
+        echo "$(go list ./... | wc -l) packages"
+      - |
+        echo ""
+        echo "=== Test Count ==="
+        go test -count=0 ./... 2>&1 | grep -c "^ok" || true
