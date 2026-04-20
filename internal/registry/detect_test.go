@@ -113,6 +113,7 @@ func TestLustreNodeInfo_Roles(t *testing.T) {
 		{"client only", registry.LustreNodeInfo{IsClient: true}, []string{"client"}},
 		{"dual mgs+mds", registry.LustreNodeInfo{IsMGS: true, IsMDS: true}, []string{"mgs", "mds"}},
 		{"dual mds+oss", registry.LustreNodeInfo{IsMDS: true, IsOSS: true}, []string{"mds", "oss"}},
+		{"hyperconverged", registry.LustreNodeInfo{IsMGS: true, IsMDS: true, IsOSS: true}, []string{"mgs", "mds", "oss"}},
 		{"all roles", registry.LustreNodeInfo{IsMGS: true, IsMDS: true, IsOSS: true, IsClient: true}, []string{"mgs", "mds", "oss", "client"}},
 	}
 
