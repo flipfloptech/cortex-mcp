@@ -15,3 +15,6 @@ go.work.sum
 *.prof
 *.out
 coverage.out
+
+# Task artifacts
+.task/
