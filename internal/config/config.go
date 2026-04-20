@@ -23,6 +23,9 @@ type MeshConfig struct {
 
 	// SSH/TLS credentials for deployment.
 	Credentials []CredentialEntry `toml:"credentials"`
+
+	// Groups for logically targeting nodes via the mesh.
+	Groups map[string][]string `toml:"groups,omitempty"`
 }
 
 // NodeConfig holds node identity settings.

@@ -262,7 +262,7 @@ func Execute() {
 	harnessCmd.Flags().Int("count", 0, "Number of iterations (0 = infinite)")
 	harnessCmd.Flags().String("duration", "0", "Duration of soak test (e.g. 1h, 30m, 0 = infinite)")
 
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd)
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -603,10 +603,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// Create group resolver to inject into Gateway for nodeset processing
 	resolver := &staticGroupResolver{
-		groups: map[string][]string{
-			"storage": {"oss1"},
-			"network": {"oss2"},
-		},
+		groups: cfg.Groups,
 	}
 
 	gw := gateway.New(meshReg, bridge, gateway.WithGroupResolver(resolver))
