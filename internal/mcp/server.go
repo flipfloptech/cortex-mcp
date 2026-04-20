@@ -17,9 +17,9 @@ type Dispatcher interface {
 
 // Server wraps the official MCP SDK server.
 type Server struct {
-	mcpServer        *mcp.Server
-	dispatcher       Dispatcher
-	clusterOverview  *ClusterOverviewHandler
+	mcpServer       *mcp.Server
+	dispatcher      Dispatcher
+	clusterOverview *ClusterOverviewHandler
 }
 
 // NewServer initializes a new MCP Server mapping to the mesh gateway.

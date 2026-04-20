@@ -95,13 +95,13 @@ func (t *SystemInfoTool) IsSupported() (bool, string) {
 
 // systemInfoData is the structured output for system_info.
 type systemInfoData struct {
-	Hostname string                `json:"hostname"`
-	OS       string                `json:"os"`
-	Arch     string                `json:"arch"`
-	CPUs     int                   `json:"cpus"`
-	Kernel   string                `json:"kernel"`
-	Distro   string                `json:"distro,omitempty"`
-	Roles    []string              `json:"roles"`
+	Hostname string                 `json:"hostname"`
+	OS       string                 `json:"os"`
+	Arch     string                 `json:"arch"`
+	CPUs     int                    `json:"cpus"`
+	Kernel   string                 `json:"kernel"`
+	Distro   string                 `json:"distro,omitempty"`
+	Roles    []string               `json:"roles"`
 	RoleInfo *registry.NodeRoleInfo `json:"role_info"`
 }
 
