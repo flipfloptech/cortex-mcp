@@ -78,55 +78,47 @@ func TestReadOSRelease_ReturnsMap(t *testing.T) {
 	}
 }
 
-// TestIsSFAController_NotSFA verifies that IsSFAController returns false
-// when running on a non-SFA system (like a dev machine).
-func TestIsSFAController_NotSFA(t *testing.T) {
+// TestDetectNodeRoles_Generic verifies that DetectNodeRoles
+// returns a generic NodeRoleInfo on a non-specialized host.
+func TestDetectNodeRoles_Generic(t *testing.T) {
 	t.Parallel()
-	// None of the SFA sysfs paths should exist on a standard dev machine.
-	if !registry.PathExists("/sys/module/jsysdd") && !registry.PathExists("/sys/class/jsys") {
-		if registry.IsSFAController() {
-			t.Error("IsSFAController() = true on non-SFA host")
+	// On a dev machine without Lustre or SFA drivers, all storage roles should be false.
+	if !registry.PathExists("/sys/fs/lustre") && !registry.PathExists("/sys/module/jsysdd") {
+		info := registry.DetectNodeRoles()
+		if info.HasStorageRole() {
+			t.Errorf("HasStorageRole() = true on generic host, roles: %v", info.Roles())
+		}
+		if info.IsSFA || info.IsMGS || info.IsMDS || info.IsOSS || info.IsClient {
+			t.Error("no specialized role flags should be set on generic host")
+		}
+		roles := info.Roles()
+		if len(roles) != 1 || roles[0] != "generic" {
+			t.Errorf("Roles() on generic host should be ['generic'], got %v", roles)
 		}
 	}
 }
 
-// TestDetectLustreNodeType_NoLustre verifies that DetectLustreNodeType
-// returns an empty LustreNodeInfo on non-Lustre hosts.
-func TestDetectLustreNodeType_NoLustre(t *testing.T) {
-	t.Parallel()
-	// On a dev machine without Lustre, all roles should be false.
-	if !registry.PathExists("/sys/fs/lustre") {
-		info := registry.DetectLustreNodeType()
-		if info.HasLustre() {
-			t.Errorf("HasLustre() = true on non-Lustre host, roles: %v", info.Roles())
-		}
-		if info.IsMGS || info.IsMDS || info.IsOSS || info.IsClient {
-			t.Error("no role flags should be set on non-Lustre host")
-		}
-		if len(info.MGSs) > 0 || len(info.MDTs) > 0 || len(info.OSTs) > 0 || len(info.Clients) > 0 {
-			t.Error("no targets should be listed on non-Lustre host")
-		}
-	}
-}
-
-// TestLustreNodeInfo_Roles verifies the Roles() method.
-func TestLustreNodeInfo_Roles(t *testing.T) {
+// TestNodeRoleInfo_Roles verifies the Roles() method.
+func TestNodeRoleInfo_Roles(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
-		info registry.LustreNodeInfo
+		info registry.NodeRoleInfo
 		want []string
 	}{
-		{"empty", registry.LustreNodeInfo{}, nil},
-		{"mgs only", registry.LustreNodeInfo{IsMGS: true}, []string{"mgs"}},
-		{"mds only", registry.LustreNodeInfo{IsMDS: true}, []string{"mds"}},
-		{"oss only", registry.LustreNodeInfo{IsOSS: true}, []string{"oss"}},
-		{"client only", registry.LustreNodeInfo{IsClient: true}, []string{"client"}},
-		{"dual mgs+mds", registry.LustreNodeInfo{IsMGS: true, IsMDS: true}, []string{"mgs", "mds"}},
-		{"dual mds+oss", registry.LustreNodeInfo{IsMDS: true, IsOSS: true}, []string{"mds", "oss"}},
-		{"hyperconverged", registry.LustreNodeInfo{IsMGS: true, IsMDS: true, IsOSS: true}, []string{"mgs", "mds", "oss"}},
-		{"all roles", registry.LustreNodeInfo{IsMGS: true, IsMDS: true, IsOSS: true, IsClient: true}, []string{"mgs", "mds", "oss", "client"}},
+		{"generic", registry.NodeRoleInfo{}, []string{"generic"}},
+		{"sfa only", registry.NodeRoleInfo{IsSFA: true}, []string{"sfa"}},
+		{"mgs only", registry.NodeRoleInfo{IsMGS: true}, []string{"mgs"}},
+		{"mds only", registry.NodeRoleInfo{IsMDS: true}, []string{"mds"}},
+		{"oss only", registry.NodeRoleInfo{IsOSS: true}, []string{"oss"}},
+		{"client only", registry.NodeRoleInfo{IsClient: true}, []string{"client"}},
+		{"dual sfa+mgs", registry.NodeRoleInfo{IsSFA: true, IsMGS: true}, []string{"sfa", "mgs"}},
+		{"dual mgs+mds", registry.NodeRoleInfo{IsMGS: true, IsMDS: true}, []string{"mgs", "mds"}},
+		{"dual mds+oss", registry.NodeRoleInfo{IsMDS: true, IsOSS: true}, []string{"mds", "oss"}},
+		{"hyperconverged", registry.NodeRoleInfo{IsMGS: true, IsMDS: true, IsOSS: true}, []string{"mgs", "mds", "oss"}},
+		{"sfa hyperconverged", registry.NodeRoleInfo{IsSFA: true, IsMGS: true, IsMDS: true, IsOSS: true}, []string{"sfa", "mgs", "mds", "oss"}},
+		{"all roles", registry.NodeRoleInfo{IsSFA: true, IsMGS: true, IsMDS: true, IsOSS: true, IsClient: true}, []string{"sfa", "mgs", "mds", "oss", "client"}},
 	}
 
 	for _, tt := range tests {
@@ -146,27 +138,32 @@ func TestLustreNodeInfo_Roles(t *testing.T) {
 	}
 }
 
-// TestLustreNodeInfo_HasLustre verifies the HasLustre() method.
-func TestLustreNodeInfo_HasLustre(t *testing.T) {
+// TestNodeRoleInfo_HasStorageRole verifies the HasStorageRole() method.
+func TestNodeRoleInfo_HasStorageRole(t *testing.T) {
 	t.Parallel()
 
-	empty := registry.LustreNodeInfo{}
-	if empty.HasLustre() {
-		t.Error("empty LustreNodeInfo should return HasLustre=false")
+	generic := registry.NodeRoleInfo{}
+	if generic.HasStorageRole() {
+		t.Error("empty NodeRoleInfo should return HasStorageRole=false")
 	}
 
-	mgs := registry.LustreNodeInfo{IsMGS: true}
-	if !mgs.HasLustre() {
-		t.Error("MGS node should return HasLustre=true")
+	sfa := registry.NodeRoleInfo{IsSFA: true}
+	if !sfa.HasStorageRole() {
+		t.Error("SFA node should return HasStorageRole=true")
 	}
 
-	mds := registry.LustreNodeInfo{IsMDS: true}
-	if !mds.HasLustre() {
-		t.Error("MDS node should return HasLustre=true")
+	mgs := registry.NodeRoleInfo{IsMGS: true}
+	if !mgs.HasStorageRole() {
+		t.Error("MGS node should return HasStorageRole=true")
 	}
 
-	dual := registry.LustreNodeInfo{IsMGS: true, IsMDS: true}
-	if !dual.HasLustre() {
-		t.Error("dual-role node should return HasLustre=true")
+	mds := registry.NodeRoleInfo{IsMDS: true}
+	if !mds.HasStorageRole() {
+		t.Error("MDS node should return HasStorageRole=true")
+	}
+
+	dual := registry.NodeRoleInfo{IsMGS: true, IsMDS: true}
+	if !dual.HasStorageRole() {
+		t.Error("dual-role node should return HasStorageRole=true")
 	}
 }

@@ -76,18 +76,12 @@ func IsDistro(names ...string) bool {
 	return false
 }
 
-// IsSFAController detects if the running node is an SFA controller by checking
-// for the presence of proprietary SFA device drivers in sysfs.
-func IsSFAController() bool {
-	return PathExists("/sys/module/jsysdd") ||
-		PathExists("/sys/class/jsys") ||
-		PathExists("/sys/module/jnvme") ||
-		PathExists("/sys/class/jnvme")
-}
+// NodeRoleInfo describes the specialized storage roles active on this node.
+// A single server can have multiple roles (e.g., SFA + MGS + MDS).
+type NodeRoleInfo struct {
+	// IsSFA is true if this node is an SFA storage controller.
+	IsSFA bool `json:"is_sfa"`
 
-// LustreNodeInfo describes the Lustre roles active on this node.
-// A single server can have multiple roles (e.g., both MDTs and OSTs).
-type LustreNodeInfo struct {
 	// IsMGS is true if this node has an active Management Server (MGS).
 	IsMGS bool `json:"is_mgs"`
 
@@ -113,42 +107,57 @@ type LustreNodeInfo struct {
 	Clients []string `json:"clients,omitempty"`
 }
 
-// HasLustre returns true if any Lustre role is detected.
-func (l *LustreNodeInfo) HasLustre() bool {
-	return l.IsMGS || l.IsMDS || l.IsOSS || l.IsClient
+// HasStorageRole returns true if any SFA or Lustre role is detected.
+func (n *NodeRoleInfo) HasStorageRole() bool {
+	return n.IsSFA || n.IsMGS || n.IsMDS || n.IsOSS || n.IsClient
 }
 
-// Roles returns a human-readable list of active roles (e.g., ["mgs", "mds", "oss"]).
-func (l *LustreNodeInfo) Roles() []string {
+// Roles returns a human-readable list of active roles (e.g., ["sfa", "mds", "oss"]).
+// If no specialized roles are detected, it returns ["generic"].
+func (n *NodeRoleInfo) Roles() []string {
 	var roles []string
-	if l.IsMGS {
+	if n.IsSFA {
+		roles = append(roles, "sfa")
+	}
+	if n.IsMGS {
 		roles = append(roles, "mgs")
 	}
-	if l.IsMDS {
+	if n.IsMDS {
 		roles = append(roles, "mds")
 	}
-	if l.IsOSS {
+	if n.IsOSS {
 		roles = append(roles, "oss")
 	}
-	if l.IsClient {
+	if n.IsClient {
 		roles = append(roles, "client")
 	}
+	
+	if len(roles) == 0 {
+		return []string{"generic"}
+	}
+	
 	return roles
 }
 
-// DetectLustreNodeType inspects /sys/fs/lustre/ to determine which Lustre
-// roles are active on this node. A single server can serve multiple roles
-// simultaneously (e.g., MGS + MDS, or MDS + OSS).
+// DetectNodeRoles inspects sysfs to determine which specialized storage roles
+// are active on this node. A single server can serve multiple roles
+// simultaneously (e.g., SFA + MGS + MDS).
 //
-// Detection is based on the presence of active subdirectories:
+// Detection is based on the presence of drivers or active subdirectories:
+//   - /sys/module/jsysdd, etc.  → SFA Controller
 //   - /sys/fs/lustre/mgs/       → MGS instance
 //   - /sys/fs/lustre/mdt/       → MDT (MDS role)
 //   - /sys/fs/lustre/obdfilter/ → OST (OSS role)
 //   - /sys/fs/lustre/llite/     → mounted client
 //
-// Each subdirectory under these paths represents an active target/mount.
-func DetectLustreNodeType() *LustreNodeInfo {
-	info := &LustreNodeInfo{}
+// Each subdirectory under the Lustre paths represents an active target/mount.
+func DetectNodeRoles() *NodeRoleInfo {
+	info := &NodeRoleInfo{}
+
+	info.IsSFA = PathExists("/sys/module/jsysdd") ||
+		PathExists("/sys/class/jsys") ||
+		PathExists("/sys/module/jnvme") ||
+		PathExists("/sys/class/jnvme")
 
 	info.MGSs = listSubdirs("/sys/fs/lustre/mgs")
 	info.IsMGS = len(info.MGSs) > 0
