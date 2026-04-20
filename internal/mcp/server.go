@@ -17,12 +17,14 @@ type Dispatcher interface {
 
 // Server wraps the official MCP SDK server.
 type Server struct {
-	mcpServer  *mcp.Server
-	dispatcher Dispatcher
+	mcpServer        *mcp.Server
+	dispatcher       Dispatcher
+	clusterOverview  *ClusterOverviewHandler
 }
 
 // NewServer initializes a new MCP Server mapping to the mesh gateway.
-func NewServer(dispatcher Dispatcher) *Server {
+// topology may be nil if the mesh is not yet available (local-only mode).
+func NewServer(dispatcher Dispatcher, topology TopologyProvider) *Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "cortex-mcp",
 		Version: "1.0.0",
@@ -36,6 +38,11 @@ func NewServer(dispatcher Dispatcher) *Server {
 	srv := &Server{
 		mcpServer:  s,
 		dispatcher: dispatcher,
+	}
+
+	// Build cluster overview handler if topology is available.
+	if topology != nil {
+		srv.clusterOverview = NewClusterOverviewHandler(dispatcher, topology)
 	}
 
 	// list_tools
@@ -55,6 +62,12 @@ func NewServer(dispatcher Dispatcher) *Server {
 		Name:        "call_tool",
 		Description: "Execute a tool on a remote node in the Cortex Mesh.",
 	}, srv.handleCallTool)
+
+	// cluster_overview
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "cluster_overview",
+		Description: "Get a complete cluster topology: every node, its role (SFA/MGS/MDS/OSS/Client), connectivity, tools, and a Mermaid topology diagram. Fans out to all nodes and aggregates.",
+	}, srv.handleClusterOverview)
 
 	// system_introduction prompt
 	s.AddPrompt(&mcp.Prompt{
@@ -98,6 +111,41 @@ func (s *Server) handleCallTool(ctx context.Context, req *mcp.CallToolRequest, i
 	return s.dispatchToMesh(ctx, "call_tool", args)
 }
 
+func (s *Server) handleClusterOverview(ctx context.Context, req *mcp.CallToolRequest, input EmptyInput) (*mcp.CallToolResult, any, error) {
+	if s.clusterOverview == nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "cluster_overview not available: no mesh topology provider configured",
+				},
+			},
+		}, nil, nil
+	}
+
+	zap.S().Infow("cluster_overview requested")
+	result, err := s.clusterOverview.Execute(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("cluster_overview error: %v", err),
+				},
+			},
+		}, nil, nil
+	}
+
+	data, _ := json.Marshal(result)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
+			},
+		},
+	}, nil, nil
+}
+
 func (s *Server) dispatchToMesh(ctx context.Context, toolName string, args json.RawMessage) (*mcp.CallToolResult, any, error) {
 	zap.S().Debugw("MCP tool call received", "name", toolName)
 
@@ -125,18 +173,19 @@ func (s *Server) dispatchToMesh(ctx context.Context, toolName string, args json.
 
 func (s *Server) handleSystemIntroduction(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	desc := `You are connected to the Cortex Mesh via the MCP Gateway.
-The Cortex Mesh is a decentralized fleet of nodes. Instead of giving you hundreds of granular tools directly, we give you three Meta-Tools:
+The Cortex Mesh is a decentralized fleet of nodes. You have four tools available:
 
 1. 'list_tools' -> Returns the list of available tools across the entire mesh. Call this FIRST.
 2. 'tool_help' -> Returns the exact JSON schema required to call a specific tool.
-3. 'call_tool' -> Invokes the tool.
+3. 'call_tool' -> Invokes a tool on a specific node, a group, or all nodes.
+4. 'cluster_overview' -> Returns a complete cluster topology with every node's role (SFA/MGS/MDS/OSS/Client), connectivity graph, and a Mermaid diagram. Use this to understand the fleet before diving into specifics.
 
 When using 'call_tool', you can specify 'node_name'.
 - Leave 'node_name' empty to let the mesh auto-route to the best node.
 - Use '*' to fan-out and execute the tool on ALL nodes simultaneously.
 - Use '@group' (e.g. '@storage') to execute on a specific sub-group of nodes.
 
-Start your investigation by running 'list_tools' to see what the fleet is capable of.`
+Start by running 'cluster_overview' for a complete picture, then 'list_tools' to see available capabilities.`
 
 	return &mcp.GetPromptResult{
 		Description: "Onboarding instruction for Cortex Mesh",

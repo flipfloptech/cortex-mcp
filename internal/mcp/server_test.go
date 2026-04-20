@@ -24,7 +24,7 @@ func (m *mockDispatcher) Dispatch(ctx context.Context, toolName string, args jso
 func TestServer_RegisterMetaTools(t *testing.T) {
 	t.Parallel()
 
-	srv := NewServer(&mockDispatcher{})
+	srv := NewServer(&mockDispatcher{}, nil)
 	if srv == nil {
 		t.Fatal("expected server to be created")
 	}
@@ -44,7 +44,7 @@ func TestServer_CallMetaTool(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(dispatcher)
+	srv := NewServer(dispatcher, nil)
 	res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, EmptyInput{})
 	if err != nil {
 		t.Fatalf("handleListTools failed: %v", err)
@@ -64,7 +64,7 @@ func TestServer_CallMetaTool(t *testing.T) {
 func TestServer_SystemIntroductionPrompt(t *testing.T) {
 	t.Parallel()
 
-	srv := NewServer(&mockDispatcher{})
+	srv := NewServer(&mockDispatcher{}, nil)
 	res, err := srv.handleSystemIntroduction(context.Background(), &mcp.GetPromptRequest{})
 	if err != nil {
 		t.Fatalf("handleSystemIntroduction failed: %v", err)

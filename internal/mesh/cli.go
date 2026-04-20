@@ -898,7 +898,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		fmt.Fprintf(os.Stderr, "\n--- Serving MCP HTTP on %s ---\n", opts.ServeHTTP)
 
 		// Create an MCP Server adapter for the Gateway Dispatcher
-		mcpSrv := mcp.NewServer(gw)
+		mcpSrv := mcp.NewServer(gw, node)
 
 		// We use the same identity cert for mTLS
 		caPool := x509.NewCertPool()
