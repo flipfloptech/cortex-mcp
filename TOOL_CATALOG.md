@@ -53,3 +53,18 @@ Reads and calculates system uptime and CPU idle time. Formats the data into pre-
 **Degradation Profile:**
 - `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/uptime` is unreadable/missing.
 - If the system is so fresh or constrained that uptime/CPU math would cause a division by zero, the tool fails gracefully or reports 0% idle.
+
+### `loadavg`
+*Category: Core Diagnostics*
+
+Reads the system load averages and scheduling entity statistics to provide a snapshot of system CPU and I/O pressure.
+
+**Data Sources:**
+- Read directly from `/proc/loadavg`.
+
+**Mathematical Models:**
+- Directly extracts the 1-minute, 5-minute, and 15-minute load averages.
+- Parses the scheduling entity ratio (e.g., `1/863`) into two distinct integers: `RunnableEntities` and `TotalEntities`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/loadavg` is unreadable/missing.
