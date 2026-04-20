@@ -14,7 +14,7 @@ tasks:
       - task: check
 
   build:
-    desc: Build the cortex-mcp binary
+    desc: Build the cortex-mcp binary (static, pure Go)
     cmds:
       - CGO_ENABLED=0 go build -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
     sources:
