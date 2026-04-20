@@ -36,3 +36,20 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 **Degradation Profile:**
 - `IsSupported()` will only return `false` if the host operating system is not Linux.
 - If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. It does not return execution errors for missing data.
+
+### `uptime`
+*Category: Core Diagnostics*
+
+Reads and calculates system uptime and CPU idle time. Formats the data into pre-processed human-readable strings to reduce the mathematical overhead for LLMs consuming the API.
+
+**Data Sources:**
+- **Uptime/Idle**: Read from `/proc/uptime`. The first value is the total system uptime, and the second is the total idle time across all CPUs.
+- **CPU Count**: Number of logical cores reported by the Go runtime (`runtime.NumCPU()`).
+
+**Mathematical Models:**
+- **Idle Percentage**: Calculated dynamically as `(IdleSeconds / (UptimeSeconds * CPUCount)) * 100.0`.
+- **Human Readable Format**: Converts seconds into a comma-separated duration string (e.g., `4 days, 1 hours, 25 minutes, 35 seconds`).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/uptime` is unreadable/missing.
+- If the system is so fresh or constrained that uptime/CPU math would cause a division by zero, the tool fails gracefully or reports 0% idle.
