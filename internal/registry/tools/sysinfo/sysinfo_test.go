@@ -111,7 +111,7 @@ func TestSystemInfoTool_Execute(t *testing.T) {
 		t.Fatalf("Data is not valid JSON: %v", err)
 	}
 
-	requiredFields := []string{"hostname", "os", "arch", "cpus", "kernel"}
+	requiredFields := []string{"hostname", "os", "arch", "cpus", "kernel", "roles"}
 	for _, field := range requiredFields {
 		if _, ok := data[field]; !ok {
 			t.Errorf("Data missing required field: %s", field)
@@ -122,6 +122,58 @@ func TestSystemInfoTool_Execute(t *testing.T) {
 	cpus, ok := data["cpus"].(float64)
 	if !ok || cpus < 1 {
 		t.Errorf("Data[cpus] = %v, want positive number", data["cpus"])
+	}
+
+	// roles must be a non-empty slice — at minimum ["generic"].
+	rolesRaw, ok := data["roles"].([]interface{})
+	if !ok || len(rolesRaw) == 0 {
+		t.Errorf("Data[roles] must be a non-empty array, got %v", data["roles"])
+	}
+
+	// role_info must be present as an object.
+	roleInfo, ok := data["role_info"]
+	if !ok || roleInfo == nil {
+		t.Error("Data[role_info] must be present")
+	}
+}
+
+// TestSystemInfoTool_RolesContainValidValues verifies that the roles field
+// contains only recognized role names from DetectNodeRoles().
+func TestSystemInfoTool_RolesContainValidValues(t *testing.T) {
+	t.Parallel()
+
+	if !registry.IsLinux() {
+		t.Skip("system_info requires Linux")
+	}
+
+	tool := &sysinfo.SystemInfoTool{}
+	result, err := tool.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(result.Data, &data); err != nil {
+		t.Fatalf("Data is not valid JSON: %v", err)
+	}
+
+	rolesRaw, ok := data["roles"].([]interface{})
+	if !ok {
+		t.Fatal("roles must be an array")
+	}
+
+	validRoles := map[string]bool{
+		"sfa": true, "mgs": true, "mds": true, "oss": true, "client": true, "generic": true,
+	}
+	for _, r := range rolesRaw {
+		role, ok := r.(string)
+		if !ok {
+			t.Errorf("role entry is not a string: %v", r)
+			continue
+		}
+		if !validRoles[role] {
+			t.Errorf("unexpected role %q, valid roles: sfa, mgs, mds, oss, client, generic", role)
+		}
 	}
 }
 
