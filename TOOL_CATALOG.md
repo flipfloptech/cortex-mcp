@@ -32,10 +32,12 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 - **CPUs**: Number of logical cores reported by the Go runtime (`runtime.NumCPU()`).
 - **Kernel Version**: Read directly from `/proc/sys/kernel/osrelease`.
 - **OS Distribution**: Parsed from `/etc/os-release`, prioritizing the `PRETTY_NAME` field and falling back to `ID`.
+- **Node Roles**: Detected via `registry.DetectNodeRoles()`, which inspects sysfs paths for SFA controllers, Lustre MGS/MDS/OSS targets, and mounted Lustre clients. Returns `["generic"]` when no specialized roles are detected.
+- **Role Info**: Detailed `NodeRoleInfo` struct with per-target lists (e.g., active MDTs, OSTs, mounted filesystems).
 
 **Degradation Profile:**
 - `IsSupported()` will only return `false` if the host operating system is not Linux.
-- If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. It does not return execution errors for missing data.
+- If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. If no Lustre/SFA sysfs paths exist, `roles` returns `["generic"]` — the tool never errors.
 
 ### `uptime`
 *Category: Core Diagnostics*
@@ -68,3 +70,33 @@ Reads the system load averages and scheduling entity statistics to provide a sna
 
 **Degradation Profile:**
 - `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/loadavg` is unreadable/missing.
+
+---
+
+## Meta-Tools
+
+These tools operate at the MCP gateway level, not on individual nodes. They aggregate data from the entire mesh.
+
+### `cluster_overview`
+*Category: Fleet Intelligence*
+
+Provides a complete cluster topology in a single call. Fans out `system_info` and `mesh_topology` to every node in the mesh, then aggregates the results at the gateway.
+
+**Algorithm:**
+1. **Fan-out `system_info`** to `*` (all nodes) — collects hostname, OS, arch, CPUs, kernel, distro, and detected storage roles from every node.
+2. **Fan-out `mesh_topology`** to `*` (all nodes) — collects each node's direct peers, impedance costs, next-hop routing, and capabilities.
+3. **Edge deduplication**: For every node's report, extracts `IsDirect=true` entries. If node A reports B as a direct peer and B reports A as a direct peer, they collapse to a single undirected edge. The union of all direct-peer relationships produces the **complete mesh graph**.
+4. **Role count aggregation**: Counts occurrences of each role (SFA, MGS, MDS, OSS, Client, Generic) across all nodes.
+5. **Mermaid rendering**: Generates a `graph TD` diagram from the real edge set, with nodes colored by primary role.
+
+**Output includes:**
+- `total_nodes`: Number of nodes in the fleet.
+- `role_counts`: Map of role → count (e.g., `{"mgs": 4, "mds": 10, "oss": 100, "client": 1000, "generic": 2}`).
+- `nodes[]`: Per-node detail (hostname, roles, OS, CPUs, impedance from gateway, direct/transitive status, next-hop, tools).
+- `edges[]`: Deduplicated direct connections between nodes.
+- `mermaid_graph`: Pre-rendered Mermaid diagram string.
+
+**Degradation Profile:**
+- Requires a live mesh with at least one connected node to produce meaningful results.
+- Nodes that fail to respond to the fan-out are omitted from the topology (no error propagation).
+- Returns sensible defaults (`total_nodes: 0`, empty arrays) for an empty mesh.
