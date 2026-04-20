@@ -54,6 +54,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"go.uber.org/zap"
@@ -77,6 +78,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/vault"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/flipfloptech/cortex-mcp/internal/logger"
+	"github.com/flipfloptech/cortex-mcp/internal/mcp"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -94,6 +96,7 @@ type GatewayOptions struct {
 	Stop       bool
 	Target     string
 	PureClient bool
+	ServeHTTP  string // address to serve HTTP on
 }
 
 func Execute() {
@@ -211,7 +214,23 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd)
+	mcpCmd := &cobra.Command{
+		Use:   "mcp [addr]",
+		Short: "Run as an mTLS HTTP MCP Server",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			addr := "localhost:8080"
+			if len(args) > 0 {
+				addr = args[0]
+			}
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			defer cancel()
+			opts := GatewayOptions{PureClient: true, ServeHTTP: addr}
+			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
+		},
+	}
+
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -835,6 +854,38 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		runGatewayTopology(ctx, gw)
 	} else {
 		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
+	}
+
+	// --- Phase 10b: Serve HTTP if requested ---
+	if opts.ServeHTTP != "" {
+		fmt.Fprintf(os.Stderr, "\n--- Serving MCP HTTP on %s ---\n", opts.ServeHTTP)
+
+		// Create an MCP Server adapter for the Gateway Dispatcher
+		mcpSrv := mcp.NewServer(gw)
+
+		// We use the same identity cert for mTLS
+		caPool := x509.NewCertPool()
+		caPool.AppendCertsFromPEM(gatewayCert.Certificate[0]) // wait, pki.ca is the root.
+
+		// Wait, gatewayCert doesn't contain the CA directly, we should get the CA pool.
+		// pki.pool is private but we can use pki.membraneConfig(gatewayCert).CACert
+		memCfg := pki.membraneConfig(gatewayCert)
+
+		go func() {
+			if err := mcp.StartHTTPServer(opts.ServeHTTP, mcpSrv, gatewayCert, memCfg.CACert); err != nil {
+				zap.S().Errorw("mcp http server failed", "error", err)
+				cancel()
+			}
+		}()
+
+		// Block until shutdown signal
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		select {
+		case <-c:
+			zap.S().Infow("shutting down mcp server")
+		case <-ctx.Done():
+		}
 	}
 
 	// --- Phase 11: Cleanup ---
