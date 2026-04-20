@@ -76,6 +76,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
+	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -101,9 +102,9 @@ func Execute() {
 		Use:   "cortex-mcp",
 		Short: "Cortex MCP Application",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
 			defer cancel()
-			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, GatewayOptions{})
+			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, GatewayOptions{})
 		},
 	}
 
@@ -115,7 +116,7 @@ func Execute() {
 		Short: "Raw TCP bridge for firewall traversal",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, _, _ := initEnv(configPath)
+			ctx, cancel, _, _, _, _ := initEnv(configPath)
 			defer cancel()
 			if err := runBridge(ctx, args[0], os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
@@ -128,10 +129,10 @@ func Execute() {
 		Use:   "serve",
 		Short: "Run as an ephemeral fleet node",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
 			defer cancel()
 			liveMode = true
-			runFleetNode(ctx, nodeID, entries, cfg, false)
+			runFleetNode(ctx, nodeID, entries, plugins, cfg, false)
 		},
 	}
 
@@ -139,10 +140,10 @@ func Execute() {
 		Use:   "daemon",
 		Short: "Run as a persistent daemon (systemd entry)",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
 			defer cancel()
 			liveMode = true
-			runFleetNode(ctx, nodeID, entries, cfg, true)
+			runFleetNode(ctx, nodeID, entries, plugins, cfg, true)
 		},
 	}
 
@@ -151,7 +152,7 @@ func Execute() {
 		Short: "Remove nodes (ephemeral or persistent)",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, cfg, _ := initEnv(configPath)
+			ctx, cancel, _, cfg, _, _ := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
@@ -166,7 +167,7 @@ func Execute() {
 		Short: "Start persistent services via SSH",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, cfg, _ := initEnv(configPath)
+			ctx, cancel, _, cfg, _, _ := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
@@ -181,14 +182,14 @@ func Execute() {
 		Short: "Stop fleet nodes without uninstalling",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
 				target = args[0]
 			}
 			opts := GatewayOptions{Stop: true, Target: target}
-			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, opts)
+			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
 		},
 	}
 
@@ -197,14 +198,14 @@ func Execute() {
 		Short: "Persist nodes as systemd services",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
 				target = args[0]
 			}
 			opts := GatewayOptions{Install: true, Target: target}
-			runGateway(ctx, cancel, nodeID, cfg, entries, skipDeploy, opts)
+			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
 		},
 	}
 
@@ -215,8 +216,10 @@ func Execute() {
 	}
 }
 
-// initEnv bootstraps the common context, configuration, nodeID and tool definitions.
-func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, []toolEntry) {
+// initEnv bootstraps the common context, configuration, nodeID, tool definitions,
+// and the plugin registry. The plugin registry evaluates each tool's IsSupported()
+// against the local environment — unsupported tools are logged and excluded.
+func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, []toolEntry, *registry.PluginRegistry) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := loadConfig(configPath)
 	if err != nil {
@@ -234,7 +237,16 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 	}
 
 	entries := defineTools(nodeID)
-	return ctx, cancel, nodeID, cfg, entries
+
+	// Build the plugin registry from globally registered tools.
+	// Each tool's IsSupported() is evaluated against the local environment.
+	plugins := registry.NewPluginRegistry(nodeID)
+	for name, reason := range plugins.Unsupported() {
+		slog.Info("plugin skipped", "tool", name, "reason", reason)
+	}
+	slog.Info("plugin registry loaded", "supported", len(plugins.Supported()), "skipped", len(plugins.Unsupported()))
+
+	return ctx, cancel, nodeID, cfg, entries, plugins
 }
 
 // staticGroupResolver implements a hardcoded static grouping.
@@ -421,7 +433,7 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 }
 
 // runFleetNode handles the deployed fleet node lifecycle.
-func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *config.MeshConfig, isDaemon bool) {
+func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
 	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
 
 	if isDaemon {
@@ -534,9 +546,10 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 	node.SetMembraneConfig(membraneCfg)
 
 	// Register tools with capability advertising.
-	registry := tools.NewRegistry(node)
-	registerTools(registry, entries)
-	registerNodeTools(registry, node)
+	meshReg := tools.NewRegistry(node)
+	registerTools(meshReg, entries)
+	plugins.BridgeToMesh(meshReg)
+	registerNodeTools(meshReg, node)
 
 	if !isDaemon {
 		// For standard temporary stdioconns, accept the deployer's connection (mTLS handshake + yamux).
@@ -565,12 +578,12 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, cfg *
 		}
 	}
 
-	slog.Info("fleet node ready — serving tools", "node_id", nodeID, "tools", len(registry.ListLocal()))
-	tools.ServeToolListener(ctx, lis, registry)
+	slog.Info("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
+	tools.ServeToolListener(ctx, lis, meshReg)
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, skipDeploy bool, opts GatewayOptions) {
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, plugins *registry.PluginRegistry, skipDeploy bool, opts GatewayOptions) {
 	install := opts.Install
 	printHeader(nodeID, entries)
 
@@ -634,11 +647,12 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	node.SetMembraneConfig(pki.membraneConfig(gatewayCert))
 
 	// Register tools with capability advertising.
-	registry := tools.NewRegistry(node)
-	registerTools(registry, entries)
-	registerNodeTools(registry, node)
+	meshReg := tools.NewRegistry(node)
+	registerTools(meshReg, entries)
+	plugins.BridgeToMesh(meshReg)
+	registerNodeTools(meshReg, node)
 
-	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(registry.ListLocal()))
+	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(meshReg.ListLocal()))
 	fmt.Fprintf(os.Stderr, "  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
 
 	// Initialize the credential vault.
@@ -650,7 +664,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 3: Local tool invocation ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 3: Local tool invocation ---\n")
-	runLocalDemo(ctx, registry)
+	runLocalDemo(ctx, meshReg)
 
 	// --- Phase 4: Gateway meta-tools ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Gateway meta-tools ---\n")
@@ -664,7 +678,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		},
 	}
 
-	gw := gateway.New(registry, bridge, gateway.WithGroupResolver(resolver))
+	gw := gateway.New(meshReg, bridge, gateway.WithGroupResolver(resolver))
 	runGatewayMetaTools(ctx, gw)
 
 	// --- Phase 5: Deploy to seed hosts ---
