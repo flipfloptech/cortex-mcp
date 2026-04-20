@@ -78,6 +78,18 @@ func TestReadOSRelease_ReturnsMap(t *testing.T) {
 	}
 }
 
+// TestIsSFAController_NotSFA verifies that IsSFAController returns false
+// when running on a non-SFA system (like a dev machine).
+func TestIsSFAController_NotSFA(t *testing.T) {
+	t.Parallel()
+	// None of the SFA sysfs paths should exist on a standard dev machine.
+	if !registry.PathExists("/sys/module/jsysdd") && !registry.PathExists("/sys/class/jsys") {
+		if registry.IsSFAController() {
+			t.Error("IsSFAController() = true on non-SFA host")
+		}
+	}
+}
+
 // TestDetectLustreNodeType_NoLustre verifies that DetectLustreNodeType
 // returns an empty LustreNodeInfo on non-Lustre hosts.
 func TestDetectLustreNodeType_NoLustre(t *testing.T) {

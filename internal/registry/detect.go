@@ -76,6 +76,15 @@ func IsDistro(names ...string) bool {
 	return false
 }
 
+// IsSFAController detects if the running node is an SFA controller by checking
+// for the presence of proprietary SFA device drivers in sysfs.
+func IsSFAController() bool {
+	return PathExists("/sys/module/jsysdd") ||
+		PathExists("/sys/class/jsys") ||
+		PathExists("/sys/module/jnvme") ||
+		PathExists("/sys/class/jnvme")
+}
+
 // LustreNodeInfo describes the Lustre roles active on this node.
 // A single server can have multiple roles (e.g., both MDTs and OSTs).
 type LustreNodeInfo struct {
