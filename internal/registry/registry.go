@@ -1,7 +1,7 @@
 package registry
 
 import (
-	"log/slog"
+	"go.uber.org/zap"
 	"sync"
 )
 
@@ -56,10 +56,10 @@ func NewPluginRegistryFrom(nodeID string, tools []Tool) *PluginRegistry {
 		ok, reason := t.IsSupported()
 		if ok {
 			pr.supported[t.Name()] = t
-			slog.Debug("plugin loaded", "tool", t.Name(), "category", t.Category())
+			zap.S().Debugw("plugin loaded", "tool", t.Name(), "category", t.Category())
 		} else {
 			pr.unsupported[t.Name()] = reason
-			slog.Debug("plugin skipped", "tool", t.Name(), "reason", reason)
+			zap.S().Debugw("plugin skipped", "tool", t.Name(), "reason", reason)
 		}
 	}
 

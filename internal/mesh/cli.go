@@ -56,8 +56,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -76,6 +76,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
+	"github.com/flipfloptech/cortex-mcp/internal/logger"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -222,8 +223,20 @@ func Execute() {
 func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, []toolEntry, *registry.PluginRegistry) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := loadConfig(configPath)
+
+	// Setup best-in-class logging before doing anything else
+	logLvl := "info"
+	logEnc := "console"
+	if err == nil {
+		// In the future, read logLvl and logEnc from cfg
+		logLvl = "debug"
+	}
+	if _, logErr := logger.InitLogger(logger.Config{Level: logLvl, Encoding: logEnc}); logErr != nil {
+		fmt.Fprintf(os.Stderr, "failed to init logger: %v\n", logErr)
+	}
+
 	if err != nil {
-		slog.Warn("config not loaded, using defaults", "error", err)
+		zap.S().Warnw("config not loaded, using defaults", "error", err)
 		cfg = &config.MeshConfig{}
 	}
 
@@ -242,9 +255,9 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 	// Each tool's IsSupported() is evaluated against the local environment.
 	plugins := registry.NewPluginRegistry(nodeID)
 	for name, reason := range plugins.Unsupported() {
-		slog.Info("plugin skipped", "tool", name, "reason", reason)
+		zap.S().Infow("plugin skipped", "tool", name, "reason", reason)
 	}
-	slog.Info("plugin registry loaded", "supported", len(plugins.Supported()), "skipped", len(plugins.Unsupported()))
+	zap.S().Infow("plugin registry loaded", "supported", len(plugins.Supported()), "skipped", len(plugins.Unsupported()))
 
 	return ctx, cancel, nodeID, cfg, entries, plugins
 }
@@ -289,7 +302,7 @@ func defineTools(nodeID string) []toolEntry {
 				params.Name = "world"
 				if len(args) > 0 {
 					if err := json.Unmarshal(args, &params); err != nil {
-						slog.Debug("hello: unmarshal args", "error", err)
+						zap.S().Debugw("hello: unmarshal args", "error", err)
 					}
 				}
 				return tools.NewTextResult(fmt.Sprintf("Hello, %s! From node %s", params.Name, nodeID)), nil
@@ -434,7 +447,7 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 
 // runFleetNode handles the deployed fleet node lifecycle.
 func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
-	slog.Info("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
+	zap.S().Infow("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
 
 	if isDaemon {
 		// Ignore SIGHUP so we survive SSH terminal detachment.
@@ -447,7 +460,7 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 		// Read identity strictly from disk cache
 		loadedNodeID, cfgMembrane, err := LoadIdentity()
 		if err != nil {
-			slog.Error("load identity from disk", "error", err)
+			zap.S().Errorw("load identity from disk", "error", err)
 			os.Exit(1)
 		}
 		nodeID = loadedNodeID
@@ -456,14 +469,14 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 		// Signal readiness to the deployer. Deploy() blocks until this
 		// magic arrives, so the stream is guaranteed ready for cert exchange.
 		if err := transport.SignalReady(os.Stdout); err != nil {
-			slog.Error("signal ready", "error", err)
+			zap.S().Errorw("signal ready", "error", err)
 			os.Exit(1)
 		}
 
 		// Read deployment protocol mode byte.
 		var modeBuf [1]byte
 		if _, err := io.ReadFull(os.Stdin, modeBuf[:]); err != nil {
-			slog.Error("read deploy mode", "error", err)
+			zap.S().Errorw("read deploy mode", "error", err)
 			os.Exit(1)
 		}
 		isInstall := modeBuf[0] == 0x01
@@ -471,14 +484,14 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 		// Read cert bundle from stdin (sent by gateway after receiving ready signal).
 		bundle, cfgMembrane, err := readCertBundle(os.Stdin)
 		if err != nil {
-			slog.Error("read cert bundle", "error", err)
+			zap.S().Errorw("read cert bundle", "error", err)
 			os.Exit(1)
 		}
 		membraneCfg = cfgMembrane
 
 		if isInstall {
 			if err := SaveIdentity(nodeID, bundle); err != nil {
-				slog.Error("save identity bundle", "error", err)
+				zap.S().Errorw("save identity bundle", "error", err)
 				os.Exit(1)
 			}
 
@@ -491,7 +504,7 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 			cmd.Env = os.Environ()
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			if err := cmd.Start(); err != nil {
-				slog.Error("spawn detached daemon", "error", err)
+				zap.S().Errorw("spawn detached daemon", "error", err)
 				os.Exit(1)
 			}
 			// Exit cleanly, dropping the SSH stream!
@@ -511,13 +524,13 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 
 	privKey, ok := membraneCfg.Certificate.PrivateKey.(ed25519.PrivateKey)
 	if !ok {
-		slog.Error("node private key is not ed25519")
+		zap.S().Errorw("node private key is not ed25519")
 		os.Exit(1)
 	}
 
 	v, err := vault.New(privKey)
 	if err != nil {
-		slog.Error("failed to create vault", "error", err)
+		zap.S().Errorw("failed to create vault", "error", err)
 		os.Exit(1)
 	}
 
@@ -528,19 +541,19 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 		KnownHosts: cfg.KnownHosts(),
 		Reconnect:  reconnectPolicy,
 		Events: api.NodeEvents{
-			OnPeerJoined:  func(peerID string) { slog.Info("fleet: peer joined", "peer", peerID) },
-			OnPeerLost:    func(peerID string) { slog.Info("fleet: peer lost", "peer", peerID) },
-			OnIsolated:    func() { slog.Warn("fleet: isolated — zero peers") },
-			OnReconnected: func(peerID string) { slog.Info("fleet: reconnected!", "peer", peerID) },
+			OnPeerJoined:  func(peerID string) { zap.S().Infow("fleet: peer joined", "peer", peerID) },
+			OnPeerLost:    func(peerID string) { zap.S().Infow("fleet: peer lost", "peer", peerID) },
+			OnIsolated:    func() { zap.S().Warnw("fleet: isolated — zero peers") },
+			OnReconnected: func(peerID string) { zap.S().Infow("fleet: reconnected!", "peer", peerID) },
 			OnOrphaned: func() {
-				slog.Error("fleet: orphaned — reconnect exhausted, shutting down")
+				zap.S().Errorw("fleet: orphaned — reconnect exhausted, shutting down")
 				_ = transport.SelfCleanup()
 				os.Exit(0)
 			},
 		},
 	})
 	if err != nil {
-		slog.Error("create fleet node", "error", err)
+		zap.S().Errorw("create fleet node", "error", err)
 		os.Exit(1)
 	}
 	node.SetMembraneConfig(membraneCfg)
@@ -554,7 +567,7 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 	if !isDaemon {
 		// For standard temporary stdioconns, accept the deployer's connection (mTLS handshake + yamux).
 		if err := node.AcceptStdio(os.Stdin, os.Stdout); err != nil {
-			slog.Error("accept stdio", "error", err)
+			zap.S().Errorw("accept stdio", "error", err)
 			os.Exit(1)
 		}
 	}
@@ -565,20 +578,20 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 	// Serve tools on the mesh listener.
 	lis, err := node.GrpcListener()
 	if err != nil {
-		slog.Error("grpc listener", "error", err)
+		zap.S().Errorw("grpc listener", "error", err)
 		os.Exit(1)
 	}
 
 	if isDaemon {
 		tcpLis, err := node.Listen(ctx, "0.0.0.0:4443")
 		if err != nil {
-			slog.Error("daemon listen 4443", "error", err)
+			zap.S().Errorw("daemon listen 4443", "error", err)
 		} else {
-			slog.Info("daemon listening on TCP", "addr", tcpLis.Addr())
+			zap.S().Infow("daemon listening on TCP", "addr", tcpLis.Addr())
 		}
 	}
 
-	slog.Info("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
+	zap.S().Infow("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
 	tools.ServeToolListener(ctx, lis, meshReg)
 }
 
@@ -624,7 +637,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 			OnOrphaned: func() {
 				fmt.Fprintf(os.Stderr, "  [event] orphaned — leaving no trace\n")
 				if err := transport.SelfCleanup(); err != nil {
-					slog.Debug("self-cleanup", "error", err)
+					zap.S().Debugw("self-cleanup", "error", err)
 				}
 			},
 		},
@@ -641,7 +654,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 	defer func() {
 		if err := node.Close(); err != nil {
-			slog.Debug("close node", "error", err)
+			zap.S().Debugw("close node", "error", err)
 		}
 	}()
 	node.SetMembraneConfig(pki.membraneConfig(gatewayCert))
@@ -805,11 +818,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	fmt.Fprintf(os.Stderr, "\n--- Phase 11: Cleanup ---\n")
 	cancel()
 	if err := node.Close(); err != nil {
-		slog.Debug("close node", "error", err)
+		zap.S().Debugw("close node", "error", err)
 	}
 	for _, dn := range deployedNodes {
 		if err := dn.conn.Close(); err != nil {
-			slog.Debug("close deploy conn", "node", dn.nodeID, "error", err)
+			zap.S().Debugw("close deploy conn", "node", dn.nodeID, "error", err)
 		}
 		fmt.Fprintf(os.Stderr, "  ✓ %s: disconnected\n", dn.nodeID)
 	}
@@ -846,12 +859,12 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 	}
 
 	if err := cfg.LoadCredentials(v); err != nil {
-		slog.Warn("some credentials failed to load", "error", err)
+		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
 	patterns := v.AllPatterns()
 	if len(patterns) > 0 {
-		slog.Info("vault loaded", "credential_patterns", patterns)
+		zap.S().Infow("vault loaded", "credential_patterns", patterns)
 	}
 
 	return v, nil
@@ -1012,7 +1025,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			fmt.Fprintf(os.Stderr, " ✗ generate cert: %v\n", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
-				slog.Debug("close stream", "error", cerr)
+				zap.S().Debugw("close stream", "error", cerr)
 			}
 			continue
 		}
@@ -1032,7 +1045,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			fmt.Fprintf(os.Stderr, " ✗ send certs: %v\n", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
-				slog.Debug("close stream", "error", cerr)
+				zap.S().Debugw("close stream", "error", cerr)
 			}
 			continue
 		}
@@ -1079,7 +1092,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 				fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
 				dumpRemoteStderr(stream)
 				if cerr := conn.Close(); cerr != nil {
-					slog.Debug("close conn", "error", cerr)
+					zap.S().Debugw("close conn", "error", cerr)
 				}
 				continue
 			}
@@ -1300,7 +1313,7 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 	}
 
 	if err := cfg.LoadCredentials(v); err != nil {
-		slog.Warn("some credentials failed to load", "error", err)
+		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
 	knownHosts := cfg.KnownHosts()
@@ -1366,11 +1379,11 @@ func startFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 
 	v, err := initVault(cfg)
 	if err != nil {
-		slog.Error("failed to init vault", "error", err)
+		zap.S().Errorw("failed to init vault", "error", err)
 		return
 	}
 	if err := cfg.LoadCredentials(v); err != nil {
-		slog.Warn("some credentials failed to load", "error", err)
+		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
 	knownHosts := cfg.KnownHosts()

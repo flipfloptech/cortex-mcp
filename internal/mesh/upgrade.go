@@ -15,8 +15,8 @@ package mesh
 import (
 	"context"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
-	"log/slog"
 	"net"
 	"os"
 	"time"
@@ -86,7 +86,7 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 	}
 	defer func() {
 		if cerr := binaryFile.Close(); cerr != nil {
-			slog.Debug("upgrade: close binary", "error", cerr)
+			zap.S().Debugw("upgrade: close binary", "error", cerr)
 		}
 	}()
 
@@ -96,7 +96,7 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 	}
 	defer func() {
 		if cerr := client.Close(); cerr != nil {
-			slog.Debug("upgrade: close SSH", "error", cerr)
+			zap.S().Debugw("upgrade: close SSH", "error", cerr)
 		}
 	}()
 
@@ -127,7 +127,7 @@ func uploadBinaryViaSFTP(client *ssh.Client, binary io.Reader, remotePath string
 
 	// Ensure parent directory exists.
 	if err := sftpClient.MkdirAll(remotePath[:len(remotePath)-len("/cortex-mesh")]); err != nil {
-		slog.Debug("upgrade: mkdir (may already exist)", "error", err)
+		zap.S().Debugw("upgrade: mkdir (may already exist)", "error", err)
 	}
 
 	remoteFile, err := sftpClient.Create(remotePath)
@@ -159,7 +159,7 @@ func execSSHCommand(client *ssh.Client, cmd string) error {
 	}
 	defer func() {
 		if cerr := session.Close(); cerr != nil && cerr != io.EOF {
-			slog.Debug("upgrade: close session", "error", cerr)
+			zap.S().Debugw("upgrade: close session", "error", cerr)
 		}
 	}()
 
@@ -226,7 +226,7 @@ func dialSSH(ctx context.Context, targetHost string, cred transport.DeployCreden
 func checkServiceActive(ctx context.Context, targetHost string, cred transport.DeployCredential) bool {
 	client, err := dialSSH(ctx, targetHost, cred)
 	if err != nil {
-		slog.Debug("checkServiceActive: SSH failed", "host", targetHost, "error", err)
+		zap.S().Debugw("checkServiceActive: SSH failed", "host", targetHost, "error", err)
 		return false
 	}
 	defer func() { _ = client.Close() }()

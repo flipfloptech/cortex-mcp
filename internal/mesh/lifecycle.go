@@ -17,7 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"go.uber.org/zap"
 	"os"
 	"os/exec"
 	"strings"
@@ -102,7 +102,7 @@ func executeOps(ops []lifecycleOp) error {
 func executeOp(op lifecycleOp) error {
 	switch op.Action {
 	case "systemctl":
-		slog.Info("lifecycle", "action", "systemctl", "args", op.Args)
+		zap.S().Infow("lifecycle", "action", "systemctl", "args", op.Args)
 		//nolint:gosec // Args are constructed internally, not from user input.
 		cmd := exec.Command("systemctl", splitArgs(op.Args)...)
 		cmd.Stdout = os.Stderr
@@ -110,15 +110,15 @@ func executeOp(op lifecycleOp) error {
 		return cmd.Run()
 
 	case "write_file":
-		slog.Info("lifecycle", "action", "write_file", "path", op.Path)
+		zap.S().Infow("lifecycle", "action", "write_file", "path", op.Path)
 		return os.WriteFile(op.Path, []byte(op.Content), 0644)
 
 	case "remove_file":
-		slog.Info("lifecycle", "action", "remove_file", "path", op.Path)
+		zap.S().Infow("lifecycle", "action", "remove_file", "path", op.Path)
 		return os.Remove(op.Path)
 
 	case "copy_binary":
-		slog.Info("lifecycle", "action", "copy_binary", "dest", op.Path)
+		zap.S().Infow("lifecycle", "action", "copy_binary", "dest", op.Path)
 		src, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("resolve executable: %w", err)
@@ -130,7 +130,7 @@ func executeOp(op lifecycleOp) error {
 		return os.WriteFile(op.Path, data, 0755)
 
 	case "copy_file":
-		slog.Info("lifecycle", "action", "copy_file", "src", op.Src, "dest", op.Path)
+		zap.S().Infow("lifecycle", "action", "copy_file", "src", op.Src, "dest", op.Path)
 		data, err := os.ReadFile(op.Src)
 		if err != nil {
 			return fmt.Errorf("read source: %w", err)
@@ -246,7 +246,7 @@ func handleNodeUninstall(_ context.Context, _ json.RawMessage) (*tools.ToolResul
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if execErr := executeOps(ops); execErr != nil {
-				slog.Error("node_uninstall failed", "error", execErr)
+				zap.S().Errorw("node_uninstall failed", "error", execErr)
 			}
 			// For ephemeral nodes, exit after cleanup.
 			if !strings.HasPrefix(binaryPath, "/opt/") {
@@ -276,7 +276,7 @@ func handleNodeInstall(_ context.Context, _ json.RawMessage) (*tools.ToolResult,
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if execErr := executeOps(ops); execErr != nil {
-				slog.Error("node_install failed", "error", execErr)
+				zap.S().Errorw("node_install failed", "error", execErr)
 			}
 		}()
 	}
@@ -311,7 +311,7 @@ func handleNodeUpgrade(_ context.Context, args json.RawMessage) (*tools.ToolResu
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			if err := executeOps(ops); err != nil {
-				slog.Error("node_upgrade failed", "error", err)
+				zap.S().Errorw("node_upgrade failed", "error", err)
 			}
 		}()
 	}
