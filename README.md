@@ -1,56 +1,14 @@
-# Cortex MCP Application
+# Cortex MCP Server
 
-A complete, feature-rich binary demonstrating the full cortex-mesh lifecycle. This application serves as the production integration pattern — a single Go program that operates as either a **gateway** (bootstrap node) or a **fleet node** (deployed), depending on how it was launched.
+A production-ready Model Context Protocol (MCP) server that provides AI agents with secure, distributed access to infrastructure telemetry, diagnostics, and Lustre filesystem management via the Cortex Mesh P2P network.
+
+This application operates as either a **gateway** (bootstrap node connecting to the LLM) or a **fleet node** (deployed agent), depending on how it was launched. It turns complex, distributed infrastructure into a flat, callable tool namespace for LLMs.
+
+## Tool Catalog
+
+For a comprehensive list of all available tools, their mathematical models, data sources, and philosophical design (such as graceful degradation), please see the [Cortex MCP Tool Catalog](TOOL_CATALOG.md).
 
 ## Operational Modes
-
-### Test Mode (default, temporary)
-
-```bash
-./cortex-mcp --config mesh.toml
-```
-
-Deploys to **only** the seed hosts in `mesh.toml`. Nodes are temporary processes
-that die when the gateway disconnects. Great for validating connectivity,
-credentials, and tool execution.
-
-### Persistent Mode (install + systemd)
-
-```bash
-./cortex-mcp install --config mesh.toml
-```
-
-Deploys to seed hosts **and** installs as a systemd service. Nodes persist
-across reboots and are managed via standard commands:
-
-```bash
-./cortex-mcp start       # start the mesh node
-./cortex-mcp stop        # graceful shutdown
-./cortex-mcp uninstall   # uninstall the mesh node
-```
-
-### Fleet Node Mode (automatic)
-
-```bash
-# Set automatically by SelfDeployer — never run manually:
-CORTEX_MESH_SPAWNED=1 ./cortex-mcp daemon
-```
-
-## What It Demonstrates
-
-| Phase | Feature | Layer |
-|-------|---------|-------|
-| 1 | Ephemeral PKI generation (site CA + node certs) | `membrane` |
-| 2 | Node creation with lifecycle events + reconnect policy | `api` |
-| 3 | Local tool registration + invocation | `tools` |
-| 4 | Gateway meta-tools (list_tools, tool_help, call_tool) | `gateway` |
-| 5 | SSH deploy + readiness handshake + cert bootstrap + mTLS mesh connect | `transport` + `membrane` |
-| 6 | Gossip ticker startup (3s impedance exchange) | `routing` |
-| 7 | Sonar broadcast discovery (`tool:*`) | `routing` |
-| 8 | Remote invocation via NeuronBridge (GrpcDialer + DialInvoke) | `tools` |
-| 9 | Fan-out invocation across fleet | `gateway` + `tools` |
-| 10 | Mesh topology snapshot | `api` |
-| 11 | Clean teardown with node event callbacks | `api` |
 
 ## Quick Start
 
@@ -214,24 +172,3 @@ Remote tool invocation uses length-prefixed protobuf framing over mesh streams:
 ```
 
 This is the same framing used by the control plane codec, keeping the protocol uniform.
-
-## Library Features Demonstrated
-
-- **api.NewNode** — full NodeConfig with events, reconnect, known hosts
-- **api.NodeEvents** — OnPeerJoined, OnPeerLost, OnIsolated, OnReconnected, OnOrphaned
-- **api.ReconnectPolicy** — exponential backoff with timeout
-- **membrane.Config** — mTLS with ephemeral Ed25519 certs
-- **transport.SelfDeployer** — binary self-deployment via SSH/SFTP
-- **transport.SignalReady** — 4-byte readiness handshake from fleet nodes
-- **transport.WasDeployed** — detection of fleet vs gateway mode
-- **transport.NewStdioConn** — wrapping streams as net.Conn
-- **transport.SelfCleanup** — leave-no-trace binary deletion
-- **tools.Registry** — tool registration with capability advertising
-- **tools.ServeToolConn/Listener** — server-side wire protocol
-- **tools.DialInvoke** — client-side wire protocol
-- **tools.NeuronBridge** — mesh-aware remote invocation adapter
-- **gateway.Gateway** — MCP meta-tool dispatch (list_tools, tool_help, call_tool)
-- **vault.Vault** — encrypted credential storage
-- **vault.Credential** — SSH key and password authentication
-- **routing.Sonar** — broadcast capability discovery
-- **routing.GradientTable** — impedance-based gossip routing
