@@ -41,7 +41,8 @@ func (t *SystemInfoTool) Help() string {
 	return `system_info — Get Detailed System Information
 
 Returns structured system information for this node including hostname,
-OS, architecture, CPU count, kernel version, and distro identification.
+OS, architecture, CPU count, kernel version, distro identification,
+and detected storage/cluster roles (SFA, MGS, MDS, OSS, Client).
 
 Filtering: Deterministic — all values are read directly from the system.
 No heuristics or estimation involved. Values are sourced from:
@@ -49,11 +50,14 @@ No heuristics or estimation involved. Values are sourced from:
   - os.Hostname()
   - /proc/sys/kernel/osrelease (Linux kernel version)
   - /etc/os-release (Linux distro identification)
+  - /sys/module/jsysdd, /sys/class/jsys, etc. (SFA detection)
+  - /sys/fs/lustre/mgs/, mdt/, obdfilter/, llite/ (Lustre role detection)
 
 Graceful degradation: if a data source is unavailable (e.g., minimal
 container without /etc/os-release), the field is returned as "unknown"
-or empty rather than failing. This tool always loads on Linux — it is
-a core diagnostic tool that should be available even on stripped systems.
+or empty rather than failing. If no storage roles are detected, the
+roles field returns ["generic"]. This tool always loads on Linux — it
+is a core diagnostic tool that should be available even on stripped systems.
 
 Output format:
   {
@@ -62,7 +66,9 @@ Output format:
     "arch": "amd64",
     "cpus": 64,
     "kernel": "5.14.0-362.el9.x86_64",
-    "distro": "Rocky Linux 9.3"
+    "distro": "Rocky Linux 9.3",
+    "roles": ["oss", "sfa"],
+    "role_info": { ... }
   }
 
 Parameters: None
@@ -89,12 +95,14 @@ func (t *SystemInfoTool) IsSupported() (bool, string) {
 
 // systemInfoData is the structured output for system_info.
 type systemInfoData struct {
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	CPUs     int    `json:"cpus"`
-	Kernel   string `json:"kernel"`
-	Distro   string `json:"distro,omitempty"`
+	Hostname string                `json:"hostname"`
+	OS       string                `json:"os"`
+	Arch     string                `json:"arch"`
+	CPUs     int                   `json:"cpus"`
+	Kernel   string                `json:"kernel"`
+	Distro   string                `json:"distro,omitempty"`
+	Roles    []string              `json:"roles"`
+	RoleInfo *registry.NodeRoleInfo `json:"role_info"`
 }
 
 // Execute gathers system information and returns a standardized result.
@@ -104,6 +112,7 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 	hostname, _ := os.Hostname()
 	kernel := readKernel()
 	distro := readDistro()
+	roleInfo := registry.DetectNodeRoles()
 
 	data := systemInfoData{
 		Hostname: hostname,
@@ -112,6 +121,8 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 		CPUs:     runtime.NumCPU(),
 		Kernel:   kernel,
 		Distro:   distro,
+		Roles:    roleInfo.Roles(),
+		RoleInfo: roleInfo,
 	}
 
 	result := registry.NewResult(
