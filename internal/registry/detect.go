@@ -131,11 +131,11 @@ func (n *NodeRoleInfo) Roles() []string {
 	if n.IsClient {
 		roles = append(roles, "client")
 	}
-	
+
 	if len(roles) == 0 {
 		return []string{"generic"}
 	}
-	
+
 	return roles
 }
 
