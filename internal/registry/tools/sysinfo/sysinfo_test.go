@@ -145,6 +145,55 @@ func TestSystemInfoTool_ExecuteRespectsContext(t *testing.T) {
 	}
 }
 
+// TestSystemInfoTool_GracefulDegradation verifies that Execute never errors —
+// missing data sources produce "unknown" or empty values, not failures.
+// system_info is a core diagnostic tool that must work on stripped/minimal systems.
+func TestSystemInfoTool_GracefulDegradation(t *testing.T) {
+	t.Parallel()
+
+	if !registry.IsLinux() {
+		t.Skip("system_info requires Linux")
+	}
+
+	tool := &sysinfo.SystemInfoTool{}
+	result, err := tool.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Execute must never return an error, got: %v", err)
+	}
+
+	// Status must always be OK — degradation is in the data, not the status.
+	if result.Status != registry.StatusOK {
+		t.Errorf("Status = %q, want %q (graceful degradation should still be OK)", result.Status, registry.StatusOK)
+	}
+
+	// kernel field should be present (even if "unknown").
+	var data map[string]interface{}
+	if err := json.Unmarshal(result.Data, &data); err != nil {
+		t.Fatalf("Data is not valid JSON: %v", err)
+	}
+
+	kernel, ok := data["kernel"].(string)
+	if !ok {
+		t.Error("kernel field must be a string")
+	}
+	if kernel == "" {
+		t.Error("kernel should be populated or 'unknown', not empty")
+	}
+}
+
+// TestSystemInfoTool_HelpDocumentsDegradation verifies that Help()
+// explains the graceful degradation behavior.
+func TestSystemInfoTool_HelpDocumentsDegradation(t *testing.T) {
+	t.Parallel()
+
+	tool := &sysinfo.SystemInfoTool{}
+	help := tool.Help()
+
+	if !containsSubstring(help, "Graceful degradation") && !containsSubstring(help, "graceful degradation") {
+		t.Error("Help() should document graceful degradation behavior")
+	}
+}
+
 func containsSubstring(s, sub string) bool {
 	return len(s) >= len(sub) && searchString(s, sub)
 }

@@ -47,8 +47,13 @@ Filtering: Deterministic — all values are read directly from the system.
 No heuristics or estimation involved. Values are sourced from:
   - runtime.GOOS, runtime.GOARCH, runtime.NumCPU()
   - os.Hostname()
-  - /proc/sys/kernel/osrelease (Linux)
+  - /proc/sys/kernel/osrelease (Linux kernel version)
   - /etc/os-release (Linux distro identification)
+
+Graceful degradation: if a data source is unavailable (e.g., minimal
+container without /etc/os-release), the field is returned as "unknown"
+or empty rather than failing. This tool always loads on Linux — it is
+a core diagnostic tool that should be available even on stripped systems.
 
 Output format:
   {
@@ -71,6 +76,10 @@ func (t *SystemInfoTool) Category() string { return "system" }
 func (t *SystemInfoTool) Parameters() []registry.ToolParam { return nil }
 
 // IsSupported checks if this tool can operate on the current node.
+// Only gates on Linux — individual data sources (kernel version, distro)
+// degrade gracefully to "unknown" or empty when unavailable.
+// This is intentional: system_info is a core diagnostic tool that should
+// always be available, even on minimal or containerized Linux systems.
 func (t *SystemInfoTool) IsSupported() (bool, string) {
 	if !registry.IsLinux() {
 		return false, "requires Linux (running on " + runtime.GOOS + ")"
