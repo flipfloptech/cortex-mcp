@@ -312,23 +312,23 @@ func renderMermaid(overview *ClusterOverview) string {
 	b.WriteString("\n")
 
 	// Emit gateway node.
-	b.WriteString(fmt.Sprintf("    %s[\"%s<br/>MCP Gateway\"]:::gateway\n",
-		sanitizeMermaidID(overview.GatewayNodeID), overview.GatewayNodeID))
+	fmt.Fprintf(&b, "    %s[\"%s<br/>MCP Gateway\"]:::gateway\n",
+		sanitizeMermaidID(overview.GatewayNodeID), overview.GatewayNodeID)
 
 	// Emit all discovered nodes.
 	for _, node := range overview.Nodes {
 		roleLabel := strings.Join(node.Roles, "+")
 		cssClass := primaryRole(node.Roles)
-		b.WriteString(fmt.Sprintf("    %s[\"%s<br/>%s\"]:::%s\n",
-			sanitizeMermaidID(node.NodeID), node.NodeID, strings.ToUpper(roleLabel), cssClass))
+		fmt.Fprintf(&b, "    %s[\"%s<br/>%s\"]:::%s\n",
+			sanitizeMermaidID(node.NodeID), node.NodeID, strings.ToUpper(roleLabel), cssClass)
 	}
 
 	b.WriteString("\n")
 
 	// Emit edges.
 	for _, edge := range overview.Edges {
-		b.WriteString(fmt.Sprintf("    %s ---|%.2f| %s\n",
-			sanitizeMermaidID(edge.From), edge.Impedance, sanitizeMermaidID(edge.To)))
+		fmt.Fprintf(&b, "    %s ---|%.2f| %s\n",
+			sanitizeMermaidID(edge.From), edge.Impedance, sanitizeMermaidID(edge.To))
 	}
 
 	return b.String()
