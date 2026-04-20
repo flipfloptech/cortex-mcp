@@ -9,6 +9,7 @@ package mesh
 // The PluginRegistry evaluates each tool's IsSupported() at startup.
 // Unsupported tools are logged and excluded — zero runtime cost.
 import (
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/loadavg"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/sysinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/uptime"
 )
