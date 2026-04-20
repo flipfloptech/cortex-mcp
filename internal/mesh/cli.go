@@ -341,30 +341,7 @@ func (e *staticGroupResolver) List(source string) ([]string, error) {
 
 // defineTools returns the tool catalog shared by all modes.
 func defineTools(nodeID string) []toolEntry {
-	entries := []toolEntry{
-		{
-			def: tools.ToolDefinition{
-				Name:            "hello",
-				Description:     "Say hello from this node",
-				LongDescription: "Returns a greeting message from the node. Useful for verifying connectivity and tool invocation.",
-				Category:        "demo",
-				Parameters: []tools.ToolParam{
-					{Name: "name", Type: "string", Description: "Who to greet", Required: false, Default: "world"},
-				},
-			},
-			handler: func(_ context.Context, args json.RawMessage) (*tools.ToolResult, error) {
-				var params struct {
-					Name string `json:"name"`
-				}
-				params.Name = "world"
-				if len(args) > 0 {
-					if err := json.Unmarshal(args, &params); err != nil {
-						zap.S().Debugw("hello: unmarshal args", "error", err)
-					}
-				}
-				return tools.NewTextResult(fmt.Sprintf("Hello, %s! From node %s", params.Name, nodeID)), nil
-			},
-		},
+	return []toolEntry{
 		{
 			def: tools.ToolDefinition{
 				Name:            "system_info",
@@ -391,6 +368,7 @@ func defineTools(nodeID string) []toolEntry {
 				Description:     "Install this node as a persistent systemd service",
 				LongDescription: "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. Converts an ephemeral node into persistent infrastructure.",
 				Category:        "lifecycle",
+				Hidden:          true,
 			},
 			handler: handleNodeInstall,
 		},
@@ -400,6 +378,7 @@ func defineTools(nodeID string) []toolEntry {
 				Description:     "Remove this node — handles both persistent (systemd) and ephemeral (/tmp) nodes",
 				LongDescription: "Detects whether the node is persistent or ephemeral. Persistent: stops/disables service, removes unit + binary. Ephemeral: removes the /tmp binary and exits.",
 				Category:        "lifecycle",
+				Hidden:          true,
 			},
 			handler: handleNodeUninstall,
 		},
@@ -409,6 +388,7 @@ func defineTools(nodeID string) []toolEntry {
 				Description:     "Restart the local cortex-mesh systemd service",
 				LongDescription: "Runs systemctl restart cortex-mesh. Use after binary upgrades or configuration changes.",
 				Category:        "lifecycle",
+				Hidden:          true,
 			},
 			handler: handleNodeRestart,
 		},
@@ -418,6 +398,7 @@ func defineTools(nodeID string) []toolEntry {
 				Description:     "Stop the cortex-mesh systemd service without uninstalling",
 				LongDescription: "Gracefully stops the service. The node remains installed and can be restarted. Use for maintenance windows.",
 				Category:        "lifecycle",
+				Hidden:          true,
 			},
 			handler: handleNodeStop,
 		},
@@ -427,6 +408,7 @@ func defineTools(nodeID string) []toolEntry {
 				Description:     "Upgrade the node binary and restart the service",
 				LongDescription: "Copies a new binary from the specified path over the installed binary, reloads systemd, and restarts the service.",
 				Category:        "lifecycle",
+				Hidden:          true,
 				Parameters: []tools.ToolParam{
 					{Name: "path", Type: "string", Description: "Path to the new binary (e.g., /tmp/cortex-mesh-new)", Required: true},
 				},
@@ -434,37 +416,6 @@ func defineTools(nodeID string) []toolEntry {
 			handler: handleNodeUpgrade,
 		},
 	}
-
-	// Add node-specific capability for group demonstration
-	switch nodeID {
-	case "oss1":
-		entries = append(entries, toolEntry{
-			def: tools.ToolDefinition{
-				Name:        "storage_check",
-				Description: "Storage specific check",
-				Category:    "storage",
-			},
-			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-				return tools.NewTextResult("Storage OK from " + nodeID), nil
-			},
-		})
-	case "oss2":
-		entries = append(entries, toolEntry{
-			def: tools.ToolDefinition{
-				Name:        "network_check",
-				Description: "Network specific check",
-				Category:    "network",
-			},
-			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-				return tools.NewTextResult("Network OK from " + nodeID), nil
-			},
-		})
-	}
-
-	// Add dynamic tools based on environment detection
-	entries = append(entries, detectTools(nodeID)...)
-
-	return entries
 }
 
 // registerTools populates a registry with the given tool entries.
@@ -496,6 +447,7 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 		Description:     "Deploy this binary to another host via the mesh",
 		LongDescription: "Deploys the mesh binary to the specified target host using SelfDeployer. Any node in the fabric can act as a jumphost, enabling deployment to hosts unreachable from the gateway.",
 		Category:        "lifecycle",
+		Hidden:          true,
 		Parameters: []tools.ToolParam{
 			{Name: "target", Type: "string", Description: "Target host address (e.g., 10.0.1.5 or host:port)", Required: true},
 		},
@@ -1337,14 +1289,7 @@ func toDeployCredential(cred vault.Credential) (transport.DeployCredential, erro
 
 // runLocalDemo invokes tools locally on the gateway node.
 func runLocalDemo(ctx context.Context, registry *tools.Registry) {
-	result, err := registry.InvokeLocal(ctx, "hello", json.RawMessage(`{"name":"cortex-mesh"}`))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  hello failed: %v\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  hello: %s\n", result.Content)
-	}
-
-	result, err = registry.InvokeLocal(ctx, "system_info", nil)
+	result, err := registry.InvokeLocal(ctx, "system_info", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  system_info failed: %v\n", err)
 	} else {
@@ -1370,8 +1315,8 @@ func runGatewayMetaTools(ctx context.Context, gw *gateway.Gateway) {
 		fmt.Fprintf(os.Stderr, "  tool_help: %s\n", result.Content)
 	}
 
-	// call_tool — invoke hello locally via the gateway.
-	result, err = gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"hello","args":{"name":"mesh-gateway"}}`))
+	// call_tool — invoke system_info locally via the gateway.
+	result, err = gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"system_info","args":{}}`))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  call_tool failed: %v\n", err)
 	} else {
@@ -1382,7 +1327,7 @@ func runGatewayMetaTools(ctx context.Context, gw *gateway.Gateway) {
 // runGatewayFanOut demonstrates fan-out dispatch across deployed nodes.
 func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployedNode) {
 	// Fan-out via call_tool with glob pattern.
-	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"hello","args":{"name":"mesh-gateway"},"node_name":"*"}`))
+	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"system_info","args":{},"node_name":"*"}`))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ✗ fan-out via gateway error: %v\n", err)
 		// Fallback to direct fan-out via DialInvoke over deploy streams.
@@ -1391,14 +1336,6 @@ func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployed
 		return
 	}
 	fmt.Fprintf(os.Stderr, "  ✓ fan-out (*) result: %s\n", result.Content)
-
-	// Demonstration of fan-out via call_tool using a NodeSet @group
-	resultGroup, errGroup := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"storage_check","args":{},"node_name":"@storage"}`))
-	if errGroup != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ fan-out via group @storage error: %v\n", errGroup)
-	} else {
-		fmt.Fprintf(os.Stderr, "  ✓ fan-out (@storage) result: %s\n", resultGroup.Content)
-	}
 }
 
 // runGatewayTopology invokes the mesh_topology tool via the gateway and pretty-prints the output.
@@ -1419,7 +1356,7 @@ func runGatewayTopology(ctx context.Context, gw *gateway.Gateway) {
 	fmt.Fprintf(os.Stderr, "%s\n", prettyJSON.String())
 }
 
-// fanOutDirect invokes the "hello" tool on all deployed nodes concurrently.
+// fanOutDirect invokes the "system_info" tool on all deployed nodes concurrently.
 func fanOutDirect(ctx context.Context, nodes []deployedNode) {
 	type nodeResult struct {
 		nodeID  string
@@ -1434,7 +1371,7 @@ func fanOutDirect(ctx context.Context, nodes []deployedNode) {
 		wg.Add(1)
 		go func(dn deployedNode) {
 			defer wg.Done()
-			result, err := tools.DialInvoke(ctx, dn.conn, "hello", json.RawMessage(`{"name":"mesh-gateway"}`))
+			result, err := tools.DialInvoke(ctx, dn.conn, "system_info", nil)
 			if err != nil {
 				results <- nodeResult{nodeID: dn.nodeID, err: err}
 				return
