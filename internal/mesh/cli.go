@@ -90,9 +90,10 @@ type toolEntry struct {
 
 // GatewayOptions contains operation modes for the bootstrap node.
 type GatewayOptions struct {
-	Install bool
-	Stop    bool
-	Target  string
+	Install    bool
+	Stop       bool
+	Target     string
+	PureClient bool
 }
 
 func Execute() {
@@ -659,11 +660,13 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}()
 	node.SetMembraneConfig(pki.membraneConfig(gatewayCert))
 
-	// Register tools with capability advertising.
+	// Register tools with capability advertising (unless PureClient mode).
 	meshReg := tools.NewRegistry(node)
-	registerTools(meshReg, entries)
-	plugins.BridgeToMesh(meshReg)
-	registerNodeTools(meshReg, node)
+	if !opts.PureClient {
+		registerTools(meshReg, entries)
+		plugins.BridgeToMesh(meshReg)
+		registerNodeTools(meshReg, node)
+	}
 
 	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(meshReg.ListLocal()))
 	fmt.Fprintf(os.Stderr, "  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
@@ -677,7 +680,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 3: Local tool invocation ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 3: Local tool invocation ---\n")
-	runLocalDemo(ctx, meshReg)
+	if !opts.PureClient {
+		runLocalDemo(ctx, meshReg)
+	} else {
+		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
+	}
 
 	// --- Phase 4: Gateway meta-tools ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Gateway meta-tools ---\n")
@@ -692,7 +699,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	gw := gateway.New(meshReg, bridge, gateway.WithGroupResolver(resolver))
-	runGatewayMetaTools(ctx, gw)
+	if !opts.PureClient {
+		runGatewayMetaTools(ctx, gw)
+	} else {
+		fmt.Fprintf(os.Stderr, "  (Demo skipped in PureClient mode)\n")
+	}
 
 	// --- Phase 5: Deploy to seed hosts ---
 	knownHosts := cfg.KnownHosts()
@@ -793,26 +804,38 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 8: Remote invocation via NeuronBridge ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 8: Remote invocation via NeuronBridge ---\n")
-	for _, dn := range deployedNodes {
-		result, err := bridge.InvokeRemote(ctx, dn.nodeID, "system_info", nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: invoke failed: %v\n", dn.nodeID, err)
-			continue
+	if !opts.PureClient {
+		for _, dn := range deployedNodes {
+			result, err := bridge.InvokeRemote(ctx, dn.nodeID, "system_info", nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ %s: invoke failed: %v\n", dn.nodeID, err)
+				continue
+			}
+			if result.IsError {
+				fmt.Fprintf(os.Stderr, "  ✗ %s: tool error: %s\n", dn.nodeID, result.Content)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  ✓ %s: %s\n", dn.nodeID, result.Content)
 		}
-		if result.IsError {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: tool error: %s\n", dn.nodeID, result.Content)
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "  ✓ %s: %s\n", dn.nodeID, result.Content)
+	} else {
+		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
 	}
 
 	// --- Phase 9: Fan-out hello ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 9: Fan-out hello ---\n")
-	runGatewayFanOut(ctx, gw, deployedNodes)
+	if !opts.PureClient {
+		runGatewayFanOut(ctx, gw, deployedNodes)
+	} else {
+		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
+	}
 
 	// --- Phase 10: Mesh topology print ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 10: Mesh topology ---\n")
-	runGatewayTopology(ctx, gw)
+	if !opts.PureClient {
+		runGatewayTopology(ctx, gw)
+	} else {
+		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
+	}
 
 	// --- Phase 11: Cleanup ---
 	fmt.Fprintf(os.Stderr, "\n--- Phase 11: Cleanup ---\n")
