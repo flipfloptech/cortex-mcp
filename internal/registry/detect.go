@@ -76,20 +76,85 @@ func IsDistro(names ...string) bool {
 	return false
 }
 
-// DetectLustreNodeType inspects /proc/fs/lustre/ to determine the Lustre
-// node type. Returns "mds", "oss", "client", or "" if Lustre is not present.
-func DetectLustreNodeType() string {
-	if !PathExists("/proc/fs/lustre") {
-		return ""
+// LustreNodeInfo describes the Lustre roles active on this node.
+// A single server can have multiple roles (e.g., both MDTs and OSTs).
+type LustreNodeInfo struct {
+	// IsMDS is true if this node has active Metadata Targets (MDTs).
+	IsMDS bool `json:"is_mds"`
+
+	// IsOSS is true if this node has active Object Storage Targets (OSTs).
+	IsOSS bool `json:"is_oss"`
+
+	// IsClient is true if this node has mounted Lustre filesystems.
+	IsClient bool `json:"is_client"`
+
+	// MDTs lists the names of active MDTs (e.g., ["myfs-MDT0000"]).
+	MDTs []string `json:"mdts,omitempty"`
+
+	// OSTs lists the names of active OSTs (e.g., ["myfs-OST0000", "myfs-OST0001"]).
+	OSTs []string `json:"osts,omitempty"`
+
+	// Clients lists mounted Lustre filesystem names (e.g., ["myfs"]).
+	Clients []string `json:"clients,omitempty"`
+}
+
+// HasLustre returns true if any Lustre role is detected.
+func (l *LustreNodeInfo) HasLustre() bool {
+	return l.IsMDS || l.IsOSS || l.IsClient
+}
+
+// Roles returns a human-readable list of active roles (e.g., ["mds", "oss"]).
+func (l *LustreNodeInfo) Roles() []string {
+	var roles []string
+	if l.IsMDS {
+		roles = append(roles, "mds")
 	}
-	if PathExists("/proc/fs/lustre/mdt") {
-		return "mds"
+	if l.IsOSS {
+		roles = append(roles, "oss")
 	}
-	if PathExists("/proc/fs/lustre/obdfilter") || PathExists("/proc/fs/lustre/osd-ldiskfs") {
-		return "oss"
+	if l.IsClient {
+		roles = append(roles, "client")
 	}
-	if PathExists("/proc/fs/lustre/llite") {
-		return "client"
+	return roles
+}
+
+// DetectLustreNodeType inspects /sys/fs/lustre/ to determine which Lustre
+// roles are active on this node. A single server can serve both MDTs and
+// OSTs simultaneously (dual-role).
+//
+// Detection is based on the presence of active subdirectories:
+//   - /sys/fs/lustre/mdt/       → MDT (MDS role)
+//   - /sys/fs/lustre/obdfilter/ → OST (OSS role)
+//   - /sys/fs/lustre/llite/     → mounted client
+//
+// Each subdirectory under these paths represents an active target/mount.
+func DetectLustreNodeType() *LustreNodeInfo {
+	info := &LustreNodeInfo{}
+
+	info.MDTs = listSubdirs("/sys/fs/lustre/mdt")
+	info.IsMDS = len(info.MDTs) > 0
+
+	info.OSTs = listSubdirs("/sys/fs/lustre/obdfilter")
+	info.IsOSS = len(info.OSTs) > 0
+
+	info.Clients = listSubdirs("/sys/fs/lustre/llite")
+	info.IsClient = len(info.Clients) > 0
+
+	return info
+}
+
+// listSubdirs returns the names of immediate subdirectories under path.
+// Returns nil if the path doesn't exist or can't be read.
+func listSubdirs(path string) []string {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil
 	}
-	return ""
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	return dirs
 }

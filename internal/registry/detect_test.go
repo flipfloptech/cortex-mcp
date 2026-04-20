@@ -79,14 +79,74 @@ func TestReadOSRelease_ReturnsMap(t *testing.T) {
 }
 
 // TestDetectLustreNodeType_NoLustre verifies that DetectLustreNodeType
-// returns empty string when /proc/fs/lustre doesn't exist.
+// returns an empty LustreNodeInfo on non-Lustre hosts.
 func TestDetectLustreNodeType_NoLustre(t *testing.T) {
 	t.Parallel()
-	// On a dev machine without Lustre, this should return "".
-	if !registry.PathExists("/proc/fs/lustre") {
-		nodeType := registry.DetectLustreNodeType()
-		if nodeType != "" {
-			t.Errorf("DetectLustreNodeType() = %q, want empty on non-Lustre host", nodeType)
+	// On a dev machine without Lustre, all roles should be false.
+	if !registry.PathExists("/sys/fs/lustre") {
+		info := registry.DetectLustreNodeType()
+		if info.HasLustre() {
+			t.Errorf("HasLustre() = true on non-Lustre host, roles: %v", info.Roles())
 		}
+		if info.IsMDS || info.IsOSS || info.IsClient {
+			t.Error("no role flags should be set on non-Lustre host")
+		}
+		if len(info.MDTs) > 0 || len(info.OSTs) > 0 || len(info.Clients) > 0 {
+			t.Error("no targets should be listed on non-Lustre host")
+		}
+	}
+}
+
+// TestLustreNodeInfo_Roles verifies the Roles() method.
+func TestLustreNodeInfo_Roles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		info registry.LustreNodeInfo
+		want []string
+	}{
+		{"empty", registry.LustreNodeInfo{}, nil},
+		{"mds only", registry.LustreNodeInfo{IsMDS: true}, []string{"mds"}},
+		{"oss only", registry.LustreNodeInfo{IsOSS: true}, []string{"oss"}},
+		{"client only", registry.LustreNodeInfo{IsClient: true}, []string{"client"}},
+		{"dual mds+oss", registry.LustreNodeInfo{IsMDS: true, IsOSS: true}, []string{"mds", "oss"}},
+		{"all roles", registry.LustreNodeInfo{IsMDS: true, IsOSS: true, IsClient: true}, []string{"mds", "oss", "client"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			roles := tt.info.Roles()
+			if len(roles) != len(tt.want) {
+				t.Errorf("Roles() = %v, want %v", roles, tt.want)
+				return
+			}
+			for i, r := range roles {
+				if r != tt.want[i] {
+					t.Errorf("Roles()[%d] = %q, want %q", i, r, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestLustreNodeInfo_HasLustre verifies the HasLustre() method.
+func TestLustreNodeInfo_HasLustre(t *testing.T) {
+	t.Parallel()
+
+	empty := registry.LustreNodeInfo{}
+	if empty.HasLustre() {
+		t.Error("empty LustreNodeInfo should return HasLustre=false")
+	}
+
+	mds := registry.LustreNodeInfo{IsMDS: true}
+	if !mds.HasLustre() {
+		t.Error("MDS node should return HasLustre=true")
+	}
+
+	dual := registry.LustreNodeInfo{IsMDS: true, IsOSS: true}
+	if !dual.HasLustre() {
+		t.Error("dual-role node should return HasLustre=true")
 	}
 }
