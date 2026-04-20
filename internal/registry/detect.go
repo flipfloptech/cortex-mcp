@@ -79,6 +79,9 @@ func IsDistro(names ...string) bool {
 // LustreNodeInfo describes the Lustre roles active on this node.
 // A single server can have multiple roles (e.g., both MDTs and OSTs).
 type LustreNodeInfo struct {
+	// IsMGS is true if this node has an active Management Server (MGS).
+	IsMGS bool `json:"is_mgs"`
+
 	// IsMDS is true if this node has active Metadata Targets (MDTs).
 	IsMDS bool `json:"is_mds"`
 
@@ -87,6 +90,9 @@ type LustreNodeInfo struct {
 
 	// IsClient is true if this node has mounted Lustre filesystems.
 	IsClient bool `json:"is_client"`
+
+	// MGSs lists the names of active MGS instances (usually just ["MGS"]).
+	MGSs []string `json:"mgss,omitempty"`
 
 	// MDTs lists the names of active MDTs (e.g., ["myfs-MDT0000"]).
 	MDTs []string `json:"mdts,omitempty"`
@@ -100,12 +106,15 @@ type LustreNodeInfo struct {
 
 // HasLustre returns true if any Lustre role is detected.
 func (l *LustreNodeInfo) HasLustre() bool {
-	return l.IsMDS || l.IsOSS || l.IsClient
+	return l.IsMGS || l.IsMDS || l.IsOSS || l.IsClient
 }
 
-// Roles returns a human-readable list of active roles (e.g., ["mds", "oss"]).
+// Roles returns a human-readable list of active roles (e.g., ["mgs", "mds", "oss"]).
 func (l *LustreNodeInfo) Roles() []string {
 	var roles []string
+	if l.IsMGS {
+		roles = append(roles, "mgs")
+	}
 	if l.IsMDS {
 		roles = append(roles, "mds")
 	}
@@ -119,10 +128,11 @@ func (l *LustreNodeInfo) Roles() []string {
 }
 
 // DetectLustreNodeType inspects /sys/fs/lustre/ to determine which Lustre
-// roles are active on this node. A single server can serve both MDTs and
-// OSTs simultaneously (dual-role).
+// roles are active on this node. A single server can serve multiple roles
+// simultaneously (e.g., MGS + MDS, or MDS + OSS).
 //
 // Detection is based on the presence of active subdirectories:
+//   - /sys/fs/lustre/mgs/       → MGS instance
 //   - /sys/fs/lustre/mdt/       → MDT (MDS role)
 //   - /sys/fs/lustre/obdfilter/ → OST (OSS role)
 //   - /sys/fs/lustre/llite/     → mounted client
@@ -130,6 +140,9 @@ func (l *LustreNodeInfo) Roles() []string {
 // Each subdirectory under these paths represents an active target/mount.
 func DetectLustreNodeType() *LustreNodeInfo {
 	info := &LustreNodeInfo{}
+
+	info.MGSs = listSubdirs("/sys/fs/lustre/mgs")
+	info.IsMGS = len(info.MGSs) > 0
 
 	info.MDTs = listSubdirs("/sys/fs/lustre/mdt")
 	info.IsMDS = len(info.MDTs) > 0

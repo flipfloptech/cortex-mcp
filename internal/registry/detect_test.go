@@ -88,10 +88,10 @@ func TestDetectLustreNodeType_NoLustre(t *testing.T) {
 		if info.HasLustre() {
 			t.Errorf("HasLustre() = true on non-Lustre host, roles: %v", info.Roles())
 		}
-		if info.IsMDS || info.IsOSS || info.IsClient {
+		if info.IsMGS || info.IsMDS || info.IsOSS || info.IsClient {
 			t.Error("no role flags should be set on non-Lustre host")
 		}
-		if len(info.MDTs) > 0 || len(info.OSTs) > 0 || len(info.Clients) > 0 {
+		if len(info.MGSs) > 0 || len(info.MDTs) > 0 || len(info.OSTs) > 0 || len(info.Clients) > 0 {
 			t.Error("no targets should be listed on non-Lustre host")
 		}
 	}
@@ -107,11 +107,13 @@ func TestLustreNodeInfo_Roles(t *testing.T) {
 		want []string
 	}{
 		{"empty", registry.LustreNodeInfo{}, nil},
+		{"mgs only", registry.LustreNodeInfo{IsMGS: true}, []string{"mgs"}},
 		{"mds only", registry.LustreNodeInfo{IsMDS: true}, []string{"mds"}},
 		{"oss only", registry.LustreNodeInfo{IsOSS: true}, []string{"oss"}},
 		{"client only", registry.LustreNodeInfo{IsClient: true}, []string{"client"}},
+		{"dual mgs+mds", registry.LustreNodeInfo{IsMGS: true, IsMDS: true}, []string{"mgs", "mds"}},
 		{"dual mds+oss", registry.LustreNodeInfo{IsMDS: true, IsOSS: true}, []string{"mds", "oss"}},
-		{"all roles", registry.LustreNodeInfo{IsMDS: true, IsOSS: true, IsClient: true}, []string{"mds", "oss", "client"}},
+		{"all roles", registry.LustreNodeInfo{IsMGS: true, IsMDS: true, IsOSS: true, IsClient: true}, []string{"mgs", "mds", "oss", "client"}},
 	}
 
 	for _, tt := range tests {
@@ -140,12 +142,17 @@ func TestLustreNodeInfo_HasLustre(t *testing.T) {
 		t.Error("empty LustreNodeInfo should return HasLustre=false")
 	}
 
+	mgs := registry.LustreNodeInfo{IsMGS: true}
+	if !mgs.HasLustre() {
+		t.Error("MGS node should return HasLustre=true")
+	}
+
 	mds := registry.LustreNodeInfo{IsMDS: true}
 	if !mds.HasLustre() {
 		t.Error("MDS node should return HasLustre=true")
 	}
 
-	dual := registry.LustreNodeInfo{IsMDS: true, IsOSS: true}
+	dual := registry.LustreNodeInfo{IsMGS: true, IsMDS: true}
 	if !dual.HasLustre() {
 		t.Error("dual-role node should return HasLustre=true")
 	}
