@@ -2,6 +2,7 @@ package uptime
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ func TestUptimeTool_ContractCompliance(t *testing.T) {
 	t.Parallel()
 	tool := New()
 
-	var _ registry.ToolHandler = tool
+	var _ registry.Tool = tool
 
 	if tool.Name() != "uptime" {
 		t.Errorf("expected Name() == 'uptime', got %q", tool.Name())
@@ -38,9 +39,9 @@ func TestFormatDuration(t *testing.T) {
 		{0.0, "0 seconds"},
 		{45.5, "45 seconds"},
 		{65.0, "1 minutes, 5 seconds"},
-		{3600.0, "1 hours, 0 seconds"},
+		{3600.0, "1 hours"},
 		{3665.0, "1 hours, 1 minutes, 5 seconds"},
-		{90000.0, "1 days, 1 hours, 0 seconds"},
+		{90000.0, "1 days, 1 hours"},
 		{350735.47, "4 days, 1 hours, 25 minutes, 35 seconds"},
 	}
 
@@ -63,13 +64,8 @@ func TestUptimeTool_Execute(t *testing.T) {
 		t.Fatalf("failed to write mock uptime: %v", err)
 	}
 
-	// We can't easily mock the hardcoded "/proc/uptime" inside the Execute method without 
-	// altering the tool to accept a path. For testability, it's a good pattern to allow overriding.
-	// Since we haven't done that, we'll test Execute by actually running it. If we're on linux, it should succeed.
-	// We'll verify it returns a valid structure.
-	
 	tool := New()
-	
+
 	// Skip execution on non-linux or if /proc/uptime is missing
 	supported, _ := tool.IsSupported()
 	if !supported {
@@ -85,12 +81,12 @@ func TestUptimeTool_Execute(t *testing.T) {
 	}
 
 	if res.Status != registry.StatusOK {
-		t.Errorf("expected StatusOK, got %s. Message: %s", res.Status, res.Message)
+		t.Errorf("expected StatusOK, got %s. Summary: %s", res.Status, res.Summary)
 	}
 
-	data, ok := res.Data.(UptimeData)
-	if !ok {
-		t.Fatalf("expected data to be UptimeData, got %T", res.Data)
+	var data UptimeData
+	if err := json.Unmarshal(res.Data, &data); err != nil {
+		t.Fatalf("failed to unmarshal result data: %v", err)
 	}
 
 	if data.UptimeSeconds <= 0 {
