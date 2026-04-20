@@ -64,7 +64,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -81,16 +80,12 @@ import (
 	"github.com/flipfloptech/cortex-mcp/internal/logger"
 	"github.com/flipfloptech/cortex-mcp/internal/mcp"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
+	"github.com/flipfloptech/cortex-mcp/internal/registry/tools/lifecycle"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
 
 // toolEntry pairs a definition with its handler for re-registration.
-type toolEntry struct {
-	def     tools.ToolDefinition
-	handler tools.ToolHandler
-}
-
 // GatewayOptions contains operation modes for the bootstrap node.
 type GatewayOptions struct {
 	Install         bool
@@ -111,9 +106,9 @@ func Execute() {
 		Use:   "cortex-mcp",
 		Short: "Cortex MCP Application",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
-			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, GatewayOptions{})
+			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, GatewayOptions{})
 		},
 	}
 
@@ -125,7 +120,7 @@ func Execute() {
 		Short: "Raw TCP bridge for firewall traversal",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, _, _, _ := initEnv(configPath)
+			ctx, cancel, _, _, _ := initEnv(configPath)
 			defer cancel()
 			if err := runBridge(ctx, args[0], os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
@@ -138,10 +133,10 @@ func Execute() {
 		Use:   "serve",
 		Short: "Run as an ephemeral fleet node",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
-			liveMode = true
-			runFleetNode(ctx, nodeID, entries, plugins, cfg, false)
+			lifecycle.SetLiveMode(true)
+			runFleetNode(ctx, nodeID, plugins, cfg, false)
 		},
 	}
 
@@ -149,10 +144,10 @@ func Execute() {
 		Use:   "daemon",
 		Short: "Run as a persistent daemon (systemd entry)",
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
-			liveMode = true
-			runFleetNode(ctx, nodeID, entries, plugins, cfg, true)
+			lifecycle.SetLiveMode(true)
+			runFleetNode(ctx, nodeID, plugins, cfg, true)
 		},
 	}
 
@@ -161,7 +156,7 @@ func Execute() {
 		Short: "Remove nodes (ephemeral or persistent)",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, cfg, _, _ := initEnv(configPath)
+			ctx, cancel, _, cfg, _ := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
@@ -176,7 +171,7 @@ func Execute() {
 		Short: "Start persistent services via SSH",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, cfg, _, _ := initEnv(configPath)
+			ctx, cancel, _, cfg, _ := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
@@ -191,14 +186,14 @@ func Execute() {
 		Short: "Stop fleet nodes without uninstalling",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
 				target = args[0]
 			}
 			opts := GatewayOptions{Stop: true, Target: target}
-			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
+			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
 
@@ -207,14 +202,14 @@ func Execute() {
 		Short: "Persist nodes as systemd services",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
 				target = args[0]
 			}
 			opts := GatewayOptions{Install: true, Target: target}
-			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
+			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
 
@@ -227,10 +222,10 @@ func Execute() {
 			if len(args) > 0 {
 				addr = args[0]
 			}
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 			opts := GatewayOptions{PureClient: true, ServeHTTP: addr}
-			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, skipDeploy, opts)
+			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
 
@@ -244,7 +239,7 @@ func Execute() {
 				fmt.Fprintf(os.Stderr, "invalid harness type: %s\n", hType)
 				os.Exit(1)
 			}
-			ctx, cancel, nodeID, cfg, entries, plugins := initEnv(configPath)
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 
 			// parse optional duration/count
@@ -261,7 +256,7 @@ func Execute() {
 			// For deploy soak, we don't skip deploy initially, but we might want to let the harness control it.
 			// Actually, deploy soak will deploy them inside the loop. Let's start with skipDeploy = true.
 
-			runGateway(ctx, cancel, nodeID, cfg, entries, plugins, true, opts)
+			runGateway(ctx, cancel, nodeID, cfg, plugins, true, opts)
 		},
 	}
 	harnessCmd.Flags().Int("count", 0, "Number of iterations (0 = infinite)")
@@ -277,7 +272,7 @@ func Execute() {
 // initEnv bootstraps the common context, configuration, nodeID, tool definitions,
 // and the plugin registry. The plugin registry evaluates each tool's IsSupported()
 // against the local environment — unsupported tools are logged and excluded.
-func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, []toolEntry, *registry.PluginRegistry) {
+func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, *registry.PluginRegistry) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := loadConfig(configPath)
 
@@ -306,8 +301,6 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 		nodeID = hostname
 	}
 
-	entries := defineTools(nodeID)
-
 	// Build the plugin registry from globally registered tools.
 	// Each tool's IsSupported() is evaluated against the local environment.
 	plugins := registry.NewPluginRegistry(nodeID)
@@ -316,7 +309,7 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 	}
 	zap.S().Infow("plugin registry loaded", "supported", len(plugins.Supported()), "skipped", len(plugins.Unsupported()))
 
-	return ctx, cancel, nodeID, cfg, entries, plugins
+	return ctx, cancel, nodeID, cfg, plugins
 }
 
 // staticGroupResolver implements a hardcoded static grouping.
@@ -339,94 +332,6 @@ func (e *staticGroupResolver) List(source string) ([]string, error) {
 	return keys, nil
 }
 
-// defineTools returns the tool catalog shared by all modes.
-func defineTools(nodeID string) []toolEntry {
-	return []toolEntry{
-		{
-			def: tools.ToolDefinition{
-				Name:            "system_info",
-				Description:     "Get basic system information",
-				LongDescription: "Returns the hostname, OS, architecture, and number of CPUs for this node.",
-				Category:        "system",
-			},
-			handler: func(_ context.Context, _ json.RawMessage) (*tools.ToolResult, error) {
-				hostname, _ := os.Hostname()
-				info := map[string]interface{}{
-					"node_id":  nodeID,
-					"hostname": hostname,
-					"os":       runtime.GOOS,
-					"arch":     runtime.GOARCH,
-					"cpus":     runtime.NumCPU(),
-				}
-				data, _ := json.Marshal(info)
-				return &tools.ToolResult{Content: data}, nil
-			},
-		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_install",
-				Description:     "Install this node as a persistent systemd service",
-				LongDescription: "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. Converts an ephemeral node into persistent infrastructure.",
-				Category:        "lifecycle",
-				Hidden:          true,
-			},
-			handler: handleNodeInstall,
-		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_uninstall",
-				Description:     "Remove this node — handles both persistent (systemd) and ephemeral (/tmp) nodes",
-				LongDescription: "Detects whether the node is persistent or ephemeral. Persistent: stops/disables service, removes unit + binary. Ephemeral: removes the /tmp binary and exits.",
-				Category:        "lifecycle",
-				Hidden:          true,
-			},
-			handler: handleNodeUninstall,
-		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_restart",
-				Description:     "Restart the local cortex-mesh systemd service",
-				LongDescription: "Runs systemctl restart cortex-mesh. Use after binary upgrades or configuration changes.",
-				Category:        "lifecycle",
-				Hidden:          true,
-			},
-			handler: handleNodeRestart,
-		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_stop",
-				Description:     "Stop the cortex-mesh systemd service without uninstalling",
-				LongDescription: "Gracefully stops the service. The node remains installed and can be restarted. Use for maintenance windows.",
-				Category:        "lifecycle",
-				Hidden:          true,
-			},
-			handler: handleNodeStop,
-		},
-		{
-			def: tools.ToolDefinition{
-				Name:            "node_upgrade",
-				Description:     "Upgrade the node binary and restart the service",
-				LongDescription: "Copies a new binary from the specified path over the installed binary, reloads systemd, and restarts the service.",
-				Category:        "lifecycle",
-				Hidden:          true,
-				Parameters: []tools.ToolParam{
-					{Name: "path", Type: "string", Description: "Path to the new binary (e.g., /tmp/cortex-mesh-new)", Required: true},
-				},
-			},
-			handler: handleNodeUpgrade,
-		},
-	}
-}
-
-// registerTools populates a registry with the given tool entries.
-func registerTools(registry *tools.Registry, entries []toolEntry) {
-	for _, e := range entries {
-		registry.Register(e.def, e.handler)
-	}
-}
-
-// registerNodeTools registers tools that depend on a live *api.Node instance.
-// These can't go in defineTools() because the node hasn't been created yet.
 func registerNodeTools(registry *tools.Registry, node *api.Node) {
 	registry.Register(tools.ToolDefinition{
 		Name:            "mesh_topology",
@@ -455,7 +360,7 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 }
 
 // runFleetNode handles the deployed fleet node lifecycle.
-func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
+func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
 	zap.S().Infow("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
 
 	if isDaemon {
@@ -569,7 +474,6 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 
 	// Register tools with capability advertising.
 	meshReg := tools.NewRegistry(node)
-	registerTools(meshReg, entries)
 	plugins.BridgeToMesh(meshReg)
 	registerNodeTools(meshReg, node)
 
@@ -605,9 +509,9 @@ func runFleetNode(ctx context.Context, nodeID string, entries []toolEntry, plugi
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
-func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, entries []toolEntry, plugins *registry.PluginRegistry, skipDeploy bool, opts GatewayOptions) {
+func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, plugins *registry.PluginRegistry, skipDeploy bool, opts GatewayOptions) {
 	install := opts.Install
-	printHeader(nodeID, entries)
+	printHeader(nodeID)
 
 	// --- Phase 1: PKI ---
 	fmt.Fprintf(os.Stderr, "--- Phase 1: Ephemeral PKI ---\n")
@@ -671,7 +575,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// Register tools with capability advertising (unless PureClient mode).
 	meshReg := tools.NewRegistry(node)
 	if !opts.PureClient {
-		registerTools(meshReg, entries)
 		plugins.BridgeToMesh(meshReg)
 		registerNodeTools(meshReg, node)
 	}
@@ -974,13 +877,9 @@ func (a *deploySoakAdapter) Uninstall(ctx context.Context) error {
 }
 
 // printHeader displays startup information.
-func printHeader(nodeID string, entries []toolEntry) {
+func printHeader(nodeID string) {
 	fmt.Fprintf(os.Stderr, "\n=== Cortex MCP Application ===\n")
 	fmt.Fprintf(os.Stderr, "Gateway node: %s\n", nodeID)
-	fmt.Fprintf(os.Stderr, "Registered tools:\n")
-	for _, e := range entries {
-		fmt.Fprintf(os.Stderr, "  - %s (%s): %s\n", e.def.Name, e.def.Category, e.def.Description)
-	}
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
@@ -1561,4 +1460,67 @@ func startFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 	}
 
 	fmt.Fprintf(os.Stderr, "--- Start complete ---\n")
+}
+
+// buildNodeDeployHandler returns a tool handler that accepts a target host
+// and deploys this binary to it via the mesh using SelfDeployer.
+// This allows any mesh node to act as a "jumphost" for deploying deeper
+// nodes that the gateway cannot directly SSH to.
+func buildNodeDeployHandler(node *api.Node) tools.ToolHandler {
+	return func(ctx context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+		var params struct {
+			Target string `json:"target"`
+		}
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &params); err != nil {
+				return tools.NewErrorResult(fmt.Sprintf("parse args: %v", err)), nil
+			}
+		}
+
+		if params.Target == "" {
+			return tools.NewErrorResult("target is required: provide the host to deploy to"), nil
+		}
+
+		if node == nil {
+			return tools.NewErrorResult("node_deploy requires an active mesh node"), nil
+		}
+
+		// 1. Request credentials for the target from the mesh
+		cred, err := node.RequestCredential(ctx, params.Target)
+		if err != nil {
+			return tools.NewErrorResult(fmt.Sprintf("failed to get credentials: %v", err)), nil
+		}
+
+		deployCred, err := toDeployCredential(*cred)
+		if err != nil {
+			return tools.NewErrorResult(fmt.Sprintf("failed to parse credential: %v", err)), nil
+		}
+
+		// 2. Deploy using SelfDeployer
+		deployer := &transport.SelfDeployer{
+			ExecArgs:   []string{"serve"},
+			SkipUpload: false,
+		}
+
+		stream, err := deployer.Deploy(ctx, params.Target, deployCred, nil)
+		if err != nil {
+			return tools.NewErrorResult(fmt.Sprintf("deployment failed: %v", err)), nil
+		}
+
+		conn := transport.NewStdioConn(stream, stream)
+
+		// 3. Add the resulting stream as a new mesh peer
+		if err := node.AddPeer(ctx, conn, false); err != nil {
+			_ = conn.Close()
+			return tools.NewErrorResult(fmt.Sprintf("failed to add peer: %v", err)), nil
+		}
+
+		resp := map[string]interface{}{
+			"target": params.Target,
+			"status": "deployed",
+		}
+		data, _ := json.Marshal(resp)
+
+		return &tools.ToolResult{Content: data}, nil
+	}
 }

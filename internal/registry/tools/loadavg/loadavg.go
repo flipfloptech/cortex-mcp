@@ -65,6 +65,9 @@ func (t *LoadAvgTool) Parameters() []registry.ToolParam {
 	return nil
 }
 
+// Hidden returns false; loadavg is a public tool.
+func (t *LoadAvgTool) Hidden() bool { return false }
+
 // IsSupported checks if the node can execute this tool.
 func (t *LoadAvgTool) IsSupported() (bool, string) {
 	if !registry.IsLinux() {

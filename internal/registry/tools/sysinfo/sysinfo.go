@@ -81,6 +81,9 @@ func (t *SystemInfoTool) Category() string { return "system" }
 // Parameters returns the parameter schema (none for system_info).
 func (t *SystemInfoTool) Parameters() []registry.ToolParam { return nil }
 
+// Hidden returns false; system_info is a public tool.
+func (t *SystemInfoTool) Hidden() bool { return false }
+
 // IsSupported checks if this tool can operate on the current node.
 // Only gates on Linux — individual data sources (kernel version, distro)
 // degrade gracefully to "unknown" or empty when unavailable.

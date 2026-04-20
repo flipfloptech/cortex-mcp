@@ -26,6 +26,7 @@ func (t *mockTool) Help() string                     { return t.help }
 func (t *mockTool) Category() string                 { return t.category }
 func (t *mockTool) Parameters() []registry.ToolParam { return t.params }
 func (t *mockTool) IsSupported() (bool, string)      { return t.supported, t.reason }
+func (t *mockTool) Hidden() bool                     { return false }
 
 func (t *mockTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	if t.execFn != nil {

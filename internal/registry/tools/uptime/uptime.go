@@ -62,6 +62,9 @@ func (t *UptimeTool) Parameters() []registry.ToolParam {
 	return nil
 }
 
+// Hidden returns false; uptime is a public tool.
+func (t *UptimeTool) Hidden() bool { return false }
+
 // IsSupported checks if the node can execute this tool.
 // Requires the existence of /proc/uptime.
 func (t *UptimeTool) IsSupported() (bool, string) {

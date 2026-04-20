@@ -38,6 +38,10 @@ type Tool interface {
 	// Parameters returns the parameter schema for this tool.
 	Parameters() []ToolParam
 
+	// Hidden indicates whether this tool should be hidden from general
+	// LLM discovery (list_tools) while remaining explicitly callable.
+	Hidden() bool
+
 	// IsSupported inspects the local environment and returns true if this
 	// tool can operate on this node. This is called once at startup.
 	// The reason string explains WHY the tool is unsupported (for logging).
