@@ -28,7 +28,8 @@ func NewServer(dispatcher Dispatcher) *Server {
 		Version: "1.0.0",
 	}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{
-			Tools: &mcp.ToolCapabilities{},
+			Tools:   &mcp.ToolCapabilities{},
+			Prompts: &mcp.PromptCapabilities{},
 		},
 	})
 
@@ -54,6 +55,12 @@ func NewServer(dispatcher Dispatcher) *Server {
 		Name:        "call_tool",
 		Description: "Execute a tool on a remote node in the Cortex Mesh.",
 	}, srv.handleCallTool)
+
+	// system_introduction prompt
+	s.AddPrompt(&mcp.Prompt{
+		Name:        "system_introduction",
+		Description: "An onboarding guide for LLMs explaining how to interact with the Cortex Mesh.",
+	}, srv.handleSystemIntroduction)
 
 	return srv
 }
@@ -114,4 +121,32 @@ func (s *Server) dispatchToMesh(ctx context.Context, toolName string, args json.
 			},
 		},
 	}, nil, nil
+}
+
+func (s *Server) handleSystemIntroduction(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	desc := `You are connected to the Cortex Mesh via the MCP Gateway.
+The Cortex Mesh is a decentralized fleet of nodes. Instead of giving you hundreds of granular tools directly, we give you three Meta-Tools:
+
+1. 'list_tools' -> Returns the list of available tools across the entire mesh. Call this FIRST.
+2. 'tool_help' -> Returns the exact JSON schema required to call a specific tool.
+3. 'call_tool' -> Invokes the tool.
+
+When using 'call_tool', you can specify 'node_name'.
+- Leave 'node_name' empty to let the mesh auto-route to the best node.
+- Use '*' to fan-out and execute the tool on ALL nodes simultaneously.
+- Use '@group' (e.g. '@storage') to execute on a specific sub-group of nodes.
+
+Start your investigation by running 'list_tools' to see what the fleet is capable of.`
+
+	return &mcp.GetPromptResult{
+		Description: "Onboarding instruction for Cortex Mesh",
+		Messages: []*mcp.PromptMessage{
+			{
+				Role: "user",
+				Content: &mcp.TextContent{
+					Text: desc,
+				},
+			},
+		},
+	}, nil
 }

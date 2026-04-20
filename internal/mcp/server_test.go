@@ -60,3 +60,26 @@ func TestServer_CallMetaTool(t *testing.T) {
 		t.Error("expected content in result")
 	}
 }
+
+func TestServer_SystemIntroductionPrompt(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(&mockDispatcher{})
+	res, err := srv.handleSystemIntroduction(context.Background(), &mcp.GetPromptRequest{})
+	if err != nil {
+		t.Fatalf("handleSystemIntroduction failed: %v", err)
+	}
+
+	if len(res.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(res.Messages))
+	}
+
+	textContent, ok := res.Messages[0].Content.(*mcp.TextContent)
+	if !ok {
+		t.Fatal("expected TextContent")
+	}
+
+	if textContent.Text == "" {
+		t.Error("expected non-empty text content in prompt")
+	}
+}
