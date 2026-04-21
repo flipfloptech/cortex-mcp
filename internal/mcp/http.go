@@ -8,25 +8,40 @@ import (
 	"go.uber.org/zap"
 )
 
+// corsMiddleware allows cross-origin requests from tools like the MCP Inspector.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // StartHTTPServer starts an MCP SSE HTTP server.
 func StartHTTPServer(addr string, srv *Server) error {
 	handler := mcp.NewSSEHandler(func(req *http.Request) *mcp.Server {
-		if req.URL.Path == "/mcp" {
+		if req.URL.Path == "/sse" {
 			return srv.MCPServer()
 		}
 		return nil
 	}, nil)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", handler)
-	mux.Handle("/mcp/messages", handler) // SDK uses this pattern for incoming messages
+	mux.Handle("/sse", corsMiddleware(handler))
+	mux.Handle("/messages", corsMiddleware(handler)) // SDK uses this pattern for incoming messages
 
 	httpServer := &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
 
-	zap.S().Infow("starting MCP SSE server", "addr", addr)
+	uri := fmt.Sprintf("http://%s/sse", addr)
+	zap.S().Infow("starting MCP SSE server", "addr", addr, "uri", uri)
 
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("http server failed: %w", err)

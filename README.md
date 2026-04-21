@@ -57,7 +57,7 @@ Add the following to your `claude_desktop_config.json`:
   "mcpServers": {
     "cortex-mesh": {
       "type": "sse",
-      "url": "http://127.0.0.1:8080/mcp"
+      "url": "http://127.0.0.1:8080/sse"
     }
   }
 }
@@ -68,7 +68,7 @@ Add the following to your `claude_desktop_config.json`:
 In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new server:
 - **Type**: `sse`
 - **Name**: `cortex-mesh`
-- **URL**: `http://127.0.0.1:8080/mcp`
+- **URL**: `http://127.0.0.1:8080/sse`
 
 ## CLI Reference
 
