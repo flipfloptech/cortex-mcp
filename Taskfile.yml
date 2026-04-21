@@ -39,6 +39,11 @@ tasks:
         echo ""
         echo "Coverage report: coverage.html"
 
+  benchcov:
+    desc: Check benchmark coverage (fails if not 100%)
+    cmds:
+      - go run ./testutil/benchcov/main
+
   lint:
     desc: Run golangci-lint
     vars:

@@ -108,13 +108,14 @@ feat(package): implement [feature]
 - [Brief note on approach taken]
 ```
 
-## Phase 4: Refine & Harden
+## Phase 4: Refine, Harden, & Benchmark
 
 With green tests as your safety net:
 
 - Refactor for clarity if the implementation is messy.
-- Add benchmarks for hot paths (`func BenchmarkXxx`).
+- **Mandatory Benchmarking**: EVERY function implemented must have a corresponding benchmark (`func BenchmarkXxx`). This is strictly enforced by the `benchcov` AST tool. We treat performance as a first-class feature.
 - Profile allocations for data-plane code (`-benchmem`).
+- Run `task bench` to record historical performance speeds in the `.benchmarks` directory.
 - Add any additional edge case tests discovered during implementation.
 
 ### Commit: Refinements
