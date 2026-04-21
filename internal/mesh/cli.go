@@ -53,7 +53,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -718,16 +717,8 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		// Create an MCP Server adapter for the Gateway Dispatcher
 		mcpSrv := mcp.NewServer(gw, node)
 
-		// We use the same identity cert for mTLS
-		caPool := x509.NewCertPool()
-		caPool.AppendCertsFromPEM(gatewayCert.Certificate[0]) // wait, pki.ca is the root.
-
-		// Wait, gatewayCert doesn't contain the CA directly, we should get the CA pool.
-		// pki.pool is private but we can use pki.membraneConfig(gatewayCert).CACert
-		memCfg := pki.membraneConfig(gatewayCert)
-
 		go func() {
-			if err := mcp.StartHTTPServer(opts.ServeHTTP, mcpSrv, gatewayCert, memCfg.CACert); err != nil {
+			if err := mcp.StartHTTPServer(opts.ServeHTTP, mcpSrv); err != nil {
 				zap.S().Errorw("mcp http server failed", "error", err)
 				cancel()
 			}
@@ -1076,7 +1067,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 				}
 				time.Sleep(500 * time.Millisecond)
 			}
-			
+
 			if dialErr != nil {
 				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", dialErr)
 				continue

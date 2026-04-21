@@ -41,7 +41,7 @@ The fastest way to spin up the Cortex Mesh is by importing an existing cluster c
 
 ## Configuring LLM Clients
 
-Cortex MCP is an mTLS HTTP server that streams capabilities directly to any standard Model Context Protocol client using Server-Sent Events (SSE). 
+Cortex MCP is an HTTP server that streams capabilities directly to any standard Model Context Protocol client using Server-Sent Events (SSE). 
 
 First, ensure the gateway server is running:
 ```bash
@@ -57,7 +57,7 @@ Add the following to your `claude_desktop_config.json`:
   "mcpServers": {
     "cortex-mesh": {
       "type": "sse",
-      "url": "https://127.0.0.1:8080/mcp"
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -68,7 +68,7 @@ Add the following to your `claude_desktop_config.json`:
 In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new server:
 - **Type**: `sse`
 - **Name**: `cortex-mesh`
-- **URL**: `https://127.0.0.1:8080/mcp`
+- **URL**: `http://127.0.0.1:8080/mcp`
 
 ## CLI Reference
 
