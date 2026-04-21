@@ -44,6 +44,16 @@ tasks:
     cmds:
       - go run ./testutil/benchcov/main
 
+  bench:
+    desc: Run all benchmarks
+    cmds:
+      - CGO_ENABLED=0 go test -bench=. -benchmem -timeout 300s ./...
+
+  benchtrack:
+    desc: Run benchmarks and save dated results to .benchmarks/
+    cmds:
+      - CGO_ENABLED=0 go test -bench=. -benchmem -timeout 300s ./... 2>&1 | go run ./testutil/benchtrack/main
+
   lint:
     desc: Run golangci-lint
     vars:

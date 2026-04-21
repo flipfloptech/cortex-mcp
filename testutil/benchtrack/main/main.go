@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/testutil/benchtrack"
+	"github.com/flipfloptech/cortex-mcp/testutil/benchtrack"
 )
 
 func main() {
