@@ -234,7 +234,7 @@ func Execute() {
 		Short: "Run as an mTLS HTTP MCP Server",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			addr := "localhost:8080"
+			addr, _ := cmd.Flags().GetString("bind")
 			if len(args) > 0 {
 				addr = args[0]
 			}
@@ -244,6 +244,7 @@ func Execute() {
 			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
+	mcpCmd.Flags().StringP("bind", "b", "localhost:8080", "Address and port to bind the MCP HTTP server")
 
 	harnessCmd := &cobra.Command{
 		Use:   "harness [type]",
