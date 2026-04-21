@@ -21,3 +21,4 @@ coverage.out
 
 # Benchmark history
 .benchmarks/
+main
