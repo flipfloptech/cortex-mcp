@@ -50,14 +50,12 @@
 package mesh
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"io"
 	"net"
 	"os"
@@ -65,9 +63,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
@@ -589,16 +588,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		os.Exit(1)
 	}
 
-	// --- Phase 3: Local tool invocation ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 3: Local tool invocation ---\n")
-	if !opts.PureClient {
-		runLocalDemo(ctx, meshReg)
-	} else {
-		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
-	}
-
-	// --- Phase 4: Gateway meta-tools ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 4: Gateway meta-tools ---\n")
 	bridge := tools.NewNeuronBridge(node)
 
 	// Create group resolver to inject into Gateway for nodeset processing
@@ -607,11 +596,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	gw := gateway.New(meshReg, bridge, gateway.WithGroupResolver(resolver))
-	if !opts.PureClient {
-		runGatewayMetaTools(ctx, gw)
-	} else {
-		fmt.Fprintf(os.Stderr, "  (Demo skipped in PureClient mode)\n")
-	}
 
 	// --- Phase 5: Deploy to seed hosts ---
 	knownHosts := cfg.KnownHosts()
@@ -708,41 +692,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 			}
 			fmt.Fprintf(os.Stderr, "    - %s offers tools: %s\n", nt.NodeID, strings.Join(toolNames, ", "))
 		}
-	}
-
-	// --- Phase 8: Remote invocation via NeuronBridge ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 8: Remote invocation via NeuronBridge ---\n")
-	if !opts.PureClient {
-		for _, dn := range deployedNodes {
-			result, err := bridge.InvokeRemote(ctx, dn.nodeID, "system_info", nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "  ✗ %s: invoke failed: %v\n", dn.nodeID, err)
-				continue
-			}
-			if result.IsError {
-				fmt.Fprintf(os.Stderr, "  ✗ %s: tool error: %s\n", dn.nodeID, result.Content)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "  ✓ %s: %s\n", dn.nodeID, result.Content)
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
-	}
-
-	// --- Phase 9: Fan-out hello ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 9: Fan-out hello ---\n")
-	if !opts.PureClient {
-		runGatewayFanOut(ctx, gw, deployedNodes)
-	} else {
-		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
-	}
-
-	// --- Phase 10: Mesh topology print ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 10: Mesh topology ---\n")
-	if !opts.PureClient {
-		runGatewayTopology(ctx, gw)
-	} else {
-		fmt.Fprintf(os.Stderr, "  (Skipped in PureClient mode)\n")
 	}
 
 	// --- Phase 10b: Serve HTTP if requested ---
@@ -1184,111 +1133,14 @@ func toDeployCredential(cred vault.Credential) (transport.DeployCredential, erro
 }
 
 // runLocalDemo invokes tools locally on the gateway node.
-func runLocalDemo(ctx context.Context, registry *tools.Registry) {
-	result, err := registry.InvokeLocal(ctx, "system_info", nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  system_info failed: %v\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  system_info: %s\n", result.Content)
-	}
-}
 
 // runGatewayMetaTools exercises the gateway's meta-tool dispatch.
-func runGatewayMetaTools(ctx context.Context, gw *gateway.Gateway) {
-	// list_tools — discover available tools.
-	result, err := gw.Dispatch(ctx, "list_tools", nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  list_tools failed: %v\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  list_tools: %s\n", result.Content)
-	}
-
-	// tool_help — detailed help for system_info.
-	result, err = gw.Dispatch(ctx, "tool_help", json.RawMessage(`{"tool_name":"system_info"}`))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  tool_help failed: %v\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  tool_help: %s\n", result.Content)
-	}
-
-	// call_tool — invoke system_info locally via the gateway.
-	result, err = gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"system_info","args":{}}`))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  call_tool failed: %v\n", err)
-	} else {
-		fmt.Fprintf(os.Stderr, "  call_tool: %s\n", result.Content)
-	}
-}
 
 // runGatewayFanOut demonstrates fan-out dispatch across deployed nodes.
-func runGatewayFanOut(ctx context.Context, gw *gateway.Gateway, nodes []deployedNode) {
-	// Fan-out via call_tool with glob pattern.
-	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"system_info","args":{},"node_name":"*"}`))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ fan-out via gateway error: %v\n", err)
-		// Fallback to direct fan-out via DialInvoke over deploy streams.
-		fmt.Fprintf(os.Stderr, "  Falling back to direct fan-out...\n")
-		fanOutDirect(ctx, nodes)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "  ✓ fan-out (*) result: %s\n", result.Content)
-}
 
 // runGatewayTopology invokes the mesh_topology tool via the gateway and pretty-prints the output.
-func runGatewayTopology(ctx context.Context, gw *gateway.Gateway) {
-	// Call the built-in mesh_topology tool locally
-	result, err := gw.Dispatch(ctx, "call_tool", json.RawMessage(`{"tool_name":"mesh_topology","args":{}}`))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ mesh_topology error: %v\n", err)
-		return
-	}
-
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, result.Content, "  ", "  "); err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ failed to format topology JSON: %v\n", err)
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "%s\n", prettyJSON.String())
-}
 
 // fanOutDirect invokes the "system_info" tool on all deployed nodes concurrently.
-func fanOutDirect(ctx context.Context, nodes []deployedNode) {
-	type nodeResult struct {
-		nodeID  string
-		content string
-		err     error
-	}
-
-	results := make(chan nodeResult, len(nodes))
-
-	var wg sync.WaitGroup
-	for _, dn := range nodes {
-		wg.Add(1)
-		go func(dn deployedNode) {
-			defer wg.Done()
-			result, err := tools.DialInvoke(ctx, dn.conn, "system_info", nil)
-			if err != nil {
-				results <- nodeResult{nodeID: dn.nodeID, err: err}
-				return
-			}
-			results <- nodeResult{nodeID: dn.nodeID, content: string(result.Content)}
-		}(dn)
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for r := range results {
-		if r.err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", r.nodeID, r.err)
-		} else {
-			fmt.Fprintf(os.Stderr, "  ✓ %s: %s\n", r.nodeID, r.content)
-		}
-	}
-}
 
 // loadConfig finds and loads mesh.toml from the given path or default locations.
 func loadConfig(path string) (*config.MeshConfig, error) {
