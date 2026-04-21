@@ -1048,11 +1048,20 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 				host = strings.Split(addr, ":")[0]
 			}
 
-			// Dial the newly spawned daemon on its TCP port
-			var d net.Dialer
-			conn, err := d.DialContext(ctx, "tcp", host+":4443")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", err)
+			// Dial the newly spawned daemon on its TCP port (with retries for boot-up time)
+			var conn net.Conn
+			var dialErr error
+			for i := 0; i < 5; i++ {
+				var d net.Dialer
+				conn, dialErr = d.DialContext(ctx, "tcp", host+":4443")
+				if dialErr == nil {
+					break
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+			
+			if dialErr != nil {
+				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", dialErr)
 				continue
 			}
 
