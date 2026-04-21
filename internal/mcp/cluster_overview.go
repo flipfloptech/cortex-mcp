@@ -115,7 +115,7 @@ func (h *ClusterOverviewHandler) Execute(ctx context.Context) (*ClusterOverview,
 	}
 
 	// 5. Parse mesh_topology results from every node and build the edge set.
-	edgeSet := make(map[string]MeshEdge) // key: "min|max" for dedup
+	edgeSet := make(map[edgeKey]MeshEdge) // key: deduped by node IDs
 
 	// Include gateway's own direct edges.
 	for _, ns := range gwTopo.NodeDetails {
@@ -240,7 +240,7 @@ func parseSysInfoResult(nodeID string, content json.RawMessage) *NodeOverview {
 }
 
 // parseTopoEdges extracts direct peer edges from a mesh_topology result.
-func parseTopoEdges(edgeSet map[string]MeshEdge, reporterID string, content json.RawMessage) {
+func parseTopoEdges(edgeSet map[edgeKey]MeshEdge, reporterID string, content json.RawMessage) {
 	var topo struct {
 		NodeDetails []struct {
 			NodeID    string  `json:"node_id"`
@@ -269,13 +269,17 @@ func parseDirectPeerCount(content json.RawMessage) int {
 	return topo.DirectPeers
 }
 
+type edgeKey struct {
+	from, to string
+}
+
 // addEdge adds a deduplicated edge to the set. Uses sorted node IDs as key.
-func addEdge(edgeSet map[string]MeshEdge, a, b string, impedance float64) {
+func addEdge(edgeSet map[edgeKey]MeshEdge, a, b string, impedance float64) {
 	from, to := a, b
 	if from > to {
 		from, to = to, from
 	}
-	key := from + "|" + to
+	key := edgeKey{from: from, to: to}
 	if _, exists := edgeSet[key]; !exists {
 		edgeSet[key] = MeshEdge{From: from, To: to, Impedance: impedance}
 	}
@@ -286,7 +290,10 @@ func extractTools(capabilities []string) []string {
 	var tools []string
 	for _, cap := range capabilities {
 		if strings.HasPrefix(cap, "tool:") {
-			tools = append(tools, strings.TrimPrefix(cap, "tool:"))
+			if tools == nil {
+				tools = make([]string, 0, len(capabilities))
+			}
+			tools = append(tools, cap[5:])
 		}
 	}
 	return tools

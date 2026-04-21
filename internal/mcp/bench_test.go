@@ -139,7 +139,7 @@ func BenchmarkParseSysInfoResult(b *testing.B) {
 }
 
 func BenchmarkParseTopoEdges(b *testing.B) {
-	edges := make(map[string]MeshEdge)
+	edges := make(map[edgeKey]MeshEdge)
 	content := json.RawMessage(`{"node2": 10.5, "node3": 20.1}`)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -156,7 +156,7 @@ func BenchmarkParseDirectPeerCount(b *testing.B) {
 }
 
 func BenchmarkAddEdge(b *testing.B) {
-	edges := make(map[string]MeshEdge)
+	edges := make(map[edgeKey]MeshEdge)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		addEdge(edges, "node1", "node2", 10.5)
