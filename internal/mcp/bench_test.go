@@ -2,10 +2,10 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"testing"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
+	"testing"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/tools"
@@ -13,11 +13,13 @@ import (
 )
 
 type dummyDispatcher struct{}
+
 func (d dummyDispatcher) Dispatch(ctx context.Context, toolName string, args json.RawMessage) (*tools.ToolResult, error) {
 	return &tools.ToolResult{Content: json.RawMessage(`"ok"`)}, nil
 }
 
 type dummyTopology struct{}
+
 func (d dummyTopology) MeshTopology() api.TopologySnapshot {
 	return api.TopologySnapshot{}
 }
@@ -110,7 +112,7 @@ func BenchmarkNewClusterOverviewHandler(b *testing.B) {
 	}
 }
 
-func BenchmarkExecuteOverview(b *testing.B) {
+func BenchmarkExecute(b *testing.B) {
 	h := NewClusterOverviewHandler(dummyDispatcher{}, dummyTopology{})
 	ctx := context.Background()
 	b.ResetTimer()

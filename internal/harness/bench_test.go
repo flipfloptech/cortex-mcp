@@ -10,12 +10,14 @@ import (
 )
 
 type dummyDispatcher struct{}
+
 func (d dummyDispatcher) Dispatch(ctx context.Context, name string, rawMessage json.RawMessage) (*tools.ToolResult, error) {
 	return &tools.ToolResult{}, nil
 }
 
 type dummyDeployer struct{}
-func (d dummyDeployer) Deploy(ctx context.Context) error { return nil }
+
+func (d dummyDeployer) Deploy(ctx context.Context) error    { return nil }
 func (d dummyDeployer) Uninstall(ctx context.Context) error { return nil }
 
 func BenchmarkNewHarness(b *testing.B) {

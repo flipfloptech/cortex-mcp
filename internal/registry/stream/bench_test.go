@@ -234,7 +234,7 @@ func BenchmarkPop(b *testing.B) {
 func BenchmarkNewThresholdEmitter(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewThresholdEmitter(80.0, 95.0) 
+		_ = NewThresholdEmitter(80.0, 95.0)
 	}
 }
 
@@ -242,7 +242,7 @@ func BenchmarkEvaluate(b *testing.B) {
 	te := NewThresholdEmitter(80.0, 95.0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = te.Evaluate(90.0) 
+		_ = te.Evaluate(90.0)
 	}
 }
 

@@ -14,22 +14,23 @@ type benchTool struct {
 	supported bool
 }
 
-func (t benchTool) Name() string                        { return t.name }
-func (t benchTool) Description() string                 { return "bench tool" }
-func (t benchTool) Help() string                        { return "help" }
-func (t benchTool) Category() string                    { return "bench" }
-func (t benchTool) Parameters() []ToolParam                  { return nil }
-func (t benchTool) Hidden() bool                        { return false }
-func (t benchTool) IsSupported() (bool, string)         { return t.supported, "" }
-func (t benchTool) Execute(ctx context.Context, args json.RawMessage) (*ToolResult, error) { 
-	return NewResult("tool", "node", StatusOK, "summary", nil), nil 
+func (t benchTool) Name() string                { return t.name }
+func (t benchTool) Description() string         { return "bench tool" }
+func (t benchTool) Help() string                { return "help" }
+func (t benchTool) Category() string            { return "bench" }
+func (t benchTool) Parameters() []ToolParam     { return nil }
+func (t benchTool) Hidden() bool                { return false }
+func (t benchTool) IsSupported() (bool, string) { return t.supported, "" }
+func (t benchTool) Execute(ctx context.Context, args json.RawMessage) (*ToolResult, error) {
+	return NewResult("tool", "node", StatusOK, "summary", nil), nil
 }
 
 type dummyTracker struct{}
-func (d dummyTracker) RegisterCapability(cap string) {}
-func (d dummyTracker) RemoveCapability(nodeID string, name string) {}
+
+func (d dummyTracker) RegisterCapability(cap string)                 {}
+func (d dummyTracker) RemoveCapability(nodeID string, name string)   {}
 func (d dummyTracker) HasCapability(nodeID string, name string) bool { return true }
-func (d dummyTracker) FindNodesWithCapability(name string) []string { return []string{} }
+func (d dummyTracker) FindNodesWithCapability(name string) []string  { return []string{} }
 
 func BenchmarkRegister(b *testing.B) {
 	t := benchTool{name: "register_bench_tool", supported: true}
