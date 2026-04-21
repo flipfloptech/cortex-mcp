@@ -514,7 +514,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 1: PKI ---
 	fmt.Fprintf(os.Stderr, "--- Phase 1: Ephemeral PKI ---\n")
-	pki, err := newEphemeralPKI()
+	pki, err := loadOrGeneratePKI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
