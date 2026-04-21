@@ -38,7 +38,7 @@ func InitLogger(cfg Config) (*zap.Logger, error) {
 
 	core := zapcore.NewCore(
 		encoder,
-		zapcore.AddSync(os.Stdout),
+		zapcore.AddSync(os.Stderr),
 		level,
 	)
 
