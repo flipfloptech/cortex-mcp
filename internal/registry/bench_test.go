@@ -38,6 +38,10 @@ func BenchmarkRegister(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Register(t)
 	}
+	// Cleanup global state to prevent polluting subsequent benchmarks
+	globalMu.Lock()
+	globalTools = nil
+	globalMu.Unlock()
 }
 
 func BenchmarkNewPluginRegistry(b *testing.B) {

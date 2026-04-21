@@ -135,9 +135,9 @@ func BenchmarkNodeUpgradeOps(b *testing.B) {
 }
 
 func BenchmarkExecuteOps(b *testing.B) {
-	// Use harmless ops
+	// Use harmless ops that don't nuke the host OS systemd
 	ops := []lifecycleOp{
-		{Action: "systemctl", Args: "daemon-reload"},
+		{Action: "true", Args: ""},
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -146,7 +146,7 @@ func BenchmarkExecuteOps(b *testing.B) {
 }
 
 func BenchmarkExecuteOp(b *testing.B) {
-	op := lifecycleOp{Action: "systemctl", Args: "daemon-reload"}
+	op := lifecycleOp{Action: "true", Args: ""}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = executeOp(op)
