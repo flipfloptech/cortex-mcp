@@ -1,0 +1,1157 @@
+[
+  {
+    "name": "BenchmarkMain",
+    "iterations": 45973,
+    "ns_per_op": 42232,
+    "bytes_per_op": 31942,
+    "allocs_per_op": 306
+  },
+  {
+    "name": "BenchmarkLoad",
+    "iterations": 44001,
+    "ns_per_op": 26516,
+    "bytes_per_op": 10568,
+    "allocs_per_op": 138
+  },
+  {
+    "name": "BenchmarkKnownHosts",
+    "iterations": 8242348,
+    "ns_per_op": 169.6,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkLoadCredentials",
+    "iterations": 6590264,
+    "ns_per_op": 177.4,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkEntryToCredential",
+    "iterations": 68127084,
+    "ns_per_op": 17.63,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkExpandTilde",
+    "iterations": 12676192,
+    "ns_per_op": 88.61,
+    "bytes_per_op": 24,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkNewHarness",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5764,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkRunToolCheck",
+    "iterations": 223177,
+    "ns_per_op": 5419,
+    "bytes_per_op": 841,
+    "allocs_per_op": 17
+  },
+  {
+    "name": "BenchmarkRunToolSoak",
+    "iterations": 100,
+    "ns_per_op": 10142736,
+    "bytes_per_op": 1006,
+    "allocs_per_op": 18
+  },
+  {
+    "name": "BenchmarkRunDeploySoak",
+    "iterations": 1,
+    "ns_per_op": 2000147491,
+    "bytes_per_op": 160,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkInitLogger",
+    "iterations": 1221333,
+    "ns_per_op": 1008,
+    "bytes_per_op": 1730,
+    "allocs_per_op": 13
+  },
+  {
+    "name": "BenchmarkWithContext",
+    "iterations": 24710778,
+    "ns_per_op": 41.16,
+    "bytes_per_op": 48,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkFromContext",
+    "iterations": 100000000,
+    "ns_per_op": 11.04,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewServer",
+    "iterations": 4518,
+    "ns_per_op": 229489,
+    "bytes_per_op": 65334,
+    "allocs_per_op": 1802
+  },
+  {
+    "name": "BenchmarkMCPServer",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5436,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHandleListTools",
+    "iterations": 5267820,
+    "ns_per_op": 231.2,
+    "bytes_per_op": 184,
+    "allocs_per_op": 7
+  },
+  {
+    "name": "BenchmarkHandleToolHelp",
+    "iterations": 2991086,
+    "ns_per_op": 430.9,
+    "bytes_per_op": 232,
+    "allocs_per_op": 9
+  },
+  {
+    "name": "BenchmarkHandleCallTool",
+    "iterations": 2249439,
+    "ns_per_op": 546.1,
+    "bytes_per_op": 280,
+    "allocs_per_op": 9
+  },
+  {
+    "name": "BenchmarkHandleClusterOverview",
+    "iterations": 232401,
+    "ns_per_op": 4703,
+    "bytes_per_op": 2452,
+    "allocs_per_op": 40
+  },
+  {
+    "name": "BenchmarkDispatchToMesh",
+    "iterations": 5095512,
+    "ns_per_op": 240.8,
+    "bytes_per_op": 184,
+    "allocs_per_op": 7
+  },
+  {
+    "name": "BenchmarkHandleSystemIntroduction",
+    "iterations": 571389602,
+    "ns_per_op": 2.109,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewClusterOverviewHandler",
+    "iterations": 1000000000,
+    "ns_per_op": 0.4828,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkExecute",
+    "iterations": 310660,
+    "ns_per_op": 3470,
+    "bytes_per_op": 1939,
+    "allocs_per_op": 35
+  },
+  {
+    "name": "BenchmarkFanOutTool",
+    "iterations": 811591,
+    "ns_per_op": 1420,
+    "bytes_per_op": 845,
+    "allocs_per_op": 15
+  },
+  {
+    "name": "BenchmarkParseSysInfoResult",
+    "iterations": 760581,
+    "ns_per_op": 1629,
+    "bytes_per_op": 520,
+    "allocs_per_op": 6
+  },
+  {
+    "name": "BenchmarkParseTopoEdges",
+    "iterations": 2096460,
+    "ns_per_op": 548.3,
+    "bytes_per_op": 176,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkParseDirectPeerCount",
+    "iterations": 2139379,
+    "ns_per_op": 544.4,
+    "bytes_per_op": 160,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkAddEdge",
+    "iterations": 16857063,
+    "ns_per_op": 59.38,
+    "bytes_per_op": 16,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkExtractTools",
+    "iterations": 11456162,
+    "ns_per_op": 105.1,
+    "bytes_per_op": 48,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkRenderMermaid",
+    "iterations": 373203,
+    "ns_per_op": 3058,
+    "bytes_per_op": 2780,
+    "allocs_per_op": 25
+  },
+  {
+    "name": "BenchmarkPrimaryRole",
+    "iterations": 68791056,
+    "ns_per_op": 21.44,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkSanitizeMermaidID",
+    "iterations": 2729917,
+    "ns_per_op": 456.9,
+    "bytes_per_op": 464,
+    "allocs_per_op": 5
+  },
+  {
+    "name": "BenchmarkStartHTTPServer",
+    "iterations": 199909,
+    "ns_per_op": 6048,
+    "bytes_per_op": 3333,
+    "allocs_per_op": 39
+  },
+  {
+    "name": "BenchmarkNewEphemeralPKI",
+    "iterations": 6906,
+    "ns_per_op": 194230,
+    "bytes_per_op": 14277,
+    "allocs_per_op": 302
+  },
+  {
+    "name": "BenchmarkGenerateNodeCert",
+    "iterations": 4976,
+    "ns_per_op": 216666,
+    "bytes_per_op": 21192,
+    "allocs_per_op": 358
+  },
+  {
+    "name": "BenchmarkGenerateNodeBundle",
+    "iterations": 7502,
+    "ns_per_op": 179623,
+    "bytes_per_op": 19192,
+    "allocs_per_op": 290
+  },
+  {
+    "name": "BenchmarkMembraneConfig",
+    "iterations": 312788085,
+    "ns_per_op": 4.188,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkWriteCertBundle",
+    "iterations": 613298,
+    "ns_per_op": 1925,
+    "bytes_per_op": 4732,
+    "allocs_per_op": 8
+  },
+  {
+    "name": "BenchmarkReadCertBundle",
+    "iterations": 20055,
+    "ns_per_op": 57470,
+    "bytes_per_op": 12078,
+    "allocs_per_op": 157
+  },
+  {
+    "name": "BenchmarkWriteField",
+    "iterations": 65653045,
+    "ns_per_op": 19.72,
+    "bytes_per_op": 4,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkReadField",
+    "iterations": 10147154,
+    "ns_per_op": 107.5,
+    "bytes_per_op": 100,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkInstallRemotePath",
+    "iterations": 1000000000,
+    "ns_per_op": 0.615,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkServiceUnitPath",
+    "iterations": 10485847,
+    "ns_per_op": 117.7,
+    "bytes_per_op": 48,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkGenerateServiceUnit",
+    "iterations": 4255698,
+    "ns_per_op": 286.4,
+    "bytes_per_op": 256,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkServiceActiveCommand",
+    "iterations": 12104618,
+    "ns_per_op": 89.34,
+    "bytes_per_op": 32,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkParseServiceActive",
+    "iterations": 248839917,
+    "ns_per_op": 6.038,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkUpgradeRestartCommand",
+    "iterations": 13131931,
+    "ns_per_op": 90.85,
+    "bytes_per_op": 48,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkNeedsUpgrade",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5189,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsRoutableAddress",
+    "iterations": 9646185,
+    "ns_per_op": 131.1,
+    "bytes_per_op": 32,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkIsMembraneTLSError",
+    "iterations": 308281648,
+    "ns_per_op": 4.221,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkResolveTarget",
+    "iterations": 9622941,
+    "ns_per_op": 113.1,
+    "bytes_per_op": 48,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkProbeExistingNode",
+    "iterations": 40378,
+    "ns_per_op": 27882,
+    "bytes_per_op": 1284,
+    "allocs_per_op": 19
+  },
+  {
+    "name": "BenchmarkIdentityPath",
+    "iterations": 6926065,
+    "ns_per_op": 185.3,
+    "bytes_per_op": 48,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkSaveIdentity",
+    "iterations": 31282,
+    "ns_per_op": 38177,
+    "bytes_per_op": 6451,
+    "allocs_per_op": 9
+  },
+  {
+    "name": "BenchmarkLoadIdentity",
+    "iterations": 14778,
+    "ns_per_op": 82331,
+    "bytes_per_op": 14723,
+    "allocs_per_op": 164
+  },
+  {
+    "name": "BenchmarkResolve",
+    "iterations": 71520777,
+    "ns_per_op": 14.98,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkList",
+    "iterations": 13411582,
+    "ns_per_op": 99.59,
+    "bytes_per_op": 16,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkRegisterNodeTools",
+    "iterations": 2628604,
+    "ns_per_op": 456.6,
+    "bytes_per_op": 440,
+    "allocs_per_op": 9
+  },
+  {
+    "name": "BenchmarkBuildNodeDeployHandler",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5563,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkRunBridge",
+    "iterations": 37342,
+    "ns_per_op": 31252,
+    "bytes_per_op": 1627,
+    "allocs_per_op": 30
+  },
+  {
+    "name": "BenchmarkBuildImportExaCmd",
+    "iterations": 1000000000,
+    "ns_per_op": 0.7237,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkLoadConfig",
+    "iterations": 243591,
+    "ns_per_op": 4563,
+    "bytes_per_op": 2232,
+    "allocs_per_op": 16
+  },
+  {
+    "name": "BenchmarkRegister",
+    "iterations": 19019842,
+    "ns_per_op": 54.58,
+    "bytes_per_op": 80,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewPluginRegistry",
+    "iterations": 1,
+    "ns_per_op": 2293663004,
+    "bytes_per_op": 961464096,
+    "allocs_per_op": 40059918
+  },
+  {
+    "name": "BenchmarkNewPluginRegistryFrom",
+    "iterations": 2641975,
+    "ns_per_op": 509,
+    "bytes_per_op": 752,
+    "allocs_per_op": 8
+  },
+  {
+    "name": "BenchmarkSupported",
+    "iterations": 15923520,
+    "ns_per_op": 71.44,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkUnsupported",
+    "iterations": 13318398,
+    "ns_per_op": 106,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkGetTool",
+    "iterations": 81123204,
+    "ns_per_op": 12.47,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNodeID",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5134,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkBridgeToMesh",
+    "iterations": 3585495,
+    "ns_per_op": 328.1,
+    "bytes_per_op": 192,
+    "allocs_per_op": 4
+  },
+  {
+    "name": "BenchmarkDetectNodeRoles",
+    "iterations": 149444,
+    "ns_per_op": 8795,
+    "bytes_per_op": 1520,
+    "allocs_per_op": 21
+  },
+  {
+    "name": "BenchmarkRoles",
+    "iterations": 656828280,
+    "ns_per_op": 2.109,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHasStorageRole",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6159,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkReadOSRelease",
+    "iterations": 481731244,
+    "ns_per_op": 3.169,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsDistro",
+    "iterations": 17517756,
+    "ns_per_op": 58.5,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsLinux",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5573,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkPathExists",
+    "iterations": 1748558,
+    "ns_per_op": 816.9,
+    "bytes_per_op": 213,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkHasBinary",
+    "iterations": 27332,
+    "ns_per_op": 39980,
+    "bytes_per_op": 14696,
+    "allocs_per_op": 145
+  },
+  {
+    "name": "BenchmarkListSubdirs",
+    "iterations": 17094,
+    "ns_per_op": 78192,
+    "bytes_per_op": 38394,
+    "allocs_per_op": 398
+  },
+  {
+    "name": "BenchmarkNewResult",
+    "iterations": 6344391,
+    "ns_per_op": 168.9,
+    "bytes_per_op": 160,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkNewErrorResult",
+    "iterations": 1328762,
+    "ns_per_op": 852.5,
+    "bytes_per_op": 600,
+    "allocs_per_op": 8
+  },
+  {
+    "name": "BenchmarkNewDedup",
+    "iterations": 1897732,
+    "ns_per_op": 650.5,
+    "bytes_per_op": 2344,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkIsDuplicate",
+    "iterations": 10697487,
+    "ns_per_op": 114.9,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsDuplicateString",
+    "iterations": 27216993,
+    "ns_per_op": 56.73,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsDuplicateHash",
+    "iterations": 100000000,
+    "ns_per_op": 11.75,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkReset",
+    "iterations": 207453,
+    "ns_per_op": 6217,
+    "bytes_per_op": 36992,
+    "allocs_per_op": 6
+  },
+  {
+    "name": "BenchmarkHashFNV",
+    "iterations": 16946109,
+    "ns_per_op": 93.36,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHashFNVString",
+    "iterations": 53877440,
+    "ns_per_op": 31.21,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewAggregator",
+    "iterations": 1586985,
+    "ns_per_op": 781.7,
+    "bytes_per_op": 3496,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkAdd",
+    "iterations": 79961990,
+    "ns_per_op": 19.89,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkAvg",
+    "iterations": 100000000,
+    "ns_per_op": 14.63,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkGroups",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6427,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkGet",
+    "iterations": 100000000,
+    "ns_per_op": 14.22,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkAll",
+    "iterations": 5694853,
+    "ns_per_op": 209.7,
+    "bytes_per_op": 32,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkStats",
+    "iterations": 4250820,
+    "ns_per_op": 297.9,
+    "bytes_per_op": 64,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkNewRingBuffer",
+    "iterations": 99583764,
+    "ns_per_op": 15.71,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkPush",
+    "iterations": 180439062,
+    "ns_per_op": 6.232,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkLen",
+    "iterations": 1000000000,
+    "ns_per_op": 0.7164,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkLatest",
+    "iterations": 317648620,
+    "ns_per_op": 3.991,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkSnapshot",
+    "iterations": 8970279,
+    "ns_per_op": 135.2,
+    "bytes_per_op": 416,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkNewTopK",
+    "iterations": 31730118,
+    "ns_per_op": 35.09,
+    "bytes_per_op": 32,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkResults",
+    "iterations": 65785,
+    "ns_per_op": 21977,
+    "bytes_per_op": 896,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkLess",
+    "iterations": 377475624,
+    "ns_per_op": 3.141,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkSwap",
+    "iterations": 917564402,
+    "ns_per_op": 1.479,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkPop",
+    "iterations": 75713600,
+    "ns_per_op": 15.89,
+    "bytes_per_op": 8,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkNewThresholdEmitter",
+    "iterations": 1000000000,
+    "ns_per_op": 0.529,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkEvaluate",
+    "iterations": 872910342,
+    "ns_per_op": 1.391,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkTopKPush",
+    "iterations": 8588709,
+    "ns_per_op": 157.3,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkTopKLen",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6863,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewInstallTool",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5054,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewUninstallTool",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5486,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewRestartTool",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5286,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewStopTool",
+    "iterations": 1000000000,
+    "ns_per_op": 0.596,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNewUpgradeTool",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6294,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkName",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5468,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkDescription",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5655,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHelp",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5794,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkCategory",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5095,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkParameters",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5338,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHidden",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5377,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsSupported",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5714,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkExecute",
+    "iterations": 179846,
+    "ns_per_op": 6333,
+    "bytes_per_op": 2280,
+    "allocs_per_op": 20
+  },
+  {
+    "name": "BenchmarkEphemeralCleanupOps",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5346,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkSelfInstallOps",
+    "iterations": 1660292,
+    "ns_per_op": 720.6,
+    "bytes_per_op": 769,
+    "allocs_per_op": 5
+  },
+  {
+    "name": "BenchmarkSelfUninstallOps",
+    "iterations": 2608284,
+    "ns_per_op": 439.9,
+    "bytes_per_op": 504,
+    "allocs_per_op": 4
+  },
+  {
+    "name": "BenchmarkNodeUpgradeOps",
+    "iterations": 6971166,
+    "ns_per_op": 181.8,
+    "bytes_per_op": 264,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkExecuteOps",
+    "iterations": 1,
+    "ns_per_op": 5256494171,
+    "bytes_per_op": 33376,
+    "allocs_per_op": 203
+  },
+  {
+    "name": "BenchmarkExecuteOp",
+    "iterations": 1,
+    "ns_per_op": 3623694773,
+    "bytes_per_op": 33264,
+    "allocs_per_op": 200
+  },
+  {
+    "name": "BenchmarkSplitArgs",
+    "iterations": 1000000,
+    "ns_per_op": 1180,
+    "bytes_per_op": 384,
+    "allocs_per_op": 42
+  },
+  {
+    "name": "BenchmarkSplitSimple",
+    "iterations": 1614351,
+    "ns_per_op": 749.6,
+    "bytes_per_op": 224,
+    "allocs_per_op": 28
+  },
+  {
+    "name": "BenchmarkInstallRemotePath",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6807,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkServiceUnitPath",
+    "iterations": 10019037,
+    "ns_per_op": 120.1,
+    "bytes_per_op": 48,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkGenerateServiceUnit",
+    "iterations": 4733935,
+    "ns_per_op": 257.6,
+    "bytes_per_op": 256,
+    "allocs_per_op": 1
+  },
+  {
+    "name": "BenchmarkSetLiveMode",
+    "iterations": 1000000000,
+    "ns_per_op": 0.4908,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNew",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5649,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkName",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6416,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkDescription",
+    "iterations": 1000000000,
+    "ns_per_op": 0.6125,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHelp",
+    "iterations": 1000000000,
+    "ns_per_op": 0.4636,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkCategory",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5814,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkParameters",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5691,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHidden",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5813,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsSupported",
+    "iterations": 1493724,
+    "ns_per_op": 791.7,
+    "bytes_per_op": 224,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkExecute",
+    "iterations": 111531,
+    "ns_per_op": 10742,
+    "bytes_per_op": 2295,
+    "allocs_per_op": 19
+  },
+  {
+    "name": "BenchmarkParseLoadAvg",
+    "iterations": 4101120,
+    "ns_per_op": 309.2,
+    "bytes_per_op": 136,
+    "allocs_per_op": 3
+  },
+  {
+    "name": "BenchmarkNew",
+    "iterations": 1000000000,
+    "ns_per_op": 0.7046,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkName",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5883,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkDescription",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5772,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHelp",
+    "iterations": 1000000000,
+    "ns_per_op": 0.586,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkCategory",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5267,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkParameters",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5255,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHidden",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5723,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsSupported",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5681,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkExecute",
+    "iterations": 72958,
+    "ns_per_op": 17557,
+    "bytes_per_op": 3902,
+    "allocs_per_op": 35
+  },
+  {
+    "name": "BenchmarkReadKernel",
+    "iterations": 232377,
+    "ns_per_op": 5750,
+    "bytes_per_op": 1776,
+    "allocs_per_op": 7
+  },
+  {
+    "name": "BenchmarkReadDistro",
+    "iterations": 55670581,
+    "ns_per_op": 21.73,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkNew",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5928,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkName",
+    "iterations": 1000000000,
+    "ns_per_op": 0.7265,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkDescription",
+    "iterations": 1000000000,
+    "ns_per_op": 0.7082,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHelp",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5664,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkCategory",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5973,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkParameters",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5939,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkHidden",
+    "iterations": 1000000000,
+    "ns_per_op": 0.5841,
+    "bytes_per_op": 0,
+    "allocs_per_op": 0
+  },
+  {
+    "name": "BenchmarkIsSupported",
+    "iterations": 1511528,
+    "ns_per_op": 786.5,
+    "bytes_per_op": 224,
+    "allocs_per_op": 2
+  },
+  {
+    "name": "BenchmarkExecute",
+    "iterations": 98670,
+    "ns_per_op": 12510,
+    "bytes_per_op": 2415,
+    "allocs_per_op": 22
+  },
+  {
+    "name": "BenchmarkFormatDuration",
+    "iterations": 2846768,
+    "ns_per_op": 438.3,
+    "bytes_per_op": 128,
+    "allocs_per_op": 6
+  }
+]

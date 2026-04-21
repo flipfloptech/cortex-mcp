@@ -19,6 +19,5 @@ coverage.out
 # Task artifacts
 .task/
 
-# Benchmark history
-.benchmarks/
+# Benchmark history (now tracked as baseline)
 main
