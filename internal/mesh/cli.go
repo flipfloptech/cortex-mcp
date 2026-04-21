@@ -165,6 +165,23 @@ func Execute() {
 		},
 	}
 
+	reinstallCmd := &cobra.Command{
+		Use:   "reinstall [target]",
+		Short: "Wipe and forcefully reinstall fleet nodes",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
+			defer cancel()
+			target := ""
+			if len(args) > 0 {
+				target = args[0]
+			}
+			uninstallFleet(ctx, cfg, target)
+			opts := GatewayOptions{Install: true, Target: target}
+			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
+		},
+	}
+
 	startCmd := &cobra.Command{
 		Use:   "start [target]",
 		Short: "Start persistent services via SSH",
@@ -261,7 +278,7 @@ func Execute() {
 	harnessCmd.Flags().Int("count", 0, "Number of iterations (0 = infinite)")
 	harnessCmd.Flags().String("duration", "0", "Duration of soak test (e.g. 1h, 30m, 0 = infinite)")
 
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd())
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -1238,7 +1255,7 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 			continue
 		}
 
-		uninstallCmd := fmt.Sprintf("%s uninstall", remotePath)
+		uninstallCmd := fmt.Sprintf("%s uninstall || true; systemctl stop cortex-mesh || true; rm -rf ~/.cortex-mesh /opt/cortex-mesh/certs; pkill -9 -f cortex-mesh || true", remotePath)
 		if err := execSSHCommand(client, uninstallCmd); err != nil {
 			_ = client.Close()
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
