@@ -91,6 +91,7 @@ type GatewayOptions struct {
 	Target          string
 	PureClient      bool
 	ServeHTTP       string // address to serve HTTP on
+	Quiet           bool   // suppress stdout UI logs (for daemonized/mcp modes)
 	HarnessType     string // "check", "soak", "deploy"
 	HarnessCount    int
 	HarnessDuration time.Duration
@@ -239,7 +240,11 @@ func Execute() {
 			}
 			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
-			opts := GatewayOptions{PureClient: true, ServeHTTP: addr}
+			opts := GatewayOptions{
+				PureClient: true,
+				ServeHTTP:  addr,
+				Quiet:      true, // suppress UI logs when running as background service
+			}
 			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
@@ -526,11 +531,20 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 // runGateway handles the gateway (bootstrap) node lifecycle.
 func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, plugins *registry.PluginRegistry, skipDeploy bool, opts GatewayOptions) {
 	install := opts.Install
-	printHeader(nodeID)
+
+	logPhase := func(format string, a ...interface{}) {
+		if !opts.Quiet {
+			fmt.Fprintf(os.Stderr, format, a...)
+		}
+	}
+
+	if !opts.Quiet {
+		printHeader(nodeID)
+	}
 
 	// --- Phase 1: PKI ---
-	fmt.Fprintf(os.Stderr, "--- Phase 1: Ephemeral PKI ---\n")
-	pki, err := loadOrGeneratePKI()
+	logPhase("--- Phase 1: Mesh PKI ---\n")
+	pki, isNew, err := loadOrGeneratePKI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
@@ -540,30 +554,34 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stderr, "  ✓ Site CA generated (ephemeral, 24h validity)\n")
-	fmt.Fprintf(os.Stderr, "  ✓ Gateway cert: CN=%s\n", nodeID)
+	if isNew {
+		logPhase("  ✓ Site CA generated (10-year validity)\n")
+	} else {
+		logPhase("  ✓ Site CA loaded from persistent storage\n")
+	}
+	logPhase("  ✓ Gateway cert: CN=%s\n", nodeID)
 
 	// --- Phase 2: Create mesh node ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 2: Create mesh node ---\n")
+	logPhase("\n--- Phase 2: Create mesh node ---\n")
 	node, err := api.NewNode(ctx, api.NodeConfig{
 		NodeID:         nodeID,
 		KnownHosts:     cfg.KnownHosts(),
 		GossipInterval: 3 * time.Second, // configurable: 3s for HPC, 10s for WAN
 		Events: api.NodeEvents{
 			OnPeerJoined: func(peerID string) {
-				fmt.Fprintf(os.Stderr, "  [event] peer joined: %s\n", peerID)
+				logPhase("  [event] peer joined: %s\n", peerID)
 			},
 			OnPeerLost: func(peerID string) {
-				fmt.Fprintf(os.Stderr, "  [event] peer lost: %s\n", peerID)
+				logPhase("  [event] peer lost: %s\n", peerID)
 			},
 			OnIsolated: func() {
-				fmt.Fprintf(os.Stderr, "  [event] isolated — zero peers\n")
+				logPhase("  [event] isolated — zero peers\n")
 			},
 			OnReconnected: func(peerID string) {
-				fmt.Fprintf(os.Stderr, "  [event] reconnected via %s\n", peerID)
+				logPhase("  [event] reconnected via %s\n", peerID)
 			},
 			OnOrphaned: func() {
-				fmt.Fprintf(os.Stderr, "  [event] orphaned — leaving no trace\n")
+				logPhase("  [event] orphaned — leaving no trace\n")
 				if err := transport.SelfCleanup(); err != nil {
 					zap.S().Debugw("self-cleanup", "error", err)
 				}
@@ -594,8 +612,8 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		registerNodeTools(meshReg, node)
 	}
 
-	fmt.Fprintf(os.Stderr, "  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(meshReg.ListLocal()))
-	fmt.Fprintf(os.Stderr, "  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
+	logPhase("  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(meshReg.ListLocal()))
+	logPhase("  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
 
 	// Initialize the credential vault.
 	v, err := initVault(cfg)
@@ -616,20 +634,20 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// --- Phase 5: Deploy to seed hosts ---
 	knownHosts := cfg.KnownHosts()
 	if len(knownHosts) == 0 {
-		fmt.Fprintf(os.Stderr, "\nNo seed hosts configured in mesh.toml. Skipping remote phases.\n")
-		fmt.Fprintf(os.Stderr, "\nDone (local-only mode).\n")
+		logPhase("\nNo seed hosts configured in mesh.toml. Skipping remote phases.\n")
+		logPhase("\nDone (local-only mode).\n")
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "\n--- Phase 5: Deploy + mesh connect ---\n")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install)
+	logPhase("\n--- Phase 5: Deploy + mesh connect ---\n")
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install, opts.Quiet)
 
 	if len(deployedNodes) == 0 {
-		fmt.Fprintf(os.Stderr, "\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
+		logPhase("\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
 	}
 
 	if opts.Stop {
-		fmt.Fprintf(os.Stderr, "\n--- Stopping Remote Nodes ---\n")
+		logPhase("\n--- Stopping Remote Nodes ---\n")
 
 		agents, _ := bridge.DiscoverTool(ctx, "node_stop")
 		var nodeIDs []string
@@ -641,9 +659,9 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_stop", nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "✗ stop dispatch failed: %v\n", err)
+			logPhase("✗ stop dispatch failed: %v\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "✓ stop broadcast successful (%d nodes)\n", len(res))
+			logPhase("✓ stop broadcast successful (%d nodes)\n", len(res))
 		}
 		cancel()
 		time.Sleep(500 * time.Millisecond)
@@ -651,32 +669,32 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	// --- Phase 6: Start gossip ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 6: Gossip ---\n")
+	logPhase("\n--- Phase 6: Gossip ---\n")
 	gossipInterval := node.GossipIntervalDuration()
 	node.StartGossipTicker(ctx, gossipInterval)
-	fmt.Fprintf(os.Stderr, "  ✓ Gossip ticker started (%s interval)\n", gossipInterval)
+	logPhase("  ✓ Gossip ticker started (%s interval)\n", gossipInterval)
 
-	fmt.Fprintf(os.Stderr, "  Waiting for gossip convergence...\n")
+	logPhase("  Waiting for gossip convergence...\n")
 	time.Sleep(gossipInterval + 1*time.Second)
-	fmt.Fprintf(os.Stderr, "  ✓ Peers: %d\n", node.PeerCount())
+	logPhase("  ✓ Peers: %d\n", node.PeerCount())
 
 	// --- Phase 7: Capability discovery ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 7: Capability discovery ---\n")
+	logPhase("\n--- Phase 7: Capability discovery ---\n")
 
 	// Tier 1: Local capability index (zero traffic — populated by gossip).
 	indexEntries := node.LookupCapability("tool:system_info")
 	if len(indexEntries) > 0 {
-		fmt.Fprintf(os.Stderr, "  ✓ Capability index: %d node(s) with tool:system_info (zero traffic)\n", len(indexEntries))
+		logPhase("  ✓ Capability index: %d node(s) with tool:system_info (zero traffic)\n", len(indexEntries))
 		for _, e := range indexEntries {
-			fmt.Fprintf(os.Stderr, "    - %s (impedance=%.1f)\n", e.NodeID, e.Impedance)
+			logPhase("    - %s (impedance=%.1f)\n", e.NodeID, e.Impedance)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "  ⚠ Capability index empty — falling back to Sonar broadcast\n")
+		logPhase("  ⚠ Capability index empty — falling back to Sonar broadcast\n")
 	}
 
 	helloEntries := node.LookupCapability("tool:hello")
 	if len(helloEntries) > 0 {
-		fmt.Fprintf(os.Stderr, "  ✓ Capability index: %d node(s) with tool:hello (zero traffic)\n", len(helloEntries))
+		logPhase("  ✓ Capability index: %d node(s) with tool:hello (zero traffic)\n", len(helloEntries))
 	}
 
 	// Tier 2: Sonar broadcast (fallback — demonstrates backward compat).
@@ -684,11 +702,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	defer sonarCancel()
 	agents, err := node.Sonar(sonarCtx, "tool:system_info")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ Sonar error: %v\n", err)
+		logPhase("  ✗ Sonar error: %v\n", err)
 	} else {
-		fmt.Fprintf(os.Stderr, "  ✓ Sonar discovered %d node(s) with tool:system_info\n", len(agents))
+		logPhase("  ✓ Sonar discovered %d node(s) with tool:system_info\n", len(agents))
 		for _, a := range agents {
-			fmt.Fprintf(os.Stderr, "    - %s (impedance=%.1f)\n", a.NodeID, a.Impedance)
+			logPhase("    - %s (impedance=%.1f)\n", a.NodeID, a.Impedance)
 		}
 	}
 
@@ -698,7 +716,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	allTools := node.LookupCapabilityWildcard("tool:")
 	snap := node.CapabilityIndex().Snapshot()
 	if len(allTools) > 0 {
-		fmt.Fprintf(os.Stderr, "  ✓ Wildcard 'tool:*' found %d node(s) offering tool capabilities across the mesh:\n", len(allTools))
+		logPhase("  ✓ Wildcard 'tool:*' found %d node(s) offering tool capabilities across the mesh:\n", len(allTools))
 		for _, nt := range allTools {
 			var toolNames []string
 			for _, cap := range snap[nt.NodeID] {
@@ -706,13 +724,13 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 					toolNames = append(toolNames, strings.TrimPrefix(cap, "tool:"))
 				}
 			}
-			fmt.Fprintf(os.Stderr, "    - %s offers tools: %s\n", nt.NodeID, strings.Join(toolNames, ", "))
+			logPhase("    - %s offers tools: %s\n", nt.NodeID, strings.Join(toolNames, ", "))
 		}
 	}
 
 	// --- Phase 10b: Serve HTTP if requested ---
 	if opts.ServeHTTP != "" {
-		fmt.Fprintf(os.Stderr, "\n--- Serving MCP HTTP on %s ---\n", opts.ServeHTTP)
+		logPhase("\n--- Serving MCP HTTP on %s ---\n", opts.ServeHTTP)
 
 		// Create an MCP Server adapter for the Gateway Dispatcher
 		mcpSrv := mcp.NewServer(gw, node)
@@ -736,7 +754,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 10c: Test Harness ---
 	if opts.HarnessType != "" {
-		fmt.Fprintf(os.Stderr, "\n--- Running Harness: %s ---\n", opts.HarnessType)
+		logPhase("\n--- Running Harness: %s ---\n", opts.HarnessType)
 		h := harness.NewHarness(gw)
 		var remoteNodes []string
 		for _, nt := range allTools {
@@ -815,7 +833,7 @@ type deploySoakAdapter struct {
 }
 
 func (a *deploySoakAdapter) Deploy(ctx context.Context) error {
-	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.knownHosts, a.v, false, false, false)
+	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.knownHosts, a.v, false, false, false, false)
 	return nil
 }
 
@@ -863,10 +881,16 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install, quiet bool) []deployedNode {
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
 		SkipUpload: skipDeploy,
+	}
+
+	logPhase := func(format string, a ...interface{}) {
+		if !quiet {
+			fmt.Fprintf(os.Stderr, format, a...)
+		}
 	}
 
 	if daemon {
@@ -875,7 +899,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 
 	for remoteNodeID, addrs := range knownHosts {
 		if len(addrs) == 0 {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: no addresses configured\n", remoteNodeID)
+			logPhase("  ✗ %s: no addresses configured\n", remoteNodeID)
 			continue
 		}
 
@@ -891,13 +915,13 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			cred, ok = v.Match(host)
 		}
 		if !ok {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no matching credentials in vault\n", remoteNodeID, addr)
+			logPhase("  ✗ %s (%s): no matching credentials in vault\n", remoteNodeID, addr)
 			continue
 		}
 
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			logPhase("  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
 			continue
 		}
 
@@ -918,32 +942,32 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			_ = probeConn.Close()
 
 			if needsUpgrade(skipDeploy) {
-				fmt.Fprintf(os.Stderr, "  → %s (%s): upgrading...", remoteNodeID, addr)
+				logPhase("  → %s (%s): upgrading...", remoteNodeID, addr)
 				remotePath := installRemotePath("")
 				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
-					fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+					logPhase(" ✗ %v\n", err)
 					continue
 				}
-				fmt.Fprintf(os.Stderr, " binary pushed, restarting...")
+				logPhase(" binary pushed, restarting...")
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				fmt.Fprintf(os.Stderr, "  → %s (%s): reconnecting...", remoteNodeID, addr)
+				logPhase("  → %s (%s): reconnecting...", remoteNodeID, addr)
 			}
 
 			var d net.Dialer
 			conn, err := d.DialContext(ctx, "tcp", meshAddr)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", err)
+				logPhase(" ✗ mesh connect (TCP): %v\n", err)
 				continue
 			}
 
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				logPhase(" ✗ mTLS membrane: %v\n", err)
 				_ = conn.Close()
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, " ✓ connected (mTLS via TCP)\n")
+			logPhase(" ✓ connected (mTLS via TCP)\n")
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -955,41 +979,41 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		if checkServiceActive(ctx, addr, deployCred) {
 			// --- Path 2: Service active, port firewalled → SSH bridge ---
 			if needsUpgrade(skipDeploy) {
-				fmt.Fprintf(os.Stderr, "  → %s (%s): upgrading (SSH)...", remoteNodeID, addr)
+				logPhase("  → %s (%s): upgrading (SSH)...", remoteNodeID, addr)
 				remotePath := installRemotePath("")
 				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
-					fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+					logPhase(" ✗ %v\n", err)
 					continue
 				}
-				fmt.Fprintf(os.Stderr, " binary pushed, restarting...")
+				logPhase(" binary pushed, restarting...")
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				fmt.Fprintf(os.Stderr, "  → %s (%s): bridging (SSH)...", remoteNodeID, addr)
+				logPhase("  → %s (%s): bridging (SSH)...", remoteNodeID, addr)
 			}
 
 			remotePath := installRemotePath("")
 			stream, err := sshExecBridge(ctx, addr, deployCred, remotePath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ bridge: %v\n", err)
+				logPhase(" ✗ bridge: %v\n", err)
 				continue
 			}
 
 			// Wait for bridge readiness (same 4-byte magic as deploy).
 			readyBuf := make([]byte, 4)
 			if _, err := io.ReadFull(stream, readyBuf); err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ bridge ready: %v\n", err)
+				logPhase(" ✗ bridge ready: %v\n", err)
 				_ = stream.Close()
 				continue
 			}
 
 			conn := transport.NewStdioConn(stream, stream)
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				logPhase(" ✗ mTLS handshake: %v\n", err)
 				_ = conn.Close()
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, " ✓ connected (mTLS via SSH bridge)\n")
+			logPhase(" ✓ connected (mTLS via SSH bridge)\n")
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -998,11 +1022,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		}
 
 		// --- Path 3: No existing node → fresh deploy ---
-		fmt.Fprintf(os.Stderr, "  → %s (%s): deploying...", remoteNodeID, addr)
+		logPhase("  → %s (%s): deploying...", remoteNodeID, addr)
 
 		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
+			logPhase(" ✗ %v\n", err)
 			continue
 		}
 
@@ -1013,7 +1037,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		// over the raw stream BEFORE the membrane handshake.
 		bundle, err := pki.generateNodeBundle(remoteNodeID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ generate cert: %v\n", err)
+			logPhase(" ✗ generate cert: %v\n", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				zap.S().Debugw("close stream", "error", cerr)
@@ -1026,14 +1050,14 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			modeByte = 0x01
 		}
 		if _, err := stream.Write([]byte{modeByte}); err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ send mode protocol: %v\n", err)
+			logPhase(" ✗ send mode protocol: %v\n", err)
 			dumpRemoteStderr(stream)
 			_ = stream.Close()
 			continue
 		}
 
 		if err := writeCertBundle(stream, bundle); err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ send certs: %v\n", err)
+			logPhase(" ✗ send certs: %v\n", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				zap.S().Debugw("close stream", "error", cerr)
@@ -1044,7 +1068,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		if install {
 			ackBuf := make([]byte, 4)
 			if _, err := io.ReadFull(stream, ackBuf); err != nil || string(ackBuf) != string([]byte{'O', 'K', 0x00, 0x06}) {
-				fmt.Fprintf(os.Stderr, " ✗ install failed/invalid ack: %v\n", err)
+				logPhase(" ✗ install failed/invalid ack: %v\n", err)
 				dumpRemoteStderr(stream)
 				_ = stream.Close()
 				continue
@@ -1069,17 +1093,17 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			}
 
 			if dialErr != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mesh connect (TCP): %v\n", dialErr)
+				logPhase(" ✗ mesh connect (TCP): %v\n", dialErr)
 				continue
 			}
 
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mTLS membrane: %v\n", err)
+				logPhase(" ✗ mTLS membrane: %v\n", err)
 				_ = conn.Close()
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, " ✓ installed + connected (mTLS via TCP)\n")
+			logPhase(" ✓ installed + connected (mTLS via TCP)\n")
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,

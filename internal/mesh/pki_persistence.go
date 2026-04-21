@@ -26,7 +26,8 @@ func caPath() (string, error) {
 
 // loadOrGeneratePKI attempts to load the gateway's site CA from disk.
 // If it does not exist, it generates a fresh site CA and saves it.
-func loadOrGeneratePKI() (*ephemeralPKI, error) {
+// Returns the PKI, a boolean indicating if it was newly generated, and any error.
+func loadOrGeneratePKI() (*ephemeralPKI, bool, error) {
 	path, err := caPath()
 	if err == nil {
 		data, err := os.ReadFile(path)
@@ -43,7 +44,7 @@ func loadOrGeneratePKI() (*ephemeralPKI, error) {
 							if err == nil {
 								pool := x509.NewCertPool()
 								pool.AddCert(ca)
-								return &ephemeralPKI{ca: ca, caKey: priv.(ed25519.PrivateKey), pool: pool}, nil
+								return &ephemeralPKI{ca: ca, caKey: priv.(ed25519.PrivateKey), pool: pool}, false, nil
 							}
 						}
 					}
@@ -55,7 +56,7 @@ func loadOrGeneratePKI() (*ephemeralPKI, error) {
 	// Fallback to generate
 	pki, err := newEphemeralPKI()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Save it for future runs
@@ -72,5 +73,5 @@ func loadOrGeneratePKI() (*ephemeralPKI, error) {
 		_ = os.WriteFile(path, data, 0600)
 	}
 
-	return pki, nil
+	return pki, true, nil
 }
