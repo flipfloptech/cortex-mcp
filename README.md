@@ -35,13 +35,18 @@ The fastest way to spin up the Cortex Mesh is by importing an existing cluster c
 # 2. Install the mesh agents onto the target hosts (requires root/sudo)
 ./cortex-mcp install --config ./mesh.toml
 
-# 3. Start the MCP Gateway server over stdio for testing
+# 3. Start the MCP Gateway server over HTTP (SSE) for LLMs to connect to
 ./cortex-mcp mcp --config ./mesh.toml
 ```
 
 ## Configuring LLM Clients
 
-Cortex MCP is designed to plug directly into any standard Model Context Protocol client. 
+Cortex MCP is an mTLS HTTP server that streams capabilities directly to any standard Model Context Protocol client using Server-Sent Events (SSE). 
+
+First, ensure the gateway server is running:
+```bash
+./cortex-mcp mcp 127.0.0.1:8080 --config ./mesh.toml
+```
 
 ### Claude Desktop Integration
 
@@ -51,12 +56,8 @@ Add the following to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "cortex-mesh": {
-      "command": "/absolute/path/to/cortex-mcp",
-      "args": [
-        "mcp",
-        "--config",
-        "/absolute/path/to/mesh.toml"
-      ]
+      "type": "sse",
+      "url": "https://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -65,9 +66,9 @@ Add the following to your `claude_desktop_config.json`:
 ### Cursor / OpenCode Integration
 
 In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new server:
-- **Type**: `command`
+- **Type**: `sse`
 - **Name**: `cortex-mesh`
-- **Command**: `/absolute/path/to/cortex-mcp mcp --config /absolute/path/to/mesh.toml`
+- **URL**: `https://127.0.0.1:8080/mcp`
 
 ## CLI Reference
 
@@ -78,7 +79,7 @@ In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new ser
 - `start`: Start the `cortex-mesh` systemd service on all remote hosts.
 - `stop`: Stop the `cortex-mesh` systemd service on all remote hosts.
 - `uninstall`: Remove the systemd service and binary from all remote hosts.
-- `mcp`: Launch the gateway in MCP server mode over `stdio` (used by LLMs).
+- `mcp`: Launch the gateway in MCP server mode over HTTP/SSE (used by LLMs).
 - `harness`: Run the automated soak-testing harness against the deployment.
 
 ## Tool Catalog
