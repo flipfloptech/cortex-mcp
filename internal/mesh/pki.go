@@ -51,7 +51,7 @@ func newEphemeralPKI() (*ephemeralPKI, error) {
 			CommonName:   "cortex-mesh-ephemeral-ca",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
-		NotAfter:              time.Now().Add(90 * 24 * time.Hour - 1 * time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour - 1 * time.Hour),
 		IsCA:                  true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
@@ -92,7 +92,7 @@ func (p *ephemeralPKI) generateNodeCert(nodeID string, isServer bool) (tls.Certi
 			CommonName:   nodeID,
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),
-		NotAfter:    time.Now().Add(90 * 24 * time.Hour - 1 * time.Hour),
+		NotAfter:    time.Now().Add(10 * 365 * 24 * time.Hour - 1 * time.Hour),
 		ExtKeyUsage: []x509.ExtKeyUsage{usage},
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
@@ -134,7 +134,7 @@ func (p *ephemeralPKI) generateNodeBundle(nodeID string) (*certBundle, error) {
 			CommonName:   nodeID,
 		},
 		NotBefore: time.Now().Add(-1 * time.Hour),
-		NotAfter:  time.Now().Add(90 * 24 * time.Hour - 1 * time.Hour),
+		NotAfter:  time.Now().Add(10 * 365 * 24 * time.Hour - 1 * time.Hour),
 		// Fleet nodes get both client+server auth for bidirectional mTLS.
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageServerAuth,
