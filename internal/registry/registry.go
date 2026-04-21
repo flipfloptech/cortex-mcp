@@ -25,9 +25,10 @@ func Register(t Tool) {
 // It evaluates each tool's IsSupported() at construction time and
 // partitions tools into supported (active) and unsupported (logged) sets.
 type PluginRegistry struct {
-	nodeID      string
-	supported   map[string]Tool
-	unsupported map[string]string // name → reason
+	nodeID        string
+	supportedMap  map[string]Tool
+	supportedList []Tool
+	unsupported   map[string]string // name → reason
 }
 
 // NewPluginRegistry creates a registry from the global tool pool.
@@ -35,8 +36,7 @@ type PluginRegistry struct {
 // Unsupported tools are logged and excluded from the active set.
 func NewPluginRegistry(nodeID string) *PluginRegistry {
 	globalMu.Lock()
-	tools := make([]Tool, len(globalTools))
-	copy(tools, globalTools)
+	tools := globalTools
 	globalMu.Unlock()
 
 	return NewPluginRegistryFrom(nodeID, tools)
@@ -47,15 +47,17 @@ func NewPluginRegistry(nodeID string) *PluginRegistry {
 // evaluated against the local environment.
 func NewPluginRegistryFrom(nodeID string, tools []Tool) *PluginRegistry {
 	pr := &PluginRegistry{
-		nodeID:      nodeID,
-		supported:   make(map[string]Tool),
-		unsupported: make(map[string]string),
+		nodeID:        nodeID,
+		supportedMap:  make(map[string]Tool),
+		supportedList: make([]Tool, 0, len(tools)),
+		unsupported:   make(map[string]string),
 	}
 
 	for _, t := range tools {
 		ok, reason := t.IsSupported()
 		if ok {
-			pr.supported[t.Name()] = t
+			pr.supportedMap[t.Name()] = t
+			pr.supportedList = append(pr.supportedList, t)
 			zap.S().Debugw("plugin loaded", "tool", t.Name(), "category", t.Category())
 		} else {
 			pr.unsupported[t.Name()] = reason
@@ -66,13 +68,8 @@ func NewPluginRegistryFrom(nodeID string, tools []Tool) *PluginRegistry {
 	return pr
 }
 
-// Supported returns all tools that passed IsSupported().
 func (pr *PluginRegistry) Supported() []Tool {
-	tools := make([]Tool, 0, len(pr.supported))
-	for _, t := range pr.supported {
-		tools = append(tools, t)
-	}
-	return tools
+	return pr.supportedList
 }
 
 // Unsupported returns a map of tool name → reason for all tools
@@ -85,9 +82,8 @@ func (pr *PluginRegistry) Unsupported() map[string]string {
 	return out
 }
 
-// GetTool returns a supported tool by name.
 func (pr *PluginRegistry) GetTool(name string) (Tool, bool) {
-	t, ok := pr.supported[name]
+	t, ok := pr.supportedMap[name]
 	return t, ok
 }
 

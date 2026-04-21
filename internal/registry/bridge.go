@@ -17,7 +17,7 @@ import (
 //   - Populates the nodeID in the result envelope
 //   - Tracks execution time
 func (pr *PluginRegistry) BridgeToMesh(meshReg *tools.Registry) {
-	for _, t := range pr.supported {
+	for _, t := range pr.Supported() {
 		tool := t // capture for closure
 
 		// Convert our ToolParam to cortex-mesh's tools.ToolParam.
