@@ -25,7 +25,7 @@ func BenchmarkNewHarness(b *testing.B) {
 func BenchmarkRunToolCheck(b *testing.B) {
 	h := NewHarness(dummyDispatcher{})
 	ctx := context.Background()
-	toolsList := []string{"system_info"}
+	toolsList := []string{"get_system_info"}
 	nodeIDs := []string{"node1"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

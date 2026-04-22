@@ -88,7 +88,7 @@ func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error
 	}
 
 	// 2. Fan-out system_info to all nodes.
-	sysInfoByNode := h.fanOutTool(ctx, "system_info")
+	sysInfoByNode := h.fanOutTool(ctx, "get_system_info")
 
 	// 3. Fan-out mesh_topology to all nodes.
 	topoByNode := h.fanOutTool(ctx, "mesh_topology")

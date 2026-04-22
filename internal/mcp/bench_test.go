@@ -53,7 +53,7 @@ func BenchmarkHandleToolHelp(b *testing.B) {
 	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
-	in := ToolHelpInput{ToolName: "system_info"}
+	in := ToolHelpInput{ToolName: "get_system_info"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _, _ = srv.handleToolHelp(ctx, req, in)
@@ -64,7 +64,7 @@ func BenchmarkHandleCallTool(b *testing.B) {
 	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
-	in := CallToolInput{ToolName: "system_info", Args: make(map[string]interface{})}
+	in := CallToolInput{ToolName: "get_system_info", Args: make(map[string]interface{})}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _, _ = srv.handleCallTool(ctx, req, in)
@@ -87,7 +87,7 @@ func BenchmarkDispatchToMesh(b *testing.B) {
 	args := json.RawMessage(`{}`)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = srv.dispatchToMesh(ctx, "system_info", args)
+		_, _, _ = srv.dispatchToMesh(ctx, "get_system_info", args)
 	}
 }
 
@@ -124,7 +124,7 @@ func BenchmarkFanOutTool(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = h.fanOutTool(ctx, "system_info")
+		_ = h.fanOutTool(ctx, "get_system_info")
 	}
 }
 

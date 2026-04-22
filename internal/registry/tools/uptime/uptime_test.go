@@ -18,7 +18,7 @@ func TestUptimeTool_ContractCompliance(t *testing.T) {
 
 	var _ registry.Tool = tool
 
-	if tool.Name() != "uptime" {
+	if tool.Name() != "get_uptime" {
 		t.Errorf("expected Name() == 'uptime', got %q", tool.Name())
 	}
 	if tool.Category() != "system" {
@@ -58,7 +58,7 @@ func TestUptimeTool_Execute(t *testing.T) {
 
 	// Create a temporary mock /proc/uptime file
 	dir := t.TempDir()
-	procFile := filepath.Join(dir, "uptime")
+	procFile := filepath.Join(dir, "get_uptime")
 	err := os.WriteFile(procFile, []byte("350735.47 234388.90\n"), 0644)
 	if err != nil {
 		t.Fatalf("failed to write mock uptime: %v", err)

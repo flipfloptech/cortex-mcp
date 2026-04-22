@@ -35,8 +35,8 @@ func TestSystemInfoTool_Name(t *testing.T) {
 	t.Parallel()
 
 	tool := &sysinfo.SystemInfoTool{}
-	if tool.Name() != "system_info" {
-		t.Errorf("Name() = %q, want %q", tool.Name(), "system_info")
+	if tool.Name() != "get_system_info" {
+		t.Errorf("Name() = %q, want %q", tool.Name(), "get_system_info")
 	}
 }
 
@@ -95,8 +95,8 @@ func TestSystemInfoTool_Execute(t *testing.T) {
 	}
 
 	// Verify result envelope.
-	if result.ToolName != "system_info" {
-		t.Errorf("ToolName = %q, want %q", result.ToolName, "system_info")
+	if result.ToolName != "get_system_info" {
+		t.Errorf("ToolName = %q, want %q", result.ToolName, "get_system_info")
 	}
 	if result.Status != registry.StatusOK {
 		t.Errorf("Status = %q, want %q", result.Status, registry.StatusOK)

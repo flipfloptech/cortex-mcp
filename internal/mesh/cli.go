@@ -1155,7 +1155,7 @@ func toDeployCredential(cred vault.Credential) (transport.DeployCredential, erro
 
 // runGatewayTopology invokes the mesh_topology tool via the gateway and pretty-prints the output.
 
-// fanOutDirect invokes the "system_info" tool on all deployed nodes concurrently.
+// fanOutDirect invokes the "get_system_info" tool on all deployed nodes concurrently.
 
 // loadConfig finds and loads mesh.toml from the given path or default locations.
 func loadConfig(path string) (*config.MeshConfig, error) {

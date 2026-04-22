@@ -36,7 +36,7 @@ func init() {
 
 // Name returns the unique identifier for this tool.
 func (t *LoadAvgTool) Name() string {
-	return "loadavg"
+	return "get_loadavg"
 }
 
 // Category returns the tool category.

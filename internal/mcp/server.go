@@ -73,7 +73,7 @@ func NewServer(dispatcher Dispatcher, topology TopologyProvider, plugins *regist
 
 	// mesh_overview
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "mesh_overview",
+		Name:        "get_mesh_overview",
 		Description: "Get a complete cluster topology: every node, its role (SFA/MGS/MDS/OSS/Client), connectivity, tools, and a Mermaid topology diagram. Fans out to all nodes and aggregates.",
 	}, srv.handleMeshOverview)
 

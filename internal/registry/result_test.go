@@ -12,10 +12,10 @@ func TestNewResult_PopulatesFields(t *testing.T) {
 	t.Parallel()
 
 	data := map[string]int{"cpus": 64}
-	result := registry.NewResult("system_info", "oss1", registry.StatusOK, "64 CPUs detected", data)
+	result := registry.NewResult("get_system_info", "oss1", registry.StatusOK, "64 CPUs detected", data)
 
-	if result.ToolName != "system_info" {
-		t.Errorf("ToolName = %q, want %q", result.ToolName, "system_info")
+	if result.ToolName != "get_system_info" {
+		t.Errorf("ToolName = %q, want %q", result.ToolName, "get_system_info")
 	}
 	if result.NodeID != "oss1" {
 		t.Errorf("NodeID = %q, want %q", result.NodeID, "oss1")

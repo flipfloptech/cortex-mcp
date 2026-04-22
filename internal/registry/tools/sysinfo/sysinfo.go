@@ -29,7 +29,7 @@ func init() {
 type SystemInfoTool struct{}
 
 // Name returns the unique tool identifier.
-func (t *SystemInfoTool) Name() string { return "system_info" }
+func (t *SystemInfoTool) Name() string { return "get_system_info" }
 
 // Description returns a short summary for list_tools output.
 func (t *SystemInfoTool) Description() string {

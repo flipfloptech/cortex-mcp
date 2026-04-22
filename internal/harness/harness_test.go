@@ -39,7 +39,7 @@ func TestHarness_RunToolCheck(t *testing.T) {
 	h := NewHarness(md)
 
 	nodes := []string{"node1", "node2"}
-	toolsList := []string{"sysinfo", "uptime"}
+	toolsList := []string{"sysinfo", "get_uptime"}
 
 	report := h.RunToolCheck(context.Background(), toolsList, nodes)
 
@@ -106,7 +106,7 @@ func TestHarness_RunToolSoak(t *testing.T) {
 	h := NewHarness(md)
 
 	nodes := []string{"node1", "node2"}
-	toolsList := []string{"sysinfo", "uptime"}
+	toolsList := []string{"sysinfo", "get_uptime"}
 
 	report := h.RunToolSoak(context.Background(), toolsList, nodes, 10, 0)
 

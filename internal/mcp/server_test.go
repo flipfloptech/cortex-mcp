@@ -50,16 +50,16 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 	topology := &mockTopologyProvider{
 		snapshot: api.TopologySnapshot{
 			NodeDetails: []api.NodeSummary{
-				{NodeID: "node1", Capabilities: []string{"tool:uptime", "tool:system_info", "tool:secret_tool"}},
-				{NodeID: "node2", Capabilities: []string{"tool:uptime", "tool:other"}}, // "other" is not in registry
+				{NodeID: "node1", Capabilities: []string{"tool:get_uptime", "tool:get_system_info", "tool:secret_tool"}},
+				{NodeID: "node2", Capabilities: []string{"tool:get_uptime", "tool:other"}}, // "other" is not in registry
 			},
 		},
 	}
 
 	// 2. Setup plugin registry with definitions
 	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
-		&mockTool{name: "uptime", description: "Get uptime", category: "system", hidden: false},
-		&mockTool{name: "system_info", description: "Get info", category: "system", hidden: false},
+		&mockTool{name: "get_uptime", description: "Get uptime", category: "system", hidden: false},
+		&mockTool{name: "get_system_info", description: "Get info", category: "system", hidden: false},
 		&mockTool{name: "secret_tool", description: "Hidden tool", category: "system", hidden: true},
 	})
 
@@ -75,10 +75,10 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 
 	// Expect exactly 2 tools (uptime and system_info)
 	content := res.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(content, `"uptime"`) {
+	if !strings.Contains(content, `"get_uptime"`) {
 		t.Error("expected uptime tool in result")
 	}
-	if !strings.Contains(content, `"system_info"`) {
+	if !strings.Contains(content, `"get_system_info"`) {
 		t.Error("expected system_info tool in result")
 	}
 	if strings.Contains(content, `"other"`) {
@@ -93,11 +93,11 @@ func TestServer_ToolHelpDynamic(t *testing.T) {
 	t.Parallel()
 
 	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
-		&mockTool{name: "uptime", description: "Get uptime", category: "system"},
+		&mockTool{name: "get_uptime", description: "Get uptime", category: "system"},
 	})
 
 	srv := NewServer(&mockDispatcher{}, nil, plugins)
-	res, _, err := srv.handleToolHelp(context.Background(), &mcp.CallToolRequest{}, ToolHelpInput{ToolName: "uptime"})
+	res, _, err := srv.handleToolHelp(context.Background(), &mcp.CallToolRequest{}, ToolHelpInput{ToolName: "get_uptime"})
 	if err != nil {
 		t.Fatalf("handleToolHelp failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestServer_ToolHelpDynamic(t *testing.T) {
 	}
 
 	content := res.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(content, `"uptime"`) {
+	if !strings.Contains(content, `"get_uptime"`) {
 		t.Error("expected uptime in help output")
 	}
 

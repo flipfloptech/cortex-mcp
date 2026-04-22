@@ -18,7 +18,7 @@ func TestLoadAvgTool_ContractCompliance(t *testing.T) {
 
 	var _ registry.Tool = tool
 
-	if tool.Name() != "loadavg" {
+	if tool.Name() != "get_loadavg" {
 		t.Errorf("expected Name() == 'loadavg', got %q", tool.Name())
 	}
 	if tool.Category() != "system" {
@@ -96,7 +96,7 @@ func TestLoadAvgTool_Execute(t *testing.T) {
 
 	// Write mock /proc/loadavg
 	dir := t.TempDir()
-	procFile := filepath.Join(dir, "loadavg")
+	procFile := filepath.Join(dir, "get_loadavg")
 	err := os.WriteFile(procFile, []byte("0.68 0.69 0.74 2/1000 54321\n"), 0644)
 	if err != nil {
 		t.Fatalf("failed to write mock loadavg: %v", err)

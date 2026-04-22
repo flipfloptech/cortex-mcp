@@ -27,7 +27,7 @@ func init() {
 
 // Name returns the unique identifier for this tool.
 func (t *UptimeTool) Name() string {
-	return "uptime"
+	return "get_uptime"
 }
 
 // Category returns the grouping category for this tool.
