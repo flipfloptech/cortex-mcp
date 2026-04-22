@@ -26,6 +26,7 @@ type Tool interface {
 - **Graceful Degradation**: Tools must not return `IsSupported() = false` or throw errors simply because non-critical telemetry is missing. If a core dependency (e.g., a required binary or base sysfs path) is missing, `IsSupported()` returns false. If secondary data is missing, the tool returns partial JSON output.
 - **Auto-Registration**: Every tool package must contain an `init()` function that calls `registry.Register(New())` so the tool is automatically discovered via a blank import in `internal/mesh/tools_register.go`.
 - **LLM-Centric Formatting**: Raw math is difficult for LLMs. If a calculation is required (e.g., Idle Percentage, Human-Readable Durations), the Go code *must* perform it and include it in the `ToolResult.Data`.
+- **Composition & Reusability**: Tools should act as thin, strongly-typed JSON-RPC wrappers around reusable core business logic. If a tool parses a file or extracts data (e.g., extracting device mappings), that logic must be exposed as public Go functions so other tools can import and use it natively, avoiding expensive cross-tool RPC calls or duplication of effort.
 
 ## Phase 0: Branching
 
@@ -45,6 +46,7 @@ Write tests *before* writing the implementation. Create `internal/registry/tools
 1. **Contract Compliance Test**: Asserts the tool implements `registry.Tool`, has the correct Name, Category, and Help (which *must* reference data sources).
 2. **Execute Test**: Mocks necessary files or skips the execution if `IsSupported()` returns false, then validates the JSON schema (`res.Data` unmarshals properly) and checks for required logical constraints (e.g., numbers > 0, percentages between 0 and 100).
 3. **Helper Tests**: Any complex parsing or mathematical calculations (like `formatDuration` or parsing sysfs trees) must have their own table-driven tests.
+4. **Mandatory Benchmarking**: EVERY function implemented must have a corresponding benchmark (`func BenchmarkXxx(b *testing.B)`). This is rigidly enforced by the AST `benchcov` validator during integration.
 
 **Commit the tests:**
 `git commit -m "test(registry): define behavior for mytool"`
@@ -75,12 +77,14 @@ Create `internal/registry/tools/mytool/mytool.go`.
 
 ## Phase 4: Integration Verification
 
-Execute the strict CI gate locally:
+Execute the strict CI gates locally:
 
 ```bash
 task check
+task bench
 ```
 *If `task fmt-check` fails, run `task fmt` and re-run `task check`.*
+*The `task bench` command must be run to ensure all newly added benchmarks are executed and pass the AST `benchcov` requirement.*
 
 ## Phase 5: Documentation
 
