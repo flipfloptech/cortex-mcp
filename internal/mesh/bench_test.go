@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/internal/registry/tools/lifecycle"
 )
 
 type benchTracker struct{}
@@ -96,49 +97,7 @@ func BenchmarkReadField(b *testing.B) {
 func BenchmarkInstallRemotePath(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = installRemotePath("")
-	}
-}
-
-func BenchmarkServiceUnitPath(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = serviceUnitPath()
-	}
-}
-
-func BenchmarkGenerateServiceUnit(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = generateServiceUnit("/opt/cortex-mcp/bin/cortex-mcp")
-	}
-}
-
-func BenchmarkServiceActiveCommand(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = serviceActiveCommand()
-	}
-}
-
-func BenchmarkParseServiceActive(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = parseServiceActive("active")
-	}
-}
-
-func BenchmarkUpgradeRestartCommand(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = upgradeRestartCommand("/opt/cortex-mcp/bin/cortex-mcp")
-	}
-}
-
-func BenchmarkNeedsUpgrade(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = needsUpgrade(false)
+		_ = lifecycle.InstallRemotePath("")
 	}
 }
 

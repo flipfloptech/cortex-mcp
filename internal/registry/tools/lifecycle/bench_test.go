@@ -116,14 +116,14 @@ func BenchmarkEphemeralCleanupOps(b *testing.B) {
 func BenchmarkSelfInstallOps(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = selfInstallOps()
+		_ = SelfInstallOps()
 	}
 }
 
 func BenchmarkSelfUninstallOps(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = selfUninstallOps()
+		_ = SelfUninstallOps()
 	}
 }
 
@@ -136,20 +136,20 @@ func BenchmarkNodeUpgradeOps(b *testing.B) {
 
 func BenchmarkExecuteOps(b *testing.B) {
 	// Use harmless ops that don't nuke the host OS systemd
-	ops := []lifecycleOp{
+	ops := []LifecycleOp{
 		{Action: "true", Args: ""},
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = executeOps(ops)
+		_ = ExecuteOps(ops)
 	}
 }
 
 func BenchmarkExecuteOp(b *testing.B) {
-	op := lifecycleOp{Action: "true", Args: ""}
+	op := LifecycleOp{Action: "true", Args: ""}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = executeOp(op)
+		_ = ExecuteOp(op)
 	}
 }
 
