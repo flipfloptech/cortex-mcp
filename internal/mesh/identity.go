@@ -21,11 +21,14 @@ type NodeIdentity struct {
 
 // identityPath returns the absolute path to the node's identity file.
 func identityPath() (string, error) {
+	// For system-wide installations (installer or daemon running as root),
+	// we store the identity in the system installation directory.
+	if os.Getuid() == 0 {
+		return "/opt/cortex-mesh/etc/identity.json", nil
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
-		if os.Getuid() == 0 {
-			return "/root/.cortex-mesh/identity.json", nil
-		}
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 	return filepath.Join(home, ".cortex-mesh", "identity.json"), nil
