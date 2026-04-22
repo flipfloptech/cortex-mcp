@@ -10,6 +10,7 @@ package mesh
 // Unsupported tools are logged and excluded — zero runtime cost.
 import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/loadavg"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/sysinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/uptime"
 )
