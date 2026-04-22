@@ -79,10 +79,19 @@ func Load(path string) (*MeshConfig, error) {
 
 // KnownHosts converts the Hosts map into the format expected by
 // api.NodeConfig.KnownHosts (map[nodeID][]addresses).
+// It also ensures that all addresses have a port defined.
 func (mc *MeshConfig) KnownHosts() map[string][]string {
 	hosts := make(map[string][]string, len(mc.Hosts))
 	for nodeID, h := range mc.Hosts {
-		hosts[nodeID] = h.Addresses
+		var addrsWithPort []string
+		for _, addr := range h.Addresses {
+			if !strings.Contains(addr, ":") {
+				addrsWithPort = append(addrsWithPort, addr+":4443")
+			} else {
+				addrsWithPort = append(addrsWithPort, addr)
+			}
+		}
+		hosts[nodeID] = addrsWithPort
 	}
 	return hosts
 }

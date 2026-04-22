@@ -149,7 +149,7 @@ func TestKnownHosts(t *testing.T) {
 	cfg := &MeshConfig{
 		Hosts: map[string]Host{
 			"mds-01": {Addresses: []string{"10.0.1.5"}},
-			"oss-01": {Addresses: []string{"10.0.1.10", "10.0.1.11"}},
+			"oss-01": {Addresses: []string{"10.0.1.10", "10.0.1.11:2222"}},
 		},
 	}
 
@@ -159,11 +159,11 @@ func TestKnownHosts(t *testing.T) {
 		t.Fatalf("hosts count = %d, want 2", len(hosts))
 	}
 
-	if len(hosts["mds-01"]) != 1 || hosts["mds-01"][0] != "10.0.1.5" {
+	if len(hosts["mds-01"]) != 1 || hosts["mds-01"][0] != "10.0.1.5:4443" {
 		t.Fatalf("mds-01 = %v", hosts["mds-01"])
 	}
 
-	if len(hosts["oss-01"]) != 2 {
+	if len(hosts["oss-01"]) != 2 || hosts["oss-01"][0] != "10.0.1.10:4443" || hosts["oss-01"][1] != "10.0.1.11:2222" {
 		t.Fatalf("oss-01 = %v", hosts["oss-01"])
 	}
 }
