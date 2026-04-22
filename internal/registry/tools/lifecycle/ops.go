@@ -31,7 +31,7 @@ type lifecycleOp struct {
 
 // selfInstallOps returns the sequence of operations to install the
 // running binary as a persistent systemd service.
-func selfInstallOps(binaryPath string) []lifecycleOp {
+func selfInstallOps() []lifecycleOp {
 	return []lifecycleOp{
 		{Action: "copy_binary", Path: defaultInstallPath},
 		{Action: "write_file", Path: serviceUnitPath(), Content: generateServiceUnit(defaultInstallPath)},

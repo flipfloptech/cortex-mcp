@@ -57,12 +57,11 @@ func (t *InstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 	start := time.Now()
 	hostname, _ := os.Hostname()
 
-	binaryPath, err := os.Executable()
-	if err != nil {
+	if _, err := os.Executable(); err != nil {
 		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("resolve executable: %v", err)), nil
 	}
 
-	ops := selfInstallOps(binaryPath)
+	ops := selfInstallOps()
 	resp := map[string]interface{}{
 		"operations": ops,
 		"status":     "scheduled",

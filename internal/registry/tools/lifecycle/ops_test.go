@@ -13,7 +13,7 @@ import (
 func TestSelfInstallOps(t *testing.T) {
 	t.Parallel()
 
-	ops := selfInstallOps("/usr/local/bin/cortex-mcp")
+	ops := selfInstallOps()
 
 	// Must write a service unit file.
 	var hasWriteUnit bool

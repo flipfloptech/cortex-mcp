@@ -116,7 +116,7 @@ func BenchmarkEphemeralCleanupOps(b *testing.B) {
 func BenchmarkSelfInstallOps(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = selfInstallOps("/bin/false")
+		_ = selfInstallOps()
 	}
 }
 
