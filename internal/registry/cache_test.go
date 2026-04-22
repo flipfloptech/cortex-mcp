@@ -139,3 +139,45 @@ func TestWithCache_OnlyCachesSuccess(t *testing.T) {
 		t.Errorf("expected 3 calls (warning cached), got %d", mock.callCount)
 	}
 }
+
+func BenchmarkWithCache_Hit(b *testing.B) {
+	mock := &mockTool{
+		result: NewResult("mock_tool", "node1", StatusOK, "test", map[string]string{"foo": "bar"}),
+	}
+	cached := WithCache(1*time.Minute, mock)
+	ctx := context.Background()
+	args := json.RawMessage(`{"param":"value1"}`)
+
+	// Prime the cache
+	_, _ = cached.Execute(ctx, args)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = cached.Execute(ctx, args)
+	}
+}
+
+func BenchmarkWithCache_Miss(b *testing.B) {
+	mock := &mockTool{
+		result: NewResult("mock_tool", "node1", StatusOK, "test", map[string]string{"foo": "bar"}),
+	}
+	cached := WithCache(1*time.Minute, mock)
+	ctx := context.Background()
+
+	// Pre-allocate argument byte slices to isolate the cache logic from json string creation
+	args1 := json.RawMessage(`{"param":"value1"}`)
+	args2 := json.RawMessage(`{"param":"value2"}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		if i%2 == 0 {
+			_, _ = cached.Execute(ctx, args1)
+		} else {
+			_, _ = cached.Execute(ctx, args2)
+		}
+	}
+}
