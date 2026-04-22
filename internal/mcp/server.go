@@ -192,7 +192,7 @@ func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, i
 type CallToolInput struct {
 	ToolName string                 `json:"tool_name" jsonschema:"the exact name of the tool to execute"`
 	NodeName string                 `json:"node_name,omitempty" jsonschema:"Optional: Specific node ID to run the tool on. Use '*' to fan-out to all nodes, or '@group' for node groups. If empty, auto-routes."`
-	Args     map[string]interface{} `json:"args" jsonschema:"The JSON arguments required by the tool"`
+	Args     map[string]interface{} `json:"args,omitempty" jsonschema:"Optional: The JSON arguments required by the tool"`
 }
 
 func (s *Server) handleCallTool(ctx context.Context, req *mcp.CallToolRequest, input CallToolInput) (*mcp.CallToolResult, any, error) {
