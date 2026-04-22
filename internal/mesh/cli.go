@@ -1152,43 +1152,51 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
-	knownHosts := cfg.KnownHosts()
 	remotePath := installRemotePath("")
 
-	for remoteNodeID, addrs := range knownHosts {
+	for remoteNodeID, hostCfg := range cfg.Hosts {
 		// Skip nodes that don't match the target filter.
 		if target != "" && remoteNodeID != target {
 			continue
 		}
-		if len(addrs) == 0 {
+		if len(hostCfg.Addresses) == 0 {
 			continue
 		}
 
-		addr := addrs[0]
-		if !strings.Contains(addr, ":") {
-			addr = addr + ":22"
+		baseAddr := hostCfg.Addresses[0]
+		hostStr, portStr, splitErr := net.SplitHostPort(baseAddr)
+		if splitErr != nil {
+			hostStr = baseAddr
+			portStr = ""
 		}
 
-		cred, ok := v.Match(addr)
+		sshPort := hostCfg.GetSSHPort(cfg.Node.SSHPort)
+		var sshAddr string
+		if portStr != "" {
+			sshAddr = baseAddr
+		} else {
+			sshAddr = fmt.Sprintf("%s:%d", hostStr, sshPort)
+		}
+
+		cred, ok := v.Match(sshAddr)
 		if !ok {
-			host := strings.Split(addr, ":")[0]
-			cred, ok = v.Match(host)
+			cred, ok = v.Match(hostStr)
 		}
 		if !ok {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, addr)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, sshAddr)
 			continue
 		}
 
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, sshAddr, err)
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, addr)
+		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, sshAddr)
 
 		// SSH exec the binary with the uninstall subcommand.
-		client, err := dialSSH(ctx, addr, deployCred)
+		client, err := dialSSH(ctx, sshAddr, deployCred)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
 			continue
@@ -1222,41 +1230,48 @@ func startFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
-	knownHosts := cfg.KnownHosts()
-
-	for remoteNodeID, addrs := range knownHosts {
+	for remoteNodeID, hostCfg := range cfg.Hosts {
 		// Skip nodes that don't match the target filter.
 		if target != "" && remoteNodeID != target {
 			continue
 		}
-		if len(addrs) == 0 {
+		if len(hostCfg.Addresses) == 0 {
 			continue
 		}
 
-		addr := addrs[0]
-		if !strings.Contains(addr, ":") {
-			addr = addr + ":22"
+		baseAddr := hostCfg.Addresses[0]
+		hostStr, portStr, splitErr := net.SplitHostPort(baseAddr)
+		if splitErr != nil {
+			hostStr = baseAddr
+			portStr = ""
 		}
 
-		cred, ok := v.Match(addr)
+		sshPort := hostCfg.GetSSHPort(cfg.Node.SSHPort)
+		var sshAddr string
+		if portStr != "" {
+			sshAddr = baseAddr
+		} else {
+			sshAddr = fmt.Sprintf("%s:%d", hostStr, sshPort)
+		}
+
+		cred, ok := v.Match(sshAddr)
 		if !ok {
-			host := strings.Split(addr, ":")[0]
-			cred, ok = v.Match(host)
+			cred, ok = v.Match(hostStr)
 		}
 		if !ok {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, addr)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): no credentials\n", remoteNodeID, sshAddr)
 			continue
 		}
 
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			fmt.Fprintf(os.Stderr, "  ✗ %s (%s): %v\n", remoteNodeID, sshAddr, err)
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "  → %s (%s): starting service...", remoteNodeID, addr)
+		fmt.Fprintf(os.Stderr, "  → %s (%s): starting service...", remoteNodeID, sshAddr)
 
-		client, err := dialSSH(ctx, addr, deployCred)
+		client, err := dialSSH(ctx, sshAddr, deployCred)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
 			continue
