@@ -114,7 +114,7 @@ func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 
 	// Lookup schema for each active tool
-	var entries []gateway.ListToolsEntry
+	entries := make([]gateway.ListToolsEntry, 0)
 	for toolName := range activeTools {
 		if tool, ok := s.plugins.GetTool(toolName); ok && !tool.Hidden() {
 			entries = append(entries, gateway.ListToolsEntry{
