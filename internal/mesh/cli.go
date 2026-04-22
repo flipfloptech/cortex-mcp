@@ -91,7 +91,6 @@ type GatewayOptions struct {
 	Target          string
 	PureClient      bool
 	ServeHTTP       string // address to serve HTTP on
-	Quiet           bool   // suppress stdout UI logs (for daemonized/mcp modes)
 	HarnessType     string // "check", "soak", "deploy"
 	HarnessCount    int
 	HarnessDuration time.Duration
@@ -243,7 +242,6 @@ func Execute() {
 			opts := GatewayOptions{
 				PureClient: true,
 				ServeHTTP:  addr,
-				Quiet:      true, // suppress UI logs when running as background service
 			}
 			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
@@ -532,56 +530,39 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, cfg *config.MeshConfig, plugins *registry.PluginRegistry, skipDeploy bool, opts GatewayOptions) {
 	install := opts.Install
 
-	logPhase := func(format string, a ...interface{}) {
-		if !opts.Quiet {
-			fmt.Fprintf(os.Stderr, format, a...)
-		}
-	}
+	zap.S().Infow("starting cortex-mcp gateway", "node_id", nodeID)
 
-	if !opts.Quiet {
-		printHeader(nodeID)
-	}
-
-	// --- Phase 1: PKI ---
-	logPhase("--- Phase 1: Mesh PKI ---\n")
 	pki, isNew, err := loadOrGeneratePKI()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
-		os.Exit(1)
+		zap.S().Fatalw("load or generate PKI failed", "error", err)
 	}
 	gatewayCert, err := pki.generateNodeCert(nodeID, false)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
-		os.Exit(1)
+		zap.S().Fatalw("generate node cert failed", "error", err)
 	}
-	if isNew {
-		logPhase("  ✓ Site CA generated (10-year validity)\n")
-	} else {
-		logPhase("  ✓ Site CA loaded from persistent storage\n")
-	}
-	logPhase("  ✓ Gateway cert: CN=%s\n", nodeID)
+
+	zap.S().Infow("mesh PKI initialized", "node_id", nodeID, "new_ca", isNew)
 
 	// --- Phase 2: Create mesh node ---
-	logPhase("\n--- Phase 2: Create mesh node ---\n")
 	node, err := api.NewNode(ctx, api.NodeConfig{
 		NodeID:         nodeID,
 		KnownHosts:     cfg.KnownHosts(),
 		GossipInterval: 3 * time.Second, // configurable: 3s for HPC, 10s for WAN
 		Events: api.NodeEvents{
 			OnPeerJoined: func(peerID string) {
-				logPhase("  [event] peer joined: %s\n", peerID)
+				zap.S().Infow("peer joined", "peer_id", peerID)
 			},
 			OnPeerLost: func(peerID string) {
-				logPhase("  [event] peer lost: %s\n", peerID)
+				zap.S().Infow("peer lost", "peer_id", peerID)
 			},
 			OnIsolated: func() {
-				logPhase("  [event] isolated — zero peers\n")
+				zap.S().Warnw("mesh isolated", "peers", 0)
 			},
 			OnReconnected: func(peerID string) {
-				logPhase("  [event] reconnected via %s\n", peerID)
+				zap.S().Infow("mesh reconnected", "peer_id", peerID)
 			},
 			OnOrphaned: func() {
-				logPhase("  [event] orphaned — leaving no trace\n")
+				zap.S().Errorw("mesh orphaned", "action", "cleanup")
 				if err := transport.SelfCleanup(); err != nil {
 					zap.S().Debugw("self-cleanup", "error", err)
 				}
@@ -595,8 +576,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		},
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: create node: %v\n", err)
-		os.Exit(1)
+		zap.S().Fatalw("create mesh node failed", "error", err)
 	}
 	defer func() {
 		if err := node.Close(); err != nil {
@@ -612,14 +592,12 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		registerNodeTools(meshReg, node)
 	}
 
-	logPhase("  ✓ Node created: %s (peers=0, caps=%d)\n", nodeID, len(meshReg.ListLocal()))
-	logPhase("  ✓ Reconnect policy: enabled (1s→30s backoff, 5m timeout)\n")
+	zap.S().Infow("node created", "node_id", nodeID, "caps", len(meshReg.ListLocal()), "reconnect_policy", "1s->30s")
 
 	// Initialize the credential vault.
 	v, err := initVault(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
-		os.Exit(1)
+		zap.S().Fatalw("init vault failed", "error", err)
 	}
 
 	bridge := tools.NewNeuronBridge(node)
@@ -634,20 +612,19 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	// --- Phase 5: Deploy to seed hosts ---
 	knownHosts := cfg.KnownHosts()
 	if len(knownHosts) == 0 {
-		logPhase("\nNo seed hosts configured in mesh.toml. Skipping remote phases.\n")
-		logPhase("\nDone (local-only mode).\n")
+		zap.S().Infow("no seed hosts configured - running in local-only mode")
 		return
 	}
 
-	logPhase("\n--- Phase 5: Deploy + mesh connect ---\n")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install, opts.Quiet)
+	zap.S().Infow("deploying to mesh seed hosts")
+	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install)
 
 	if len(deployedNodes) == 0 {
-		logPhase("\nWarning: No remote nodes successfully joined. Are credentials valid?\n")
+		zap.S().Warnw("no remote nodes successfully joined - check credentials")
 	}
 
 	if opts.Stop {
-		logPhase("\n--- Stopping Remote Nodes ---\n")
+		zap.S().Infow("stopping remote nodes")
 
 		agents, _ := bridge.DiscoverTool(ctx, "node_stop")
 		var nodeIDs []string
@@ -659,9 +636,9 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_stop", nil)
 		if err != nil {
-			logPhase("✗ stop dispatch failed: %v\n", err)
+			zap.S().Errorw("stop dispatch failed", "error", err)
 		} else {
-			logPhase("✓ stop broadcast successful (%d nodes)\n", len(res))
+			zap.S().Infow("stop broadcast successful", "nodes", len(res))
 		}
 		cancel()
 		time.Sleep(500 * time.Millisecond)
@@ -669,32 +646,29 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	// --- Phase 6: Start gossip ---
-	logPhase("\n--- Phase 6: Gossip ---\n")
 	gossipInterval := node.GossipIntervalDuration()
 	node.StartGossipTicker(ctx, gossipInterval)
-	logPhase("  ✓ Gossip ticker started (%s interval)\n", gossipInterval)
+	zap.S().Infow("gossip ticker started", "interval", gossipInterval)
 
-	logPhase("  Waiting for gossip convergence...\n")
+	zap.S().Infow("waiting for gossip convergence")
 	time.Sleep(gossipInterval + 1*time.Second)
-	logPhase("  ✓ Peers: %d\n", node.PeerCount())
+	zap.S().Infow("gossip converged", "peers", node.PeerCount())
 
 	// --- Phase 7: Capability discovery ---
-	logPhase("\n--- Phase 7: Capability discovery ---\n")
-
 	// Tier 1: Local capability index (zero traffic — populated by gossip).
 	indexEntries := node.LookupCapability("tool:system_info")
 	if len(indexEntries) > 0 {
-		logPhase("  ✓ Capability index: %d node(s) with tool:system_info (zero traffic)\n", len(indexEntries))
+		zap.S().Infow("capability index", "tool", "system_info", "nodes", len(indexEntries))
 		for _, e := range indexEntries {
-			logPhase("    - %s (impedance=%.1f)\n", e.NodeID, e.Impedance)
+			zap.S().Debugw("discovered via index", "node_id", e.NodeID, "tool", "system_info", "impedance", e.Impedance)
 		}
 	} else {
-		logPhase("  ⚠ Capability index empty — falling back to Sonar broadcast\n")
+		zap.S().Warnw("capability index empty for tool:system_info - falling back to Sonar broadcast")
 	}
 
 	helloEntries := node.LookupCapability("tool:hello")
 	if len(helloEntries) > 0 {
-		logPhase("  ✓ Capability index: %d node(s) with tool:hello (zero traffic)\n", len(helloEntries))
+		zap.S().Infow("capability index", "tool", "hello", "nodes", len(helloEntries))
 	}
 
 	// Tier 2: Sonar broadcast (fallback — demonstrates backward compat).
@@ -702,21 +676,19 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	defer sonarCancel()
 	agents, err := node.Sonar(sonarCtx, "tool:system_info")
 	if err != nil {
-		logPhase("  ✗ Sonar error: %v\n", err)
+		zap.S().Errorw("sonar error", "error", err)
 	} else {
-		logPhase("  ✓ Sonar discovered %d node(s) with tool:system_info\n", len(agents))
+		zap.S().Infow("sonar discovery", "tool", "system_info", "nodes", len(agents))
 		for _, a := range agents {
-			logPhase("    - %s (impedance=%.1f)\n", a.NodeID, a.Impedance)
+			zap.S().Debugw("discovered via sonar", "node_id", a.NodeID, "tool", "system_info", "impedance", a.Impedance)
 		}
 	}
 
 	// Wildcard lookup: all nodes offering ANY tools in the mesh.
-	// Note: LookupCapabilityWildcard deduplicates by node, so this returns
-	// the number of *nodes* offering tools, not the total count of tools.
 	allTools := node.LookupCapabilityWildcard("tool:")
 	snap := node.CapabilityIndex().Snapshot()
 	if len(allTools) > 0 {
-		logPhase("  ✓ Wildcard 'tool:*' found %d node(s) offering tool capabilities across the mesh:\n", len(allTools))
+		zap.S().Infow("wildcard 'tool:*' discovery", "nodes_providing_tools", len(allTools))
 		for _, nt := range allTools {
 			var toolNames []string
 			for _, cap := range snap[nt.NodeID] {
@@ -724,13 +696,13 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 					toolNames = append(toolNames, strings.TrimPrefix(cap, "tool:"))
 				}
 			}
-			logPhase("    - %s offers tools: %s\n", nt.NodeID, strings.Join(toolNames, ", "))
+			zap.S().Debugw("node offers tools", "node_id", nt.NodeID, "tools", toolNames)
 		}
 	}
 
 	// --- Phase 10b: Serve HTTP if requested ---
 	if opts.ServeHTTP != "" {
-		logPhase("\n--- Serving MCP HTTP on %s ---\n", opts.ServeHTTP)
+		zap.S().Infow("serving MCP HTTP", "addr", opts.ServeHTTP)
 
 		// Create an MCP Server adapter for the Gateway Dispatcher
 		mcpSrv := mcp.NewServer(gw, node)
@@ -754,7 +726,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 10c: Test Harness ---
 	if opts.HarnessType != "" {
-		logPhase("\n--- Running Harness: %s ---\n", opts.HarnessType)
+		zap.S().Infow("running test harness", "type", opts.HarnessType)
 		h := harness.NewHarness(gw)
 		var remoteNodes []string
 		for _, nt := range allTools {
@@ -802,7 +774,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	// --- Phase 11: Cleanup ---
-	fmt.Fprintf(os.Stderr, "\n--- Phase 11: Cleanup ---\n")
+	zap.S().Infow("cleanup starting")
 	cancel()
 	if err := node.Close(); err != nil {
 		zap.S().Debugw("close node", "error", err)
@@ -811,9 +783,9 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		if err := dn.conn.Close(); err != nil {
 			zap.S().Debugw("close deploy conn", "node", dn.nodeID, "error", err)
 		}
-		fmt.Fprintf(os.Stderr, "  ✓ %s: disconnected\n", dn.nodeID)
+		zap.S().Debugw("disconnected node", "node_id", dn.nodeID)
 	}
-	fmt.Fprintf(os.Stderr, "\nDone.\n")
+	zap.S().Infow("shutdown complete")
 }
 
 // deployedNode tracks a deployed remote node.
@@ -833,7 +805,7 @@ type deploySoakAdapter struct {
 }
 
 func (a *deploySoakAdapter) Deploy(ctx context.Context) error {
-	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.knownHosts, a.v, false, false, false, false)
+	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.knownHosts, a.v, false, false, false)
 	return nil
 }
 
@@ -881,16 +853,10 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install, quiet bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
 		SkipUpload: skipDeploy,
-	}
-
-	logPhase := func(format string, a ...interface{}) {
-		if !quiet {
-			fmt.Fprintf(os.Stderr, format, a...)
-		}
 	}
 
 	if daemon {
@@ -899,7 +865,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 
 	for remoteNodeID, addrs := range knownHosts {
 		if len(addrs) == 0 {
-			logPhase("  ✗ %s: no addresses configured\n", remoteNodeID)
+			zap.S().Warnw("no addresses configured for node", "node_id", remoteNodeID)
 			continue
 		}
 
@@ -915,13 +881,13 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			cred, ok = v.Match(host)
 		}
 		if !ok {
-			logPhase("  ✗ %s (%s): no matching credentials in vault\n", remoteNodeID, addr)
+			zap.S().Warnw("no matching credentials in vault", "node_id", remoteNodeID, "addr", addr)
 			continue
 		}
 
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			logPhase("  ✗ %s (%s): %v\n", remoteNodeID, addr, err)
+			zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", addr, "error", err)
 			continue
 		}
 
@@ -942,32 +908,31 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			_ = probeConn.Close()
 
 			if needsUpgrade(skipDeploy) {
-				logPhase("  → %s (%s): upgrading...", remoteNodeID, addr)
+				zap.S().Infow("upgrading remote node via direct TCP", "node_id", remoteNodeID, "addr", addr)
 				remotePath := installRemotePath("")
 				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
-					logPhase(" ✗ %v\n", err)
+					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
-				logPhase(" binary pushed, restarting...")
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				logPhase("  → %s (%s): reconnecting...", remoteNodeID, addr)
+				zap.S().Infow("reconnecting to remote node", "node_id", remoteNodeID, "addr", addr)
 			}
 
 			var d net.Dialer
 			conn, err := d.DialContext(ctx, "tcp", meshAddr)
 			if err != nil {
-				logPhase(" ✗ mesh connect (TCP): %v\n", err)
+				zap.S().Errorw("mesh connect TCP failed", "node_id", remoteNodeID, "error", err)
 				continue
 			}
 
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				logPhase(" ✗ mTLS membrane: %v\n", err)
+				zap.S().Errorw("mTLS membrane handshake failed via TCP", "node_id", remoteNodeID, "error", err)
 				_ = conn.Close()
 				continue
 			}
 
-			logPhase(" ✓ connected (mTLS via TCP)\n")
+			zap.S().Infow("connected to mesh peer via TCP", "node_id", remoteNodeID)
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -979,41 +944,40 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		if checkServiceActive(ctx, addr, deployCred) {
 			// --- Path 2: Service active, port firewalled → SSH bridge ---
 			if needsUpgrade(skipDeploy) {
-				logPhase("  → %s (%s): upgrading (SSH)...", remoteNodeID, addr)
+				zap.S().Infow("upgrading remote node via SSH bridge", "node_id", remoteNodeID, "addr", addr)
 				remotePath := installRemotePath("")
 				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
-					logPhase(" ✗ %v\n", err)
+					zap.S().Errorw("upgrade via SSH bridge failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
-				logPhase(" binary pushed, restarting...")
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				logPhase("  → %s (%s): bridging (SSH)...", remoteNodeID, addr)
+				zap.S().Infow("bridging to remote node via SSH", "node_id", remoteNodeID, "addr", addr)
 			}
 
 			remotePath := installRemotePath("")
 			stream, err := sshExecBridge(ctx, addr, deployCred, remotePath)
 			if err != nil {
-				logPhase(" ✗ bridge: %v\n", err)
+				zap.S().Errorw("SSH bridge failed", "node_id", remoteNodeID, "error", err)
 				continue
 			}
 
 			// Wait for bridge readiness (same 4-byte magic as deploy).
 			readyBuf := make([]byte, 4)
 			if _, err := io.ReadFull(stream, readyBuf); err != nil {
-				logPhase(" ✗ bridge ready: %v\n", err)
+				zap.S().Errorw("bridge readiness failed", "node_id", remoteNodeID, "error", err)
 				_ = stream.Close()
 				continue
 			}
 
 			conn := transport.NewStdioConn(stream, stream)
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				logPhase(" ✗ mTLS handshake: %v\n", err)
+				zap.S().Errorw("mTLS membrane handshake failed over bridge", "node_id", remoteNodeID, "error", err)
 				_ = conn.Close()
 				continue
 			}
 
-			logPhase(" ✓ connected (mTLS via SSH bridge)\n")
+			zap.S().Infow("connected to mesh peer via SSH bridge", "node_id", remoteNodeID)
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -1022,11 +986,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		}
 
 		// --- Path 3: No existing node → fresh deploy ---
-		logPhase("  → %s (%s): deploying...", remoteNodeID, addr)
+		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", addr)
 
 		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
 		if err != nil {
-			logPhase(" ✗ %v\n", err)
+			zap.S().Errorw("deployment failed", "node_id", remoteNodeID, "error", err)
 			continue
 		}
 
@@ -1037,7 +1001,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		// over the raw stream BEFORE the membrane handshake.
 		bundle, err := pki.generateNodeBundle(remoteNodeID)
 		if err != nil {
-			logPhase(" ✗ generate cert: %v\n", err)
+			zap.S().Errorw("generate node cert bundle failed", "node_id", remoteNodeID, "error", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				zap.S().Debugw("close stream", "error", cerr)
@@ -1050,14 +1014,14 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			modeByte = 0x01
 		}
 		if _, err := stream.Write([]byte{modeByte}); err != nil {
-			logPhase(" ✗ send mode protocol: %v\n", err)
+			zap.S().Errorw("send protocol mode failed", "node_id", remoteNodeID, "error", err)
 			dumpRemoteStderr(stream)
 			_ = stream.Close()
 			continue
 		}
 
 		if err := writeCertBundle(stream, bundle); err != nil {
-			logPhase(" ✗ send certs: %v\n", err)
+			zap.S().Errorw("send cert bundle failed", "node_id", remoteNodeID, "error", err)
 			dumpRemoteStderr(stream)
 			if cerr := stream.Close(); cerr != nil {
 				zap.S().Debugw("close stream", "error", cerr)
@@ -1068,7 +1032,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		if install {
 			ackBuf := make([]byte, 4)
 			if _, err := io.ReadFull(stream, ackBuf); err != nil || string(ackBuf) != string([]byte{'O', 'K', 0x00, 0x06}) {
-				logPhase(" ✗ install failed/invalid ack: %v\n", err)
+				zap.S().Errorw("install ack failed", "node_id", remoteNodeID, "error", err)
 				dumpRemoteStderr(stream)
 				_ = stream.Close()
 				continue
@@ -1093,17 +1057,17 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			}
 
 			if dialErr != nil {
-				logPhase(" ✗ mesh connect (TCP): %v\n", dialErr)
+				zap.S().Errorw("mesh connect TCP after install failed", "node_id", remoteNodeID, "error", dialErr)
 				continue
 			}
 
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				logPhase(" ✗ mTLS membrane: %v\n", err)
+				zap.S().Errorw("mTLS membrane handshake after install failed", "node_id", remoteNodeID, "error", err)
 				_ = conn.Close()
 				continue
 			}
 
-			logPhase(" ✓ installed + connected (mTLS via TCP)\n")
+			zap.S().Infow("installed and connected to mesh peer via TCP", "node_id", remoteNodeID)
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
@@ -1113,7 +1077,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			// via membrane handshake (mTLS + yamux).
 			conn := transport.NewStdioConn(stream, stream)
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				fmt.Fprintf(os.Stderr, " ✗ mesh connect: %v\n", err)
+				zap.S().Errorw("mTLS handshake failed over SSH", "node_id", remoteNodeID, "error", err)
 				dumpRemoteStderr(stream)
 				if cerr := conn.Close(); cerr != nil {
 					zap.S().Debugw("close conn", "error", cerr)
@@ -1121,7 +1085,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, " ✓ deployed + connected (mTLS)\n")
+			zap.S().Infow("deployed and connected to mesh peer via SSH", "node_id", remoteNodeID)
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
