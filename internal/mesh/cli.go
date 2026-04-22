@@ -655,52 +655,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	time.Sleep(gossipInterval + 1*time.Second)
 	zap.S().Infow("gossip converged", "peers", node.PeerCount())
 
-	// --- Phase 7: Capability discovery ---
-	// Tier 1: Local capability index (zero traffic — populated by gossip).
-	indexEntries := node.LookupCapability("tool:system_info")
-	if len(indexEntries) > 0 {
-		zap.S().Infow("capability index", "tool", "system_info", "nodes", len(indexEntries))
-		for _, e := range indexEntries {
-			zap.S().Debugw("discovered via index", "node_id", e.NodeID, "tool", "system_info", "impedance", e.Impedance)
-		}
-	} else {
-		zap.S().Warnw("capability index empty for tool:system_info - falling back to Sonar broadcast")
-	}
-
-	helloEntries := node.LookupCapability("tool:hello")
-	if len(helloEntries) > 0 {
-		zap.S().Infow("capability index", "tool", "hello", "nodes", len(helloEntries))
-	}
-
-	// Tier 2: Sonar broadcast (fallback — demonstrates backward compat).
-	sonarCtx, sonarCancel := context.WithTimeout(ctx, 3*time.Second)
-	defer sonarCancel()
-	agents, err := node.Sonar(sonarCtx, "tool:system_info")
-	if err != nil {
-		zap.S().Errorw("sonar error", "error", err)
-	} else {
-		zap.S().Infow("sonar discovery", "tool", "system_info", "nodes", len(agents))
-		for _, a := range agents {
-			zap.S().Debugw("discovered via sonar", "node_id", a.NodeID, "tool", "system_info", "impedance", a.Impedance)
-		}
-	}
-
-	// Wildcard lookup: all nodes offering ANY tools in the mesh.
-	allTools := node.LookupCapabilityWildcard("tool:")
-	snap := node.CapabilityIndex().Snapshot()
-	if len(allTools) > 0 {
-		zap.S().Infow("wildcard 'tool:*' discovery", "nodes_providing_tools", len(allTools))
-		for _, nt := range allTools {
-			var toolNames []string
-			for _, cap := range snap[nt.NodeID] {
-				if strings.HasPrefix(cap, "tool:") {
-					toolNames = append(toolNames, strings.TrimPrefix(cap, "tool:"))
-				}
-			}
-			zap.S().Debugw("node offers tools", "node_id", nt.NodeID, "tools", toolNames)
-		}
-	}
-
 	// --- Phase 10b: Serve HTTP if requested ---
 	if opts.ServeHTTP != "" {
 		zap.S().Infow("serving MCP Streamable HTTP", "addr", opts.ServeHTTP)
@@ -730,6 +684,8 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		zap.S().Infow("running test harness", "type", opts.HarnessType)
 		h := harness.NewHarness(gw)
 		var remoteNodes []string
+		snap := node.CapabilityIndex().Snapshot()
+		allTools := node.LookupCapabilityWildcard("tool:")
 		for _, nt := range allTools {
 			if nt.NodeID != nodeID {
 				remoteNodes = append(remoteNodes, nt.NodeID)
