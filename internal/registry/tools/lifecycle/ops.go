@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"context"
 	"fmt"
 	"go.uber.org/zap"
 	"os"
@@ -18,10 +19,10 @@ func SetLiveMode(live bool) {
 	liveMode = live
 }
 
-// lifecycleOp represents a single lifecycle operation that the binary
+// LifecycleOp represents a single lifecycle operation that the binary
 // performs on the local system. Operations are structured data, not
 // shell commands — this is the key abstraction over raw SSH exec.
-type lifecycleOp struct {
+type LifecycleOp struct {
 	Action  string `json:"action"`            // "systemctl", "write_file", "remove_file", "copy_binary", "copy_file"
 	Args    string `json:"args,omitempty"`    // e.g. "daemon-reload", "restart cortex-mesh"
 	Path    string `json:"path,omitempty"`    // file path for write/remove/copy
@@ -29,34 +30,36 @@ type lifecycleOp struct {
 	Content string `json:"content,omitempty"` // file content for write_file
 }
 
-// selfInstallOps returns the sequence of operations to install the
+// SelfInstallOps returns the sequence of operations to install the
 // running binary as a persistent systemd service.
-func selfInstallOps() []lifecycleOp {
-	return []lifecycleOp{
+func SelfInstallOps() []LifecycleOp {
+	return []LifecycleOp{
 		{Action: "copy_binary", Path: defaultInstallPath},
 		{Action: "write_file", Path: serviceUnitPath(), Content: generateServiceUnit(defaultInstallPath)},
 		{Action: "systemctl", Args: "daemon-reload"},
-		{Action: "systemctl", Args: fmt.Sprintf("enable %s", serviceName)},
-		{Action: "systemctl", Args: fmt.Sprintf("restart %s", serviceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("enable %s", ServiceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("restart %s", ServiceName)},
 	}
 }
 
-// selfUninstallOps returns the sequence of operations to fully remove
+// SelfUninstallOps returns the sequence of operations to fully remove
 // the cortex-mesh systemd service, unit file, and binary.
-func selfUninstallOps() []lifecycleOp {
-	return []lifecycleOp{
-		{Action: "systemctl", Args: fmt.Sprintf("stop %s", serviceName)},
-		{Action: "systemctl", Args: fmt.Sprintf("disable %s", serviceName)},
+func SelfUninstallOps() []LifecycleOp {
+	return []LifecycleOp{
+		{Action: "systemctl", Args: fmt.Sprintf("stop %s", ServiceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("disable %s", ServiceName)},
 		{Action: "remove_file", Path: serviceUnitPath()},
 		{Action: "systemctl", Args: "daemon-reload"},
+		// Kill any lingering legacy processes via abstract socket lock
+		{Action: "kill_abstract_socket", Path: "@cortex-mcp-lock"},
 		{Action: "remove_file", Path: defaultInstallPath},
 	}
 }
 
 // ephemeralCleanupOps returns operations to self-destruct an ephemeral
 // node running from a temporary path (e.g., /tmp/cortex-mesh-abc123).
-func ephemeralCleanupOps(binaryPath string) []lifecycleOp {
-	return []lifecycleOp{
+func ephemeralCleanupOps(binaryPath string) []LifecycleOp {
+	return []LifecycleOp{
 		{Action: "remove_file", Path: binaryPath},
 	}
 }
@@ -64,27 +67,27 @@ func ephemeralCleanupOps(binaryPath string) []lifecycleOp {
 // nodeUpgradeOps returns the sequence of operations to upgrade an
 // installed node: copy the new binary from src to the install path,
 // then restart the service.
-func nodeUpgradeOps(srcPath string) []lifecycleOp {
-	return []lifecycleOp{
+func nodeUpgradeOps(srcPath string) []LifecycleOp {
+	return []LifecycleOp{
 		{Action: "copy_file", Src: srcPath, Path: defaultInstallPath},
 		{Action: "systemctl", Args: "daemon-reload"},
-		{Action: "systemctl", Args: fmt.Sprintf("restart %s", serviceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("restart %s", ServiceName)},
 	}
 }
 
-// executeOps runs a sequence of lifecycle operations on the local system.
+// ExecuteOps runs a sequence of lifecycle operations on the local system.
 // Returns the first error encountered.
-func executeOps(ops []lifecycleOp) error {
+func ExecuteOps(ops []LifecycleOp) error {
 	for _, op := range ops {
-		if err := executeOp(op); err != nil {
+		if err := ExecuteOp(op); err != nil {
 			return fmt.Errorf("%s %s: %w", op.Action, op.Args, err)
 		}
 	}
 	return nil
 }
 
-// executeOp runs a single lifecycle operation.
-func executeOp(op lifecycleOp) error {
+// ExecuteOp runs a single lifecycle operation.
+func ExecuteOp(op LifecycleOp) error {
 	switch op.Action {
 	case "systemctl":
 		zap.S().Infow("lifecycle", "action", "systemctl", "args", op.Args)
@@ -121,6 +124,15 @@ func executeOp(op lifecycleOp) error {
 			return fmt.Errorf("read source: %w", err)
 		}
 		return os.WriteFile(op.Path, data, 0755)
+
+	case "kill_abstract_socket":
+		zap.S().Infow("lifecycle", "action", "kill_abstract_socket", "socket", op.Path)
+		if err := KillLockedProcess(context.Background(), op.Path); err != nil {
+			zap.S().Warnw("failed to kill process via abstract socket", "socket", op.Path, "error", err)
+		} else {
+			zap.S().Infow("kill_abstract_socket complete", "socket", op.Path)
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("unknown lifecycle action: %s", op.Action)

@@ -58,7 +58,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -161,6 +160,39 @@ func Execute() {
 				target = args[0]
 			}
 			uninstallFleet(ctx, cfg, target)
+		},
+	}
+
+	localOpCmd := &cobra.Command{
+		Use:    "local-op <action>",
+		Short:  "Execute a lifecycle operation locally (hidden)",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			action := args[0]
+			var ops []lifecycle.LifecycleOp
+			switch action {
+			case "install":
+				ops = lifecycle.SelfInstallOps()
+			case "uninstall":
+				ops = lifecycle.SelfUninstallOps()
+			default:
+				fmt.Fprintf(os.Stderr, "unknown local-op action: %s\n", action)
+				os.Exit(1)
+			}
+
+			// We only want this executed intentionally
+			// The caller (like SelfDeployer) can just run it, but we can verify it's root
+			if os.Geteuid() != 0 {
+				fmt.Fprintf(os.Stderr, "local-op %s must be run as root\n", action)
+				os.Exit(1)
+			}
+
+			if err := lifecycle.ExecuteOps(ops); err != nil {
+				fmt.Fprintf(os.Stderr, "local-op %s failed: %v\n", action, err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "local-op %s completed successfully\n", action)
 		},
 	}
 
@@ -280,7 +312,7 @@ func Execute() {
 	harnessCmd.Flags().Int("count", 0, "Number of iterations (0 = infinite)")
 	harnessCmd.Flags().String("duration", "0", "Duration of soak test (e.g. 1h, 30m, 0 = infinite)")
 
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd())
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd(), localOpCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -381,6 +413,27 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
 	zap.S().Infow("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
 
+	lockName := "@cortex-mcp-lock"
+	lockCloser, err := lifecycle.AcquireLock(ctx, lockName)
+	if err != nil {
+		zap.S().Warnw("lock acquisition failed, attempting to kill legacy process", "error", err)
+		if killErr := lifecycle.KillLockedProcess(ctx, lockName); killErr != nil {
+			zap.S().Errorw("failed to kill legacy process", "error", killErr)
+			os.Exit(1)
+		}
+		// Give the kernel a moment to release the abstract socket
+		time.Sleep(500 * time.Millisecond)
+
+		lockCloser, err = lifecycle.AcquireLock(ctx, lockName)
+		if err != nil {
+			zap.S().Errorw("failed to acquire lock after kill", "error", err)
+			os.Exit(1)
+		}
+	}
+	defer func() {
+		_ = lockCloser.Close()
+	}()
+
 	if isDaemon {
 		// Ignore SIGHUP so we survive SSH terminal detachment.
 		signal.Ignore(syscall.SIGHUP)
@@ -427,19 +480,15 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 				os.Exit(1)
 			}
 
+			if err := lifecycle.ExecuteOps(lifecycle.SelfInstallOps()); err != nil {
+				zap.S().Errorw("install systemd service", "error", err)
+				os.Exit(1)
+			}
+
 			// ACK to gateway
 			_, _ = os.Stdout.Write([]byte{'O', 'K', 0x00, 0x06})
 
-			// Detach and fork with "daemon" subcommand
-			exe, _ := os.Executable()
-			cmd := exec.Command(exe, "daemon")
-			cmd.Env = os.Environ()
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-			if err := cmd.Start(); err != nil {
-				zap.S().Errorw("spawn detached daemon", "error", err)
-				os.Exit(1)
-			}
-			// Exit cleanly, dropping the SSH stream!
+			// Exit cleanly, dropping the SSH stream! The systemd service will start the daemon.
 			os.Exit(0)
 		}
 	}
@@ -813,6 +862,7 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
+		RemotePath: fmt.Sprintf("/tmp/cortex-mcp-deploy-%d", time.Now().UnixNano()),
 		SkipUpload: skipDeploy,
 	}
 
@@ -874,7 +924,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 
 			if needsUpgrade(skipDeploy) {
 				zap.S().Infow("upgrading remote node via direct TCP", "node_id", remoteNodeID, "addr", sshAddr)
-				remotePath := installRemotePath("")
+				remotePath := lifecycle.InstallRemotePath("")
 				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
@@ -910,7 +960,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			// --- Path 2: Service active, port firewalled → SSH bridge ---
 			if needsUpgrade(skipDeploy) {
 				zap.S().Infow("upgrading remote node via SSH bridge", "node_id", remoteNodeID, "addr", sshAddr)
-				remotePath := installRemotePath("")
+				remotePath := lifecycle.InstallRemotePath("")
 				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade via SSH bridge failed", "node_id", remoteNodeID, "error", err)
 					continue
@@ -920,7 +970,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 				zap.S().Infow("bridging to remote node via SSH", "node_id", remoteNodeID, "addr", sshAddr)
 			}
 
-			remotePath := installRemotePath("")
+			remotePath := lifecycle.InstallRemotePath("")
 			stream, err := sshExecBridge(ctx, sshAddr, deployCred, remotePath, meshPort)
 			if err != nil {
 				zap.S().Errorw("SSH bridge failed", "node_id", remoteNodeID, "error", err)
@@ -1152,8 +1202,6 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
-	remotePath := installRemotePath("")
-
 	for remoteNodeID, hostCfg := range cfg.Hosts {
 		// Skip nodes that don't match the target filter.
 		if target != "" && remoteNodeID != target {
@@ -1195,21 +1243,20 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 
 		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, sshAddr)
 
-		// SSH exec the binary with the uninstall subcommand.
-		client, err := dialSSH(ctx, sshAddr, deployCred)
+		// Use SelfDeployer to deploy the binary to a unique /tmp path and run local-op uninstall
+		deployer := &transport.SelfDeployer{
+			RemotePath: fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
+			ExecArgs:   []string{"local-op", "uninstall"},
+		}
+		stream, err := deployer.Deploy(ctx, sshAddr, deployCred, nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, " ✗ SSH: %v\n", err)
+			fmt.Fprintf(os.Stderr, " ✗ Deploy: %v\n", err)
 			continue
 		}
 
-		uninstallCmd := fmt.Sprintf("%s uninstall || true; systemctl stop cortex-mesh || true; rm -rf ~/.cortex-mesh /opt/cortex-mesh/certs; pkill -9 -f cortex-mesh || true", remotePath)
-		if err := execSSHCommand(client, uninstallCmd); err != nil {
-			_ = client.Close()
-			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
-			continue
-		}
-
-		_ = client.Close()
+		// stream contains stdout/stderr, we should read it until EOF to let it finish
+		_, _ = io.Copy(os.Stderr, stream)
+		_ = stream.Close()
 		fmt.Fprintf(os.Stderr, " ✓ removed\n")
 	}
 
@@ -1277,7 +1324,7 @@ func startFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 			continue
 		}
 
-		startCmd := fmt.Sprintf("sudo systemctl start %s", serviceName)
+		startCmd := fmt.Sprintf("sudo systemctl start %s", lifecycle.ServiceName)
 		if err := execSSHCommand(client, startCmd); err != nil {
 			_ = client.Close()
 			fmt.Fprintf(os.Stderr, " ✗ %v\n", err)
@@ -1327,6 +1374,7 @@ func buildNodeDeployHandler(node *api.Node) tools.ToolHandler {
 
 		// 2. Deploy using SelfDeployer
 		deployer := &transport.SelfDeployer{
+			RemotePath: fmt.Sprintf("/tmp/cortex-mcp-deploy-%d", time.Now().UnixNano()),
 			ExecArgs:   []string{"serve"},
 			SkipUpload: false,
 		}
