@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
-// Dispatcher represents the interface to the Cortex Mesh Gateway.
+// Dispatcher represents the capability to invoke mesh meta-tools.
+// In production, this is the cortex-mesh Gateway.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, toolName string, args json.RawMessage) (*tools.ToolResult, error)
 }
@@ -19,12 +23,14 @@ type Dispatcher interface {
 type Server struct {
 	mcpServer       *mcp.Server
 	dispatcher      Dispatcher
+	topology        TopologyProvider
+	plugins         *registry.PluginRegistry
 	clusterOverview *ClusterOverviewHandler
 }
 
 // NewServer initializes a new MCP Server mapping to the mesh gateway.
 // topology may be nil if the mesh is not yet available (local-only mode).
-func NewServer(dispatcher Dispatcher, topology TopologyProvider) *Server {
+func NewServer(dispatcher Dispatcher, topology TopologyProvider, plugins *registry.PluginRegistry) *Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "cortex-mcp",
 		Version: "1.0.0",
@@ -38,6 +44,8 @@ func NewServer(dispatcher Dispatcher, topology TopologyProvider) *Server {
 	srv := &Server{
 		mcpServer:  s,
 		dispatcher: dispatcher,
+		topology:   topology,
+		plugins:    plugins,
 	}
 
 	// Build cluster overview handler if topology is available.
@@ -88,7 +96,41 @@ func (s *Server) MCPServer() *mcp.Server {
 type EmptyInput struct{}
 
 func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, input EmptyInput) (*mcp.CallToolResult, any, error) {
-	return s.dispatchToMesh(ctx, "list_tools", nil)
+	if s.topology == nil || s.plugins == nil {
+		return s.dispatchToMesh(ctx, "list_tools", nil)
+	}
+
+	snap := s.topology.MeshTopology()
+
+	// Collect unique active tools from all nodes
+	activeTools := make(map[string]struct{})
+	for _, node := range snap.NodeDetails {
+		for _, cap := range node.Capabilities {
+			if strings.HasPrefix(cap, "tool:") {
+				toolName := strings.TrimPrefix(cap, "tool:")
+				activeTools[toolName] = struct{}{}
+			}
+		}
+	}
+
+	// Lookup schema for each active tool
+	var entries []gateway.ListToolsEntry
+	for toolName := range activeTools {
+		if tool, ok := s.plugins.GetTool(toolName); ok {
+			entries = append(entries, gateway.ListToolsEntry{
+				Name:        tool.Name(),
+				Description: tool.Description(),
+				Category:    tool.Category(),
+			})
+		}
+	}
+
+	data, _ := json.Marshal(gateway.ListToolsResponse{Tools: entries})
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(data)},
+		},
+	}, nil, nil
 }
 
 type ToolHelpInput struct {
@@ -96,8 +138,55 @@ type ToolHelpInput struct {
 }
 
 func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, input ToolHelpInput) (*mcp.CallToolResult, any, error) {
-	args, _ := json.Marshal(input)
-	return s.dispatchToMesh(ctx, "tool_help", args)
+	if s.plugins == nil {
+		args, _ := json.Marshal(input)
+		return s.dispatchToMesh(ctx, "tool_help", args)
+	}
+
+	tool, ok := s.plugins.GetTool(input.ToolName)
+	if !ok {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("tool not found: %s", input.ToolName)},
+			},
+		}, nil, nil
+	}
+
+	var meshParams []tools.ToolParam
+	for _, p := range tool.Parameters() {
+		meshParams = append(meshParams, tools.ToolParam{
+			Name:        p.Name,
+			Type:        p.Type,
+			Description: p.Description,
+			Required:    p.Required,
+			Default:     p.Default,
+		})
+	}
+
+	def := tools.ToolDefinition{
+		Name:            tool.Name(),
+		Description:     tool.Description(),
+		LongDescription: tool.Help(),
+		Category:        tool.Category(),
+		Parameters:      meshParams,
+	}
+
+	response := gateway.ToolHelpResponse{
+		Name:            def.Name,
+		Description:     def.Description,
+		LongDescription: def.LongDescription,
+		Category:        def.Category,
+		Parameters:      def.Parameters,
+		InputSchema:     def.EffectiveSchema(),
+	}
+
+	data, _ := json.Marshal(response)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(data)},
+		},
+	}, nil, nil
 }
 
 type CallToolInput struct {

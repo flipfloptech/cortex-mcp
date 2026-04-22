@@ -705,7 +705,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		zap.S().Infow("serving MCP Streamable HTTP", "addr", opts.ServeHTTP)
 
 		// Create an MCP Server adapter for the Gateway Dispatcher
-		mcpSrv := mcp.NewServer(gw, node)
+		mcpSrv := mcp.NewServer(gw, node, plugins)
 
 		go func() {
 			if err := mcp.StartHTTPServer(opts.ServeHTTP, mcpSrv); err != nil {
