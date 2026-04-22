@@ -100,6 +100,23 @@ Reads the system load averages and scheduling entity statistics to provide a sna
 **Degradation Profile:**
 - `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/loadavg` is unreadable/missing.
 
+#### `get_process_list`
+*Category: `compute` · Runs on: Every Linux node*
+
+Pulls a lightweight, top-N list of CPU/Mem consumers, with optional filtering via regex on user, process name, state, and cmdline. This operates completely in-memory using zero-allocation data plane iterators and avoids shelling out to `top` or `ps`.
+
+**Data Sources:**
+- Read directly from `/proc/uptime`, `/proc`, `/proc/[pid]/stat`, `/proc/[pid]/status`, and `/proc/[pid]/cmdline`.
+
+**Mathematical Models:**
+- Accurate CPU% calculations are derived by taking a rapid delta (default 100ms window, tunable via `sample_duration_ms`) of the process `utime` and `stime` against system uptime progression.
+- Filters out non-active processes via strict regex matching before sorting and truncation to ensure top-N limit precision.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/stat` or `/proc/uptime` are missing.
+- Safely ignores processes that terminate during the delta window.
+- Returns `null` for cmdline if unreadable due to privileges or lack of initialization.
+
 ---
 
 ### Mesh Infrastructure Tools
