@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -42,6 +44,42 @@ type procStat struct {
 }
 
 const userHZ = 100.0 // Standard clock ticks per second on Linux
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 8192)
+		return &b
+	},
+}
+
+// getBuf borrows a buffer from the pool.
+func getBuf() *[]byte {
+	return bufPool.Get().(*[]byte)
+}
+
+// putBuf returns a buffer to the pool.
+func putBuf(b *[]byte) {
+	bufPool.Put(b)
+}
+
+// readFileBuffered reads a file into a pooled buffer.
+// The returned slice is a subslice of the pooled buffer.
+// The caller must call putBuf on the returned pooled pointer.
+func readFileBuffered(path string) ([]byte, *[]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	b := getBuf()
+	n, err := f.Read(*b)
+	if err != nil && err != io.EOF {
+		putBuf(b)
+		return nil, nil, err
+	}
+	return (*b)[:n], b, nil
+}
 
 // GetList is the main entry point to gather processes.
 func GetList(ctx context.Context, opts FilterOptions) ([]Process, error) {
@@ -146,55 +184,82 @@ func GetList(ctx context.Context, opts FilterOptions) ([]Process, error) {
 }
 
 func readUptime() (float64, error) {
-	data, err := os.ReadFile("/proc/uptime")
+	data, bPtr, err := readFileBuffered("/proc/uptime")
 	if err != nil {
 		return 0, err
 	}
-	parts := bytes.Fields(data)
-	if len(parts) == 0 {
-		return 0, fmt.Errorf("empty /proc/uptime")
+	defer putBuf(bPtr)
+
+	idx := bytes.IndexByte(data, ' ')
+	if idx < 0 {
+		return 0, fmt.Errorf("invalid /proc/uptime format")
 	}
-	return strconv.ParseFloat(string(parts[0]), 64)
+
+	return strconv.ParseFloat(string(data[:idx]), 64)
 }
 
 func getPIDs() []int {
-	entries, err := os.ReadDir("/proc")
+	f, err := os.Open("/proc")
 	if err != nil {
 		return nil
 	}
+	defer func() { _ = f.Close() }()
+
+	names, err := f.Readdirnames(0)
+	if err != nil {
+		return nil
+	}
+
 	var pids []int
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if pid, err := strconv.Atoi(entry.Name()); err == nil {
-			pids = append(pids, pid)
+	for _, name := range names {
+		if name[0] >= '0' && name[0] <= '9' {
+			if pid, err := strconv.Atoi(name); err == nil {
+				pids = append(pids, pid)
+			}
 		}
 	}
 	return pids
 }
 
 func readStat(pid int) (procStat, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return procStat{}, err
 	}
-	// /proc/[pid]/stat format: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime ...
-	// The comm field can contain spaces, so we must find the last ')' to correctly parse the rest.
+	defer putBuf(bPtr)
+
 	rparen := bytes.LastIndexByte(data, ')')
 	if rparen < 0 {
 		return procStat{}, fmt.Errorf("invalid stat format")
 	}
 
 	name := string(data[bytes.IndexByte(data, '(')+1 : rparen])
-	fields := bytes.Fields(data[rparen+2:])
-	if len(fields) < 13 {
-		return procStat{}, fmt.Errorf("not enough fields in stat")
-	}
 
-	state := string(fields[0])
-	utime, _ := strconv.ParseUint(string(fields[11]), 10, 64)
-	stime, _ := strconv.ParseUint(string(fields[12]), 10, 64)
+	// Skip the `) `
+	pos := rparen + 2
+	fieldIdx := 2 // we are at the state field (index 2)
+
+	var state string
+	var utime, stime uint64
+
+	for pos < len(data) {
+		end := bytes.IndexByte(data[pos:], ' ')
+		if end < 0 {
+			end = len(data) - pos
+		}
+
+		if fieldIdx == 2 {
+			state = string(data[pos : pos+end])
+		} else if fieldIdx == 13 {
+			utime, _ = strconv.ParseUint(string(data[pos:pos+end]), 10, 64)
+		} else if fieldIdx == 14 {
+			stime, _ = strconv.ParseUint(string(data[pos:pos+end]), 10, 64)
+			break // We don't need any fields after stime
+		}
+
+		pos += end + 1
+		fieldIdx++
+	}
 
 	return procStat{
 		name:  name,
@@ -205,43 +270,85 @@ func readStat(pid int) (procStat, error) {
 }
 
 func readStatus(pid int) (int, uint64, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
 		return 0, 0, err
 	}
+	defer putBuf(bPtr)
 
 	var uid int
 	var vmRSS uint64
+	var foundUid, foundVmRSS bool
 
-	lines := bytes.Split(data, []byte("\n"))
-	for _, line := range lines {
-		if bytes.HasPrefix(line, []byte("Uid:\t")) {
-			fields := bytes.Fields(line)
-			if len(fields) > 1 {
-				uid, _ = strconv.Atoi(string(fields[1]))
+	pos := 0
+	uidPrefix := []byte("Uid:\t")
+	vmRSSPrefix := []byte("VmRSS:\t")
+
+	for pos < len(data) {
+		end := bytes.IndexByte(data[pos:], '\n')
+		if end < 0 {
+			end = len(data) - pos
+		}
+		line := data[pos : pos+end]
+
+		if bytes.HasPrefix(line, uidPrefix) {
+			// Find the first value in Uid: uid euid suid fsuid
+			// Split by tab/space
+			valStart := len(uidPrefix)
+			for valStart < len(line) && (line[valStart] == '\t' || line[valStart] == ' ') {
+				valStart++
 			}
-		} else if bytes.HasPrefix(line, []byte("VmRSS:\t")) {
-			fields := bytes.Fields(line)
-			if len(fields) > 1 {
-				kb, _ := strconv.ParseUint(string(fields[1]), 10, 64)
+			valEnd := valStart
+			for valEnd < len(line) && line[valEnd] != '\t' && line[valEnd] != ' ' {
+				valEnd++
+			}
+			if valEnd > valStart {
+				uid, _ = strconv.Atoi(string(line[valStart:valEnd]))
+				foundUid = true
+			}
+		} else if bytes.HasPrefix(line, vmRSSPrefix) {
+			valStart := len(vmRSSPrefix)
+			for valStart < len(line) && (line[valStart] == '\t' || line[valStart] == ' ') {
+				valStart++
+			}
+			valEnd := valStart
+			for valEnd < len(line) && line[valEnd] != '\t' && line[valEnd] != ' ' {
+				valEnd++
+			}
+			if valEnd > valStart {
+				kb, _ := strconv.ParseUint(string(line[valStart:valEnd]), 10, 64)
 				vmRSS = kb * 1024
+				foundVmRSS = true
 			}
 		}
+
+		if foundUid && foundVmRSS {
+			break
+		}
+
+		pos += end + 1
 	}
 
 	return uid, vmRSS, nil
 }
 
 func readCmdline(pid int) (string, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {
 		return "", err
 	}
+	defer putBuf(bPtr)
+
 	if len(data) == 0 {
 		return "", fmt.Errorf("empty cmdline")
 	}
-	// cmdline is null-separated
-	data = bytes.ReplaceAll(data, []byte{0}, []byte{' '})
+
+	// Fast in-place replace
+	for i, b := range data {
+		if b == 0 {
+			data[i] = ' '
+		}
+	}
 	return strings.TrimSpace(string(data)), nil
 }
 
