@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"testing"
 
@@ -29,12 +27,12 @@ func BenchmarkNewServer(b *testing.B) {
 	t := dummyTopology{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewServer(d, t)
+		_ = NewServer(d, t, nil)
 	}
 }
 
 func BenchmarkMCPServer(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = srv.MCPServer()
@@ -42,7 +40,7 @@ func BenchmarkMCPServer(b *testing.B) {
 }
 
 func BenchmarkHandleListTools(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
 	b.ResetTimer()
@@ -52,7 +50,7 @@ func BenchmarkHandleListTools(b *testing.B) {
 }
 
 func BenchmarkHandleToolHelp(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
 	in := ToolHelpInput{ToolName: "system_info"}
@@ -63,7 +61,7 @@ func BenchmarkHandleToolHelp(b *testing.B) {
 }
 
 func BenchmarkHandleCallTool(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
 	in := CallToolInput{ToolName: "system_info", Args: make(map[string]interface{})}
@@ -74,7 +72,7 @@ func BenchmarkHandleCallTool(b *testing.B) {
 }
 
 func BenchmarkHandleClusterOverview(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
 	b.ResetTimer()
@@ -84,7 +82,7 @@ func BenchmarkHandleClusterOverview(b *testing.B) {
 }
 
 func BenchmarkDispatchToMesh(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	args := json.RawMessage(`{}`)
 	b.ResetTimer()
@@ -94,7 +92,7 @@ func BenchmarkDispatchToMesh(b *testing.B) {
 }
 
 func BenchmarkHandleSystemIntroduction(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.GetPromptRequest{}
 	b.ResetTimer()
@@ -203,13 +201,11 @@ func BenchmarkSanitizeMermaidID(b *testing.B) {
 }
 
 func BenchmarkStartHTTPServer(b *testing.B) {
-	srv := NewServer(dummyDispatcher{}, dummyTopology{})
-	cert := tls.Certificate{}
-	pool := x509.NewCertPool()
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// we can't really start it in a tight loop without port conflicts,
 		// but we can pass an invalid address to fail fast and measure the setup overhead.
-		_ = StartHTTPServer("invalid-address", srv, cert, pool)
+		_ = StartHTTPServer("invalid-address", srv)
 	}
 }
