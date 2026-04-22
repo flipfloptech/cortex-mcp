@@ -32,8 +32,6 @@ func (d dummyTracker) RemoveCapability(nodeID string, name string)   {}
 func (d dummyTracker) HasCapability(nodeID string, name string) bool { return true }
 func (d dummyTracker) FindNodesWithCapability(name string) []string  { return []string{} }
 
-
-
 func BenchmarkNewPluginRegistry(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
