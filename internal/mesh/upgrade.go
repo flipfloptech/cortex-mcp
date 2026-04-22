@@ -100,12 +100,19 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		}
 	}()
 
-	// Phase 1: Upload the new binary via SFTP.
-	if err := uploadBinaryViaSFTP(client, binaryFile, remotePath); err != nil {
+	// Phase 1: Upload the new binary via SFTP to a temporary path.
+	tmpPath := remotePath + ".tmp"
+	if err := uploadBinaryViaSFTP(client, binaryFile, tmpPath); err != nil {
 		return fmt.Errorf("upgrade: upload to %q: %w", targetHost, err)
 	}
 
-	// Phase 2: Restart via the binary's install subcommand.
+	// Phase 2: Atomically replace the existing binary.
+	mvCmd := fmt.Sprintf("mv -f %q %q", tmpPath, remotePath)
+	if err := execSSHCommand(client, mvCmd); err != nil {
+		return fmt.Errorf("upgrade: atomic replace on %q: %w", targetHost, err)
+	}
+
+	// Phase 3: Restart via the binary's install subcommand.
 	if err := execSSHCommand(client, upgradeRestartCommand(remotePath)); err != nil {
 		return fmt.Errorf("upgrade: restart on %q: %w", targetHost, err)
 	}

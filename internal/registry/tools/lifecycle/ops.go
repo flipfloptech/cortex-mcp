@@ -115,7 +115,15 @@ func ExecuteOp(op LifecycleOp) error {
 		if err != nil {
 			return fmt.Errorf("read binary: %w", err)
 		}
-		return os.WriteFile(op.Path, data, 0755)
+		tmpPath := op.Path + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0755); err != nil {
+			return fmt.Errorf("write tmp binary: %w", err)
+		}
+		if err := os.Rename(tmpPath, op.Path); err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("rename tmp binary: %w", err)
+		}
+		return nil
 
 	case "copy_file":
 		zap.S().Infow("lifecycle", "action", "copy_file", "src", op.Src, "dest", op.Path)
@@ -123,7 +131,15 @@ func ExecuteOp(op LifecycleOp) error {
 		if err != nil {
 			return fmt.Errorf("read source: %w", err)
 		}
-		return os.WriteFile(op.Path, data, 0755)
+		tmpPath := op.Path + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0755); err != nil {
+			return fmt.Errorf("write tmp file: %w", err)
+		}
+		if err := os.Rename(tmpPath, op.Path); err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("rename tmp file: %w", err)
+		}
+		return nil
 
 	case "kill_abstract_socket":
 		zap.S().Infow("lifecycle", "action", "kill_abstract_socket", "socket", op.Path)
