@@ -11,6 +11,7 @@ require (
 	github.com/pkg/sftp v1.13.10
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.27.1
+	go.uber.org/zap/exp v0.3.0
 	golang.org/x/crypto v0.50.0
 )
 

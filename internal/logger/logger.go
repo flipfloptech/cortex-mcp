@@ -3,9 +3,11 @@ package logger
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -47,6 +49,10 @@ func InitLogger(cfg Config) (*zap.Logger, error) {
 
 	// Set it as the global logger
 	zap.ReplaceGlobals(logger)
+
+	// Redirect standard log and slog to Zap
+	zap.RedirectStdLog(logger)
+	slog.SetDefault(slog.New(zapslog.NewHandler(core)))
 
 	return logger, nil
 }
