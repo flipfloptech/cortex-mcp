@@ -245,11 +245,11 @@ func checkServiceActive(ctx context.Context, targetHost string, cred transport.D
 // mode. Returns the SSH session's stdin/stdout as an io.ReadWriteCloser
 // that can be wrapped in a StdioConn for AddPeer.
 //
-// The bridge command: /opt/cortex-mesh/bin/cortex-mesh -bridge localhost:4443
+// The bridge command: /opt/cortex-mesh/bin/cortex-mcp bridge localhost:<meshPort>
 //
 // The caller is responsible for closing the returned stream, which will
 // also close the SSH session.
-func sshExecBridge(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string) (io.ReadWriteCloser, error) {
+func sshExecBridge(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string, meshPort int) (io.ReadWriteCloser, error) {
 	client, err := dialSSH(ctx, targetHost, cred)
 	if err != nil {
 		return nil, fmt.Errorf("sshExecBridge: %w", err)
@@ -275,7 +275,7 @@ func sshExecBridge(ctx context.Context, targetHost string, cred transport.Deploy
 		return nil, fmt.Errorf("sshExecBridge: stdout pipe: %w", err)
 	}
 
-	bridgeCmd := fmt.Sprintf("%s bridge localhost:4443", remotePath)
+	bridgeCmd := fmt.Sprintf("%s bridge localhost:%d", remotePath, meshPort)
 	if err := session.Start(bridgeCmd); err != nil {
 		_ = session.Close()
 		_ = client.Close()

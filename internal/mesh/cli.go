@@ -514,9 +514,10 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 	}
 
 	if isDaemon {
-		tcpLis, err := node.Listen(ctx, "0.0.0.0:4443")
+		listenAddr := fmt.Sprintf("0.0.0.0:%d", cfg.Node.MeshPort)
+		tcpLis, err := node.Listen(ctx, listenAddr)
 		if err != nil {
-			zap.S().Errorw("daemon listen 4443", "error", err)
+			zap.S().Errorw("daemon listen failed", "addr", listenAddr, "error", err)
 		} else {
 			zap.S().Infow("daemon listening on TCP", "addr", tcpLis.Addr())
 		}
@@ -617,7 +618,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	zap.S().Infow("deploying to mesh seed hosts")
-	deployedNodes := deployAndConnect(ctx, node, pki, knownHosts, v, skipDeploy, false, install)
+	deployedNodes := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install)
 
 	if len(deployedNodes) == 0 {
 		zap.S().Warnw("no remote nodes successfully joined - check credentials")
@@ -805,7 +806,7 @@ type deploySoakAdapter struct {
 }
 
 func (a *deploySoakAdapter) Deploy(ctx context.Context) error {
-	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.knownHosts, a.v, false, false, false)
+	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.cfg, a.v, false, false, false)
 	return nil
 }
 
@@ -853,7 +854,7 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, knownHosts map[string][]string, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
 		SkipUpload: skipDeploy,
@@ -863,44 +864,52 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		deployer.ExecArgs = []string{"-daemon"}
 	}
 
-	for remoteNodeID, addrs := range knownHosts {
-		if len(addrs) == 0 {
+	for remoteNodeID, hostCfg := range cfg.Hosts {
+		if len(hostCfg.Addresses) == 0 {
 			zap.S().Warnw("no addresses configured for node", "node_id", remoteNodeID)
 			continue
 		}
 
-		addr := addrs[0]
-		if !strings.Contains(addr, ":") {
-			addr = addr + ":22"
+		baseAddr := hostCfg.Addresses[0]
+		// Determine base host (strip any existing port for calculation)
+		hostStr, portStr, splitErr := net.SplitHostPort(baseAddr)
+		if splitErr != nil {
+			hostStr = baseAddr
+			portStr = ""
+		}
+
+		sshPort := hostCfg.GetSSHPort(cfg.Node.SSHPort)
+		meshPort := hostCfg.GetMeshPort(cfg.Node.MeshPort)
+
+		var sshAddr, meshAddr string
+		if portStr != "" {
+			sshAddr = baseAddr
+			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort)
+		} else {
+			sshAddr = fmt.Sprintf("%s:%d", hostStr, sshPort)
+			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort)
 		}
 
 		// Look up credentials from the vault.
-		cred, ok := v.Match(addr)
+		cred, ok := v.Match(sshAddr)
 		if !ok {
-			host := strings.Split(addr, ":")[0]
-			cred, ok = v.Match(host)
+			cred, ok = v.Match(hostStr)
 		}
 		if !ok {
-			zap.S().Warnw("no matching credentials in vault", "node_id", remoteNodeID, "addr", addr)
+			zap.S().Warnw("no matching credentials in vault", "node_id", remoteNodeID, "addr", sshAddr)
 			continue
 		}
 
 		deployCred, err := toDeployCredential(cred)
 		if err != nil {
-			zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", addr, "error", err)
+			zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", sshAddr, "error", err)
 			continue
 		}
 
 		// --- Connectivity decision tree ---
-		// 1. TCP:4443 reachable → direct connect (upgrade if needed)
-		// 2. TCP:4443 firewalled, service active → SSH bridge
+		// 1. TCP reachable → direct connect (upgrade if needed)
+		// 2. TCP firewalled, service active → SSH bridge
 		// 3. Neither → fresh deploy
-		host, _, splitErr := net.SplitHostPort(addr)
-		if splitErr != nil {
-			host = strings.Split(addr, ":")[0]
-		}
-
-		meshAddr := host + ":4443"
 		probeConn := probeExistingNode(ctx, meshAddr)
 
 		if probeConn != nil {
@@ -908,15 +917,15 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			_ = probeConn.Close()
 
 			if needsUpgrade(skipDeploy) {
-				zap.S().Infow("upgrading remote node via direct TCP", "node_id", remoteNodeID, "addr", addr)
+				zap.S().Infow("upgrading remote node via direct TCP", "node_id", remoteNodeID, "addr", sshAddr)
 				remotePath := installRemotePath("")
-				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
+				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				zap.S().Infow("reconnecting to remote node", "node_id", remoteNodeID, "addr", addr)
+				zap.S().Infow("reconnecting to remote node", "node_id", remoteNodeID, "addr", meshAddr)
 			}
 
 			var d net.Dialer
@@ -940,23 +949,23 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			continue
 		}
 
-		// TCP:4443 unreachable — check if service is installed but firewalled.
-		if checkServiceActive(ctx, addr, deployCred) {
+		// TCP unreachable — check if service is installed but firewalled.
+		if checkServiceActive(ctx, sshAddr, deployCred) {
 			// --- Path 2: Service active, port firewalled → SSH bridge ---
 			if needsUpgrade(skipDeploy) {
-				zap.S().Infow("upgrading remote node via SSH bridge", "node_id", remoteNodeID, "addr", addr)
+				zap.S().Infow("upgrading remote node via SSH bridge", "node_id", remoteNodeID, "addr", sshAddr)
 				remotePath := installRemotePath("")
-				if err := upgradeRemoteNode(ctx, addr, deployCred, remotePath); err != nil {
+				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade via SSH bridge failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
 				time.Sleep(upgradeWaitAfterRestart)
 			} else {
-				zap.S().Infow("bridging to remote node via SSH", "node_id", remoteNodeID, "addr", addr)
+				zap.S().Infow("bridging to remote node via SSH", "node_id", remoteNodeID, "addr", sshAddr)
 			}
 
 			remotePath := installRemotePath("")
-			stream, err := sshExecBridge(ctx, addr, deployCred, remotePath)
+			stream, err := sshExecBridge(ctx, sshAddr, deployCred, remotePath, meshPort)
 			if err != nil {
 				zap.S().Errorw("SSH bridge failed", "node_id", remoteNodeID, "error", err)
 				continue
@@ -986,9 +995,9 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 		}
 
 		// --- Path 3: No existing node → fresh deploy ---
-		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", addr)
+		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", sshAddr)
 
-		stream, err := deployer.Deploy(ctx, addr, deployCred, nil)
+		stream, err := deployer.Deploy(ctx, sshAddr, deployCred, nil)
 		if err != nil {
 			zap.S().Errorw("deployment failed", "node_id", remoteNodeID, "error", err)
 			continue
@@ -1039,17 +1048,12 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, kn
 			}
 			_ = stream.Close()
 
-			host, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				host = strings.Split(addr, ":")[0]
-			}
-
 			// Dial the newly spawned daemon on its TCP port (with retries for boot-up time)
 			var conn net.Conn
 			var dialErr error
 			for i := 0; i < 5; i++ {
 				var d net.Dialer
-				conn, dialErr = d.DialContext(ctx, "tcp", host+":4443")
+				conn, dialErr = d.DialContext(ctx, "tcp", meshAddr)
 				if dialErr == nil {
 					break
 				}

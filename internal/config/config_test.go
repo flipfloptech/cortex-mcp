@@ -147,9 +147,12 @@ func TestKnownHosts(t *testing.T) {
 	t.Parallel()
 
 	cfg := &MeshConfig{
+		Node: NodeConfig{
+			MeshPort: 9999, // Global default override
+		},
 		Hosts: map[string]Host{
 			"mds-01": {Addresses: []string{"10.0.1.5"}},
-			"oss-01": {Addresses: []string{"10.0.1.10", "10.0.1.11:2222"}},
+			"oss-01": {Addresses: []string{"10.0.1.10", "10.0.1.11:2222"}, MeshPort: 8888},
 		},
 	}
 
@@ -159,11 +162,13 @@ func TestKnownHosts(t *testing.T) {
 		t.Fatalf("hosts count = %d, want 2", len(hosts))
 	}
 
-	if len(hosts["mds-01"]) != 1 || hosts["mds-01"][0] != "10.0.1.5:4443" {
+	// Should fallback to global default 9999
+	if len(hosts["mds-01"]) != 1 || hosts["mds-01"][0] != "10.0.1.5:9999" {
 		t.Fatalf("mds-01 = %v", hosts["mds-01"])
 	}
 
-	if len(hosts["oss-01"]) != 2 || hosts["oss-01"][0] != "10.0.1.10:4443" || hosts["oss-01"][1] != "10.0.1.11:2222" {
+	// Should use host specific override 8888, and preserve explicitly defined ports
+	if len(hosts["oss-01"]) != 2 || hosts["oss-01"][0] != "10.0.1.10:8888" || hosts["oss-01"][1] != "10.0.1.11:2222" {
 		t.Fatalf("oss-01 = %v", hosts["oss-01"])
 	}
 }

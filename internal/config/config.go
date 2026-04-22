@@ -33,12 +33,24 @@ type NodeConfig struct {
 	// ID is the node's unique identifier in the mesh.
 	// If empty, it falls back to the hostname.
 	ID string `toml:"id"`
+
+	// MeshPort is the default port for P2P mesh communication.
+	MeshPort int `toml:"mesh_port,omitempty"`
+
+	// SSHPort is the default port for SSH deployments.
+	SSHPort int `toml:"ssh_port,omitempty"`
 }
 
-// Host defines the addresses for a known mesh node.
+// Host defines the addresses and ports for a known mesh node.
 type Host struct {
 	// Addresses is a list of IP addresses or hostnames for this node.
 	Addresses []string `toml:"addresses"`
+
+	// MeshPort overrides the global mesh port for this specific host.
+	MeshPort int `toml:"mesh_port,omitempty"`
+
+	// SSHPort overrides the global SSH port for this specific host.
+	SSHPort int `toml:"ssh_port,omitempty"`
 }
 
 // CredentialEntry defines a single credential in the config file.
@@ -74,7 +86,31 @@ func Load(path string) (*MeshConfig, error) {
 		return nil, fmt.Errorf("config: load %s: %w", path, err)
 	}
 
+	// Apply global port defaults
+	if cfg.Node.MeshPort == 0 {
+		cfg.Node.MeshPort = 4443
+	}
+	if cfg.Node.SSHPort == 0 {
+		cfg.Node.SSHPort = 22
+	}
+
 	return cfg, nil
+}
+
+// GetMeshPort returns the host-specific mesh port, or the global default if unspecified.
+func (h Host) GetMeshPort(defaultPort int) int {
+	if h.MeshPort > 0 {
+		return h.MeshPort
+	}
+	return defaultPort
+}
+
+// GetSSHPort returns the host-specific SSH port, or the global default if unspecified.
+func (h Host) GetSSHPort(defaultPort int) int {
+	if h.SSHPort > 0 {
+		return h.SSHPort
+	}
+	return defaultPort
 }
 
 // KnownHosts converts the Hosts map into the format expected by
@@ -84,9 +120,11 @@ func (mc *MeshConfig) KnownHosts() map[string][]string {
 	hosts := make(map[string][]string, len(mc.Hosts))
 	for nodeID, h := range mc.Hosts {
 		var addrsWithPort []string
+		port := h.GetMeshPort(mc.Node.MeshPort)
+
 		for _, addr := range h.Addresses {
 			if !strings.Contains(addr, ":") {
-				addrsWithPort = append(addrsWithPort, addr+":4443")
+				addrsWithPort = append(addrsWithPort, fmt.Sprintf("%s:%d", addr, port))
 			} else {
 				addrsWithPort = append(addrsWithPort, addr)
 			}
