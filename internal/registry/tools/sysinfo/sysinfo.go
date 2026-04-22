@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	registry.Register(&SystemInfoTool{})
+	registry.Register(registry.WithCache(5*time.Minute, &SystemInfoTool{}))
 }
 
 // SystemInfoTool gathers detailed system information from the local node.

@@ -31,7 +31,7 @@ func New() *LoadAvgTool {
 }
 
 func init() {
-	registry.Register(New())
+	registry.Register(registry.WithCache(15*time.Second, New()))
 }
 
 // Name returns the unique identifier for this tool.
