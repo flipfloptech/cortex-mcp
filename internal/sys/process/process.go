@@ -41,6 +41,7 @@ type procStat struct {
 	stime uint64
 	state string
 	name  string
+	ppid  int
 }
 
 const userHZ = 100.0 // Standard clock ticks per second on Linux
@@ -79,6 +80,17 @@ func readFileBuffered(path string) ([]byte, *[]byte, error) {
 		return nil, nil, err
 	}
 	return (*b)[:n], b, nil
+}
+
+// IsSupported checks if the required proc files exist.
+func IsSupported() (bool, string) {
+	if _, err := os.Stat("/proc/stat"); err != nil {
+		return false, "/proc/stat not found"
+	}
+	if _, err := os.Stat("/proc/uptime"); err != nil {
+		return false, "/proc/uptime not found"
+	}
+	return true, ""
 }
 
 // GetList is the main entry point to gather processes.
@@ -241,6 +253,7 @@ func readStat(pid int) (procStat, error) {
 
 	var state string
 	var utime, stime uint64
+	var ppid int
 
 	for pos < len(data) {
 		end := bytes.IndexByte(data[pos:], ' ')
@@ -250,6 +263,9 @@ func readStat(pid int) (procStat, error) {
 
 		if fieldIdx == 2 {
 			state = string(data[pos : pos+end])
+		} else if fieldIdx == 3 {
+			ppidUint, _ := strconv.ParseUint(string(data[pos:pos+end]), 10, 32)
+			ppid = int(ppidUint)
 		} else if fieldIdx == 13 {
 			utime, _ = strconv.ParseUint(string(data[pos:pos+end]), 10, 64)
 		} else if fieldIdx == 14 {
@@ -264,6 +280,7 @@ func readStat(pid int) (procStat, error) {
 	return procStat{
 		name:  name,
 		state: state,
+		ppid:  ppid,
 		utime: utime,
 		stime: stime,
 	}, nil

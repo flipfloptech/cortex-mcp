@@ -117,6 +117,23 @@ Pulls a lightweight, top-N list of CPU/Mem consumers, with optional filtering vi
 - Safely ignores processes that terminate during the delta window.
 - Returns `null` for cmdline if unreadable due to privileges or lack of initialization.
 
+#### `get_process_tree`
+*Category: `compute` · Runs on: Every Linux node*
+
+Builds the execution hierarchy for a target process to identify workload origins. Returns the full ancestry path (up to PID 1) and all descendants of the target PID.
+
+**Data Sources:**
+- Read directly from `/proc/uptime`, `/proc`, `/proc/[pid]/stat`, `/proc/[pid]/status`, and `/proc/[pid]/cmdline`.
+
+**Mathematical Models:**
+- Maps PID to PPID using the 4th field in `/proc/[pid]/stat` to build a complete `O(N)` tree, then isolates the target process's ancestry and descendants to keep JSON payloads small.
+- Accurate CPU% calculations are derived by taking a rapid delta (100ms window) of the process `utime` and `stime` against system uptime progression, measured across all processes simultaneously.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/stat` or `/proc/uptime` are missing.
+- Returns an error if the `target_pid` does not exist or has died.
+- Returns `null` for cmdline if unreadable due to privileges or lack of initialization.
+
 ---
 
 ### Mesh Infrastructure Tools
