@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/transport"
+	"github.com/flipfloptech/cortex-mcp/internal/registry/tools/lifecycle"
 )
 
 const (
@@ -96,7 +97,7 @@ func runBridge(ctx context.Context, addr string, stdin io.Reader, stdout io.Writ
 // serviceActiveCommand returns the shell command to check if the
 // cortex-mesh systemd service is currently running.
 func serviceActiveCommand() string {
-	return fmt.Sprintf("systemctl is-active %s", serviceName)
+	return fmt.Sprintf("systemctl is-active %s", lifecycle.ServiceName)
 }
 
 // parseServiceActive determines if the service is active from

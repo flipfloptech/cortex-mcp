@@ -61,7 +61,7 @@ func (t *InstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("resolve executable: %v", err)), nil
 	}
 
-	ops := selfInstallOps()
+	ops := SelfInstallOps()
 	resp := map[string]interface{}{
 		"operations": ops,
 		"status":     "scheduled",
@@ -70,7 +70,7 @@ func (t *InstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if execErr := executeOps(ops); execErr != nil {
+			if execErr := ExecuteOps(ops); execErr != nil {
 				zap.S().Errorw("node_install failed", "error", execErr)
 			}
 		}()
@@ -105,9 +105,9 @@ func (t *UninstallTool) Execute(ctx context.Context, _ json.RawMessage) (*regist
 		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("resolve executable: %v", err)), nil
 	}
 
-	var ops []lifecycleOp
+	var ops []LifecycleOp
 	if strings.HasPrefix(binaryPath, defaultInstallPath) || strings.HasPrefix(binaryPath, "/opt/") {
-		ops = selfUninstallOps()
+		ops = SelfUninstallOps()
 	} else {
 		ops = ephemeralCleanupOps(binaryPath)
 	}
@@ -120,7 +120,7 @@ func (t *UninstallTool) Execute(ctx context.Context, _ json.RawMessage) (*regist
 	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if execErr := executeOps(ops); execErr != nil {
+			if execErr := ExecuteOps(ops); execErr != nil {
 				zap.S().Errorw("node_uninstall failed", "error", execErr)
 			}
 			if !strings.HasPrefix(binaryPath, "/opt/") {
@@ -153,7 +153,7 @@ func (t *RestartTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 	start := time.Now()
 	hostname, _ := os.Hostname()
 
-	cmd := fmt.Sprintf("restart %s", serviceName)
+	cmd := fmt.Sprintf("restart %s", ServiceName)
 	resp := map[string]string{
 		"command": cmd,
 		"status":  "scheduled",
@@ -162,7 +162,7 @@ func (t *RestartTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			_ = executeOp(lifecycleOp{Action: "systemctl", Args: cmd})
+			_ = ExecuteOp(LifecycleOp{Action: "systemctl", Args: cmd})
 		}()
 	} else {
 		resp["status"] = "dry_run"
@@ -190,7 +190,7 @@ func (t *StopTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.To
 	start := time.Now()
 	hostname, _ := os.Hostname()
 
-	cmd := fmt.Sprintf("stop %s", serviceName)
+	cmd := fmt.Sprintf("stop %s", ServiceName)
 	resp := map[string]string{
 		"command": cmd,
 		"status":  "scheduled",
@@ -199,7 +199,7 @@ func (t *StopTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.To
 	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			_ = executeOp(lifecycleOp{Action: "systemctl", Args: cmd})
+			_ = ExecuteOp(LifecycleOp{Action: "systemctl", Args: cmd})
 		}()
 	} else {
 		resp["status"] = "dry_run"
@@ -255,7 +255,7 @@ func (t *UpgradeTool) Execute(ctx context.Context, args json.RawMessage) (*regis
 	if liveMode {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			if err := executeOps(ops); err != nil {
+			if err := ExecuteOps(ops); err != nil {
 				zap.S().Errorw("node_upgrade failed", "error", err)
 			}
 		}()

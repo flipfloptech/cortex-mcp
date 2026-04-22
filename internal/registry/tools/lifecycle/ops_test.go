@@ -13,7 +13,7 @@ import (
 func TestSelfInstallOps(t *testing.T) {
 	t.Parallel()
 
-	ops := selfInstallOps()
+	ops := SelfInstallOps()
 
 	// Must write a service unit file.
 	var hasWriteUnit bool
@@ -63,7 +63,7 @@ func TestSelfInstallOps(t *testing.T) {
 func TestSelfUninstallOps(t *testing.T) {
 	t.Parallel()
 
-	ops := selfUninstallOps()
+	ops := SelfUninstallOps()
 
 	var hasStop bool
 	var hasDisable bool
@@ -86,7 +86,7 @@ func TestSelfUninstallOps(t *testing.T) {
 			if strings.Contains(op.Path, ".service") {
 				hasRemoveUnit = true
 			}
-			if strings.Contains(op.Path, defaultInstallPath) {
+			if strings.Contains(op.Path, InstallRemotePath("")) {
 				hasRemoveBinary = true
 			}
 		}

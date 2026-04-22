@@ -4,10 +4,10 @@ import "fmt"
 
 const (
 	// defaultInstallPath is where the binary goes on persistent installs.
-	defaultInstallPath = "/opt/cortex-mesh/bin/cortex-mcp" // wait, it was cortex-mesh earlier, let's keep it cortex-mesh for now or use the one from service.go
+	defaultInstallPath = "/opt/cortex-mesh/bin/cortex-mcp"
 
-	// serviceName is the systemd service unit name.
-	serviceName = "cortex-mesh"
+	// ServiceName is the systemd service unit name.
+	ServiceName = "cortex-mesh"
 
 	// serviceUnitDir is the standard systemd unit directory.
 	serviceUnitDir = "/etc/systemd/system"
@@ -24,7 +24,7 @@ func InstallRemotePath(custom string) string {
 
 // serviceUnitPath returns the full path to the systemd service unit file.
 func serviceUnitPath() string {
-	return fmt.Sprintf("%s/%s.service", serviceUnitDir, serviceName)
+	return fmt.Sprintf("%s/%s.service", serviceUnitDir, ServiceName)
 }
 
 // generateServiceUnit produces a systemd unit file for a persistent mesh node.
