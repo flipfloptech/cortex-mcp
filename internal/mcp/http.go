@@ -22,9 +22,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// StartHTTPServer starts an MCP SSE HTTP server.
+// StartHTTPServer starts an MCP Streamable HTTP server.
 func StartHTTPServer(addr string, srv *Server) error {
-	handler := mcp.NewSSEHandler(func(req *http.Request) *mcp.Server {
+	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		if req.URL.Path == "/sse" {
 			return srv.MCPServer()
 		}
@@ -41,7 +41,7 @@ func StartHTTPServer(addr string, srv *Server) error {
 	}
 
 	uri := fmt.Sprintf("http://%s/sse", addr)
-	zap.S().Infow("starting MCP SSE server", "addr", addr, "uri", uri)
+	zap.S().Infow("starting MCP Streamable HTTP server", "addr", addr, "uri", uri)
 
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("http server failed: %w", err)

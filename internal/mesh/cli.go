@@ -230,7 +230,7 @@ func Execute() {
 
 	mcpCmd := &cobra.Command{
 		Use:   "mcp [ip:port]",
-		Short: "Run as an mTLS HTTP MCP Server",
+		Short: "Run as an mTLS Streamable HTTP MCP Server",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			addr := "localhost:8080"
@@ -702,7 +702,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 10b: Serve HTTP if requested ---
 	if opts.ServeHTTP != "" {
-		zap.S().Infow("serving MCP HTTP", "addr", opts.ServeHTTP)
+		zap.S().Infow("serving MCP Streamable HTTP", "addr", opts.ServeHTTP)
 
 		// Create an MCP Server adapter for the Gateway Dispatcher
 		mcpSrv := mcp.NewServer(gw, node)
