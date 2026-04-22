@@ -134,6 +134,21 @@ func TestLoad_EmptyConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	if cfg.Node.MeshPort != 4443 {
+		t.Fatalf("mesh port = %d, want 4443", cfg.Node.MeshPort)
+	}
+	if cfg.Node.SSHPort != 22 {
+		t.Fatalf("ssh port = %d, want 22", cfg.Node.SSHPort)
+	}
+	if cfg.Hosts == nil {
+		t.Fatal("expected Hosts map to be initialized")
+	}
+}
+
 func TestLoad_MissingFile(t *testing.T) {
 	t.Parallel()
 

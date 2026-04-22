@@ -76,22 +76,23 @@ type CredentialEntry struct {
 	CertFile string `toml:"cert_file"`
 }
 
-// Load reads and parses a mesh.toml configuration file.
-func Load(path string) (*MeshConfig, error) {
-	cfg := &MeshConfig{
+// Default returns a new MeshConfig initialized with standard port defaults.
+func Default() *MeshConfig {
+	return &MeshConfig{
+		Node: NodeConfig{
+			MeshPort: 4443,
+			SSHPort:  22,
+		},
 		Hosts: make(map[string]Host),
 	}
+}
+
+// Load reads and parses a mesh.toml configuration file.
+func Load(path string) (*MeshConfig, error) {
+	cfg := Default()
 
 	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, fmt.Errorf("config: load %s: %w", path, err)
-	}
-
-	// Apply global port defaults
-	if cfg.Node.MeshPort == 0 {
-		cfg.Node.MeshPort = 4443
-	}
-	if cfg.Node.SSHPort == 0 {
-		cfg.Node.SSHPort = 22
 	}
 
 	return cfg, nil

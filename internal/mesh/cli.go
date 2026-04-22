@@ -339,7 +339,7 @@ func initEnv(configPath string) (context.Context, context.CancelFunc, string, *c
 
 	if err != nil {
 		zap.S().Warnw("config not loaded, using defaults", "error", err)
-		cfg = &config.MeshConfig{}
+		cfg = config.Default()
 	}
 
 	nodeID := cfg.Node.ID
