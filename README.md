@@ -56,8 +56,8 @@ Add the following to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "cortex-mesh": {
-      "type": "sse",
-      "url": "http://127.0.0.1:8080/sse"
+      "type": "streamablehttp",
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
@@ -66,9 +66,9 @@ Add the following to your `claude_desktop_config.json`:
 ### Cursor / OpenCode Integration
 
 In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new server:
-- **Type**: `sse`
+- **Type**: `streamablehttp`
 - **Name**: `cortex-mesh`
-- **URL**: `http://127.0.0.1:8080/sse`
+- **URL**: `http://127.0.0.1:8080/mcp`
 
 ## CLI Reference
 

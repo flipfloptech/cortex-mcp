@@ -9,11 +9,14 @@ import (
 )
 
 // corsMiddleware allows cross-origin requests from tools like the MCP Inspector.
+// The Streamable HTTP protocol requires the browser to send MCP-specific headers
+// (Mcp-Session-Id, Mcp-Protocol-Version) which must be explicitly permitted.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -23,28 +26,33 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // StartHTTPServer starts an MCP Streamable HTTP server.
+//
+// The handler is mounted at /mcp — a single endpoint that handles GET (SSE stream),
+// POST (JSON-RPC messages), and DELETE (session teardown) per the MCP Streamable
+// HTTP specification.
 func StartHTTPServer(addr string, srv *Server) error {
-	// We use NewSSEHandler instead of NewStreamableHTTPHandler because StreamableHTTPHandler
-	// enforces strict Go 1.25 CrossOriginProtection (Sec-Fetch-Site) which rejects browser-based
-	// inspectors. NewSSEHandler is fully compliant with the widely deployed MCP SSE transport 
-	// standard and avoids CORS preflight blocking.
-	handler := mcp.NewSSEHandler(func(req *http.Request) *mcp.Server {
-		if req.URL.Path == "/sse" {
-			return srv.MCPServer()
-		}
-		return nil
-	}, nil)
+	// Disable Go 1.25's built-in CrossOriginProtection (Sec-Fetch-Site enforcement)
+	// which unconditionally rejects browser-based inspector POST requests.
+	// Our corsMiddleware handles CORS permissioning instead.
+	cop := http.NewCrossOriginProtection()
+	cop.AddInsecureBypassPattern("/mcp")
+
+	handler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return srv.MCPServer()
+	}, &mcp.StreamableHTTPOptions{
+		DisableLocalhostProtection: true,
+		CrossOriginProtection:      cop,
+	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/sse", corsMiddleware(handler))
-	mux.Handle("/messages", corsMiddleware(handler)) // SDK uses this pattern for incoming messages
+	mux.Handle("/mcp", corsMiddleware(handler))
 
 	httpServer := &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
 
-	uri := fmt.Sprintf("http://%s/sse", addr)
+	uri := fmt.Sprintf("http://%s/mcp", addr)
 	zap.S().Infow("starting MCP Streamable HTTP server", "addr", addr, "uri", uri)
 
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
