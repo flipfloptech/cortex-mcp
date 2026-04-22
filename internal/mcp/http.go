@@ -24,22 +24,16 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // StartHTTPServer starts an MCP Streamable HTTP server.
 func StartHTTPServer(addr string, srv *Server) error {
-	// Explicitly disable Go 1.25's built-in Sec-Fetch-Site and Origin protections
-	// since the MCP server is designed to be accessed cross-origin (e.g., from the Inspector).
-	cop := http.NewCrossOriginProtection()
-	cop.AddInsecureBypassPattern("/")
-
-	opts := &mcp.StreamableHTTPOptions{
-		DisableLocalhostProtection: true,
-		CrossOriginProtection:      cop,
-	}
-
-	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	// We use NewSSEHandler instead of NewStreamableHTTPHandler because StreamableHTTPHandler
+	// enforces strict Go 1.25 CrossOriginProtection (Sec-Fetch-Site) which rejects browser-based
+	// inspectors. NewSSEHandler is fully compliant with the widely deployed MCP SSE transport 
+	// standard and avoids CORS preflight blocking.
+	handler := mcp.NewSSEHandler(func(req *http.Request) *mcp.Server {
 		if req.URL.Path == "/sse" {
 			return srv.MCPServer()
 		}
 		return nil
-	}, opts)
+	}, nil)
 
 	mux := http.NewServeMux()
 	mux.Handle("/sse", corsMiddleware(handler))
