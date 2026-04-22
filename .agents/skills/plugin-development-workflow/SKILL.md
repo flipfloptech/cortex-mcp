@@ -26,8 +26,33 @@ type Tool interface {
 - **Graceful Degradation**: Tools must not return `IsSupported() = false` or throw errors simply because non-critical telemetry is missing. If a core dependency (e.g., a required binary or base sysfs path) is missing, `IsSupported()` returns false. If secondary data is missing, the tool returns partial JSON output.
 - **Auto-Registration**: Every tool package must contain an `init()` function that calls `registry.Register(New())` so the tool is automatically discovered via a blank import in `internal/mesh/tools_register.go`.
 - **LLM-Centric Formatting**: Raw math is difficult for LLMs. If a calculation is required (e.g., Idle Percentage, Human-Readable Durations), the Go code *must* perform it and include it in the `ToolResult.Data`.
-- **Composition & Reusability**: Tools should act as thin, strongly-typed JSON-RPC wrappers around reusable core business logic. If a tool parses a file or extracts data (e.g., extracting device mappings), that logic must be exposed as public Go functions so other tools can import and use it natively, avoiding expensive cross-tool RPC calls or duplication of effort.
+- **Tool Composition (Decouple Logic from Transport)**: An MCP Tool is fundamentally just a JSON-RPC adapter. When building tools that rely on other tools (like `mlxlink` needing `ibdev2netdev`), we should not have Tools calling Tools via the registry interface. Passing JSON strings back and forth internally is slow and loses type safety.
 
+  **The Pattern**: Extract the core logic into reusable Go packages, and make the MCP Tools thin wrappers.
+
+  ```go
+  // 1. The reusable Go logic (Strongly Typed, no JSON)
+  package infiniband
+
+  func GetDevNetMap(ctx context.Context) (map[string]string, error) {
+      // Runs 'ibdev2netdev', parses output, returns strongly typed map
+  }
+
+  // 2. The Base MCP Tool (JSON Wrapper)
+  func handleIbDev2NetDev(ctx context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+      devMap, err := infiniband.GetDevNetMap(ctx)
+      // ... marshals devMap to JSON ToolResult ...
+  }
+
+  // 3. The Composed MCP Tool (Direct Go Call)
+  func handleMlxLink(ctx context.Context, args json.RawMessage) (*tools.ToolResult, error) {
+      // Call the Go function directly! No JSON parsing overhead.
+      devMap, err := infiniband.GetDevNetMap(ctx)
+      
+      // Continue processing mlxlink using the rich devMap object...
+  }
+  ```
+  *Why this works: It keeps the codebase strongly typed and highly testable (adhering to our TDD workflow), while ensuring that if base logic improves, all downstream composed tools automatically get the exact same performance boost.*
 ## Phase 0: Branching
 
 Always start from the latest `dev` branch. Tools are isolated features.
