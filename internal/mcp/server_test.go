@@ -29,6 +29,7 @@ type mockTool struct {
 	name        string
 	description string
 	category    string
+	hidden      bool
 }
 
 func (m *mockTool) Name() string                     { return m.name }
@@ -36,7 +37,7 @@ func (m *mockTool) Description() string              { return m.description }
 func (m *mockTool) Help() string                     { return "long description" }
 func (m *mockTool) Category() string                 { return m.category }
 func (m *mockTool) Parameters() []registry.ToolParam { return nil }
-func (m *mockTool) Hidden() bool                     { return false }
+func (m *mockTool) Hidden() bool                     { return m.hidden }
 func (m *mockTool) IsSupported() (bool, string)      { return true, "" }
 func (m *mockTool) Execute(context.Context, json.RawMessage) (*registry.ToolResult, error) {
 	return nil, nil
@@ -49,7 +50,7 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 	topology := &mockTopologyProvider{
 		snapshot: api.TopologySnapshot{
 			NodeDetails: []api.NodeSummary{
-				{NodeID: "node1", Capabilities: []string{"tool:uptime", "tool:system_info"}},
+				{NodeID: "node1", Capabilities: []string{"tool:uptime", "tool:system_info", "tool:secret_tool"}},
 				{NodeID: "node2", Capabilities: []string{"tool:uptime", "tool:other"}}, // "other" is not in registry
 			},
 		},
@@ -57,8 +58,9 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 
 	// 2. Setup plugin registry with definitions
 	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
-		&mockTool{name: "uptime", description: "Get uptime", category: "system"},
-		&mockTool{name: "system_info", description: "Get info", category: "system"},
+		&mockTool{name: "uptime", description: "Get uptime", category: "system", hidden: false},
+		&mockTool{name: "system_info", description: "Get info", category: "system", hidden: false},
+		&mockTool{name: "secret_tool", description: "Hidden tool", category: "system", hidden: true},
 	})
 
 	srv := NewServer(&mockDispatcher{}, topology, plugins)
@@ -81,6 +83,9 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 	}
 	if strings.Contains(content, `"other"`) {
 		t.Error("did not expect 'other' tool in result (not in registry)")
+	}
+	if strings.Contains(content, `"secret_tool"`) {
+		t.Error("did not expect 'secret_tool' tool in result (it is hidden)")
 	}
 }
 
