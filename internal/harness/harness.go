@@ -67,7 +67,7 @@ func (h *Harness) RunToolCheck(ctx context.Context, toolsList []string, nodeIDs 
 
 				// Build dispatch request with specific node targeting
 				rawBytes, _ := json.Marshal(map[string]interface{}{
-					"name":      t,
+					"tool_name": t,
 					"node_name": n,
 				})
 
@@ -146,7 +146,7 @@ Loop:
 
 			start := time.Now()
 			rawBytes, _ := json.Marshal(map[string]interface{}{
-				"name":      t,
+				"tool_name": t,
 				"node_name": n,
 			})
 
