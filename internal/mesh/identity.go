@@ -23,6 +23,9 @@ type NodeIdentity struct {
 func identityPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		if os.Getuid() == 0 {
+			return "/root/.cortex-mesh/identity.json", nil
+		}
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 	return filepath.Join(home, ".cortex-mesh", "identity.json"), nil
