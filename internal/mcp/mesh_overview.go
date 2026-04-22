@@ -17,8 +17,8 @@ type TopologyProvider interface {
 	MeshTopology() api.TopologySnapshot
 }
 
-// ClusterOverview is the aggregate response returned to the LLM.
-type ClusterOverview struct {
+// MeshOverview is the aggregate response returned to the LLM.
+type MeshOverview struct {
 	GatewayNodeID string         `json:"gateway_node_id"`
 	Timestamp     string         `json:"timestamp"`
 	TotalNodes    int            `json:"total_nodes"`
@@ -55,23 +55,23 @@ type MeshEdge struct {
 	Impedance float64 `json:"impedance"`
 }
 
-// ClusterOverviewHandler orchestrates the fan-out and aggregation.
-type ClusterOverviewHandler struct {
+// MeshOverviewHandler orchestrates the fan-out and aggregation.
+type MeshOverviewHandler struct {
 	dispatcher Dispatcher
 	topology   TopologyProvider
 }
 
-// NewClusterOverviewHandler creates a new handler.
-func NewClusterOverviewHandler(dispatcher Dispatcher, topology TopologyProvider) *ClusterOverviewHandler {
-	return &ClusterOverviewHandler{
+// NewMeshOverviewHandler creates a new handler.
+func NewMeshOverviewHandler(dispatcher Dispatcher, topology TopologyProvider) *MeshOverviewHandler {
+	return &MeshOverviewHandler{
 		dispatcher: dispatcher,
 		topology:   topology,
 	}
 }
 
 // Execute runs the full cluster overview aggregation.
-func (h *ClusterOverviewHandler) Execute(ctx context.Context) (*ClusterOverview, error) {
-	overview := &ClusterOverview{
+func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error) {
+	overview := &MeshOverview{
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 		RoleCounts: make(map[string]int),
 	}
@@ -164,7 +164,7 @@ func (h *ClusterOverviewHandler) Execute(ctx context.Context) (*ClusterOverview,
 }
 
 // fanOutTool dispatches a call_tool with node_name="*" and returns per-node raw content.
-func (h *ClusterOverviewHandler) fanOutTool(ctx context.Context, toolName string) map[string]json.RawMessage {
+func (h *MeshOverviewHandler) fanOutTool(ctx context.Context, toolName string) map[string]json.RawMessage {
 	args, _ := json.Marshal(map[string]interface{}{
 		"tool_name": toolName,
 		"node_name": "*",
@@ -172,7 +172,7 @@ func (h *ClusterOverviewHandler) fanOutTool(ctx context.Context, toolName string
 
 	result, err := h.dispatcher.Dispatch(ctx, "call_tool", args)
 	if err != nil {
-		zap.S().Warnw("cluster_overview fan-out failed", "tool", toolName, "error", err)
+		zap.S().Warnw("mesh_overview fan-out failed", "tool", toolName, "error", err)
 		return nil
 	}
 
@@ -186,7 +186,7 @@ func (h *ClusterOverviewHandler) fanOutTool(ctx context.Context, toolName string
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(result.Content, &resp); err != nil {
-		zap.S().Warnw("cluster_overview: failed to parse fan-out response", "tool", toolName, "error", err)
+		zap.S().Warnw("mesh_overview: failed to parse fan-out response", "tool", toolName, "error", err)
 		return nil
 	}
 
@@ -300,7 +300,7 @@ func extractTools(capabilities []string) []string {
 }
 
 // renderMermaid generates a Mermaid graph from the cluster overview.
-func renderMermaid(overview *ClusterOverview) string {
+func renderMermaid(overview *MeshOverview) string {
 	if len(overview.Nodes) == 0 && len(overview.Edges) == 0 {
 		return "graph TD\n    empty[\"No nodes in mesh\"]"
 	}

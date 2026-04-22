@@ -63,7 +63,7 @@ func buildMockDispatcher(sysInfoResults, topoResults map[string]json.RawMessage)
 	}
 }
 
-func TestClusterOverview_RoleCountAggregation(t *testing.T) {
+func TestMeshOverview_RoleCountAggregation(t *testing.T) {
 	t.Parallel()
 
 	sysInfo := map[string]json.RawMessage{
@@ -92,7 +92,7 @@ func TestClusterOverview_RoleCountAggregation(t *testing.T) {
 		},
 	}
 
-	handler := NewClusterOverviewHandler(dispatcher, gwTopo)
+	handler := NewMeshOverviewHandler(dispatcher, gwTopo)
 	result, err := handler.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
@@ -113,7 +113,7 @@ func TestClusterOverview_RoleCountAggregation(t *testing.T) {
 	}
 }
 
-func TestClusterOverview_EdgeDeduplication(t *testing.T) {
+func TestMeshOverview_EdgeDeduplication(t *testing.T) {
 	t.Parallel()
 
 	// Empty sysinfo — we only care about edges here.
@@ -141,7 +141,7 @@ func TestClusterOverview_EdgeDeduplication(t *testing.T) {
 		},
 	}
 
-	handler := NewClusterOverviewHandler(dispatcher, gwTopo)
+	handler := NewMeshOverviewHandler(dispatcher, gwTopo)
 	result, err := handler.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
@@ -154,7 +154,7 @@ func TestClusterOverview_EdgeDeduplication(t *testing.T) {
 	}
 }
 
-func TestClusterOverview_MermaidContainsNodes(t *testing.T) {
+func TestMeshOverview_MermaidContainsNodes(t *testing.T) {
 	t.Parallel()
 
 	sysInfo := map[string]json.RawMessage{
@@ -176,7 +176,7 @@ func TestClusterOverview_MermaidContainsNodes(t *testing.T) {
 		},
 	}
 
-	handler := NewClusterOverviewHandler(dispatcher, gwTopo)
+	handler := NewMeshOverviewHandler(dispatcher, gwTopo)
 	result, err := handler.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
@@ -196,7 +196,7 @@ func TestClusterOverview_MermaidContainsNodes(t *testing.T) {
 	}
 }
 
-func TestClusterOverview_EmptyMesh(t *testing.T) {
+func TestMeshOverview_EmptyMesh(t *testing.T) {
 	t.Parallel()
 
 	dispatcher := buildMockDispatcher(nil, nil)
@@ -208,7 +208,7 @@ func TestClusterOverview_EmptyMesh(t *testing.T) {
 		},
 	}
 
-	handler := NewClusterOverviewHandler(dispatcher, gwTopo)
+	handler := NewMeshOverviewHandler(dispatcher, gwTopo)
 	result, err := handler.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)

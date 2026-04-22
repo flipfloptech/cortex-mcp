@@ -71,13 +71,13 @@ func BenchmarkHandleCallTool(b *testing.B) {
 	}
 }
 
-func BenchmarkHandleClusterOverview(b *testing.B) {
+func BenchmarkHandleMeshOverview(b *testing.B) {
 	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = srv.handleClusterOverview(ctx, req, EmptyInput{})
+		_, _, _ = srv.handleMeshOverview(ctx, req, EmptyInput{})
 	}
 }
 
@@ -101,17 +101,17 @@ func BenchmarkHandleSystemIntroduction(b *testing.B) {
 	}
 }
 
-func BenchmarkNewClusterOverviewHandler(b *testing.B) {
+func BenchmarkNewMeshOverviewHandler(b *testing.B) {
 	d := dummyDispatcher{}
 	t := dummyTopology{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewClusterOverviewHandler(d, t)
+		_ = NewMeshOverviewHandler(d, t)
 	}
 }
 
 func BenchmarkExecute(b *testing.B) {
-	h := NewClusterOverviewHandler(dummyDispatcher{}, dummyTopology{})
+	h := NewMeshOverviewHandler(dummyDispatcher{}, dummyTopology{})
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -120,7 +120,7 @@ func BenchmarkExecute(b *testing.B) {
 }
 
 func BenchmarkFanOutTool(b *testing.B) {
-	h := NewClusterOverviewHandler(dummyDispatcher{}, dummyTopology{})
+	h := NewMeshOverviewHandler(dummyDispatcher{}, dummyTopology{})
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -170,7 +170,7 @@ func BenchmarkExtractTools(b *testing.B) {
 }
 
 func BenchmarkRenderMermaid(b *testing.B) {
-	overview := &ClusterOverview{
+	overview := &MeshOverview{
 		Nodes: []NodeOverview{
 			{NodeID: "node1", Hostname: "node1", Roles: []string{"worker"}},
 		},
