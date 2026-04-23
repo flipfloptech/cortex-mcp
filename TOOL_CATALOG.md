@@ -137,15 +137,17 @@ Builds the execution hierarchy for a target process to identify workload origins
 #### `get_thread_wchan`
 *Category: `compute` · Runs on: Every Linux node*
 
-Diagnoses system hangs by showing exactly which kernel function threads are blocked on.
+Diagnoses system hangs by showing exactly which kernel function threads are blocked on. Features two distinct diagnostic modes (Global and Targeted) to prevent token exhaustion at scale.
 
 **Data Sources:**
 - Reads `/proc/[pid]/wchan` for kernel wait channels.
 - Reads `/proc/[pid]/status` for thread state (`State:`).
 - Reads `/proc/[pid]/stat` to identify kernel threads (`PPID == 2`).
+- Reads `/proc/[pid]/task/[tid]/comm` to map thread IDs to human-readable process names.
 
-**Mathematical Models:**
-- Aggregates results into a nested structure separating `blocked_wchan` counts from standard `thread_states`.
+**Mathematical Models / Output Structuring:**
+- **Mode 1 (Global Scan):** When `target_pid` is omitted, aggregates results into a nested structure separating `blocked_wchan` counts from standard `thread_states`. Threads are grouped by `wchan` and then by executable (`comm`). Truncates `example_pids` to a hard cap of 15 per executable, returning an `omitted_pids` count to maintain context without token explosion.
+- **Mode 2 (Targeted Scan):** When a specific `target_pid` is provided, bypasses aggregation to return a flat, surgical list of all threads for that process (TID, Comm, Wchan, State).
 - Identifies kernel threads and flags them by prefixing their names with `[kthread] ` in the output.
 
 **Degradation Profile:**
