@@ -30,13 +30,14 @@ type mockTool struct {
 	description string
 	category    string
 	hidden      bool
+	params      []registry.ToolParam
 }
 
 func (m *mockTool) Name() string                     { return m.name }
 func (m *mockTool) Description() string              { return m.description }
 func (m *mockTool) Help() string                     { return "long description" }
 func (m *mockTool) Category() string                 { return m.category }
-func (m *mockTool) Parameters() []registry.ToolParam { return nil }
+func (m *mockTool) Parameters() []registry.ToolParam { return m.params }
 func (m *mockTool) Hidden() bool                     { return m.hidden }
 func (m *mockTool) IsSupported() (bool, string)      { return true, "" }
 func (m *mockTool) Execute(context.Context, json.RawMessage) (*registry.ToolResult, error) {
@@ -118,6 +119,111 @@ func TestServer_ToolHelpDynamic(t *testing.T) {
 	}
 }
 
+func TestServer_CallToolValidation(t *testing.T) {
+	t.Parallel()
+
+	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
+		&mockTool{
+			name: "test_tool",
+			params: []registry.ToolParam{
+				{Name: "req_str", Type: "string", Required: true},
+				{Name: "req_int", Type: "integer", Required: true},
+				{Name: "opt_bool", Type: "boolean", Required: false},
+			},
+		},
+	})
+
+	srv := NewServer(&mockDispatcher{}, nil, plugins)
+
+	tests := []struct {
+		name          string
+		input         CallToolInput
+		expectErr     bool
+		expectErrText string
+	}{
+		{
+			name: "Happy Path (all correct)",
+			input: CallToolInput{
+				ToolName: "test_tool",
+				Args: map[string]interface{}{
+					"req_str":  "hello",
+					"req_int":  float64(42), // JSON unmarshals to float64
+					"opt_bool": true,
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Missing Required",
+			input: CallToolInput{
+				ToolName: "test_tool",
+				Args: map[string]interface{}{
+					"req_str": "hello",
+				},
+			},
+			expectErr:     true,
+			expectErrText: "missing required argument 'req_int'",
+		},
+		{
+			name: "Type Mismatch (int provided as string)",
+			input: CallToolInput{
+				ToolName: "test_tool",
+				Args: map[string]interface{}{
+					"req_str": "hello",
+					"req_int": "42",
+				},
+			},
+			expectErr:     true,
+			expectErrText: "must be of type 'integer'",
+		},
+		{
+			name: "Unknown Argument",
+			input: CallToolInput{
+				ToolName: "test_tool",
+				Args: map[string]interface{}{
+					"req_str":  "hello",
+					"req_int":  float64(42),
+					"unknown":  "bad",
+				},
+			},
+			expectErr:     true,
+			expectErrText: "unknown argument 'unknown'",
+		},
+		{
+			name: "Unknown Tool (passes through to mesh)",
+			input: CallToolInput{
+				ToolName: "does_not_exist",
+			},
+			expectErr: false, // The dispatcher handles unknown tool error
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res, _, err := srv.handleCallTool(context.Background(), &mcp.CallToolRequest{}, tt.input)
+			if err != nil {
+				t.Fatalf("handleCallTool failed: %v", err)
+			}
+
+			if res.IsError != tt.expectErr {
+				t.Errorf("expected error=%v, got %v", tt.expectErr, res.IsError)
+			}
+
+			if tt.expectErr {
+				content := res.Content[0].(*mcp.TextContent).Text
+				if !strings.Contains(content, tt.expectErrText) {
+					t.Errorf("expected error text to contain %q, got: %q", tt.expectErrText, content)
+				}
+				if !strings.Contains(content, "Please call 'get_tool_help'") {
+					t.Errorf("expected error text to direct to get_tool_help, got: %q", content)
+				}
+			}
+		})
+	}
+}
+
 func TestServer_SystemIntroductionPrompt(t *testing.T) {
 	t.Parallel()
 
@@ -140,3 +246,4 @@ func TestServer_SystemIntroductionPrompt(t *testing.T) {
 		t.Error("expected non-empty text content in prompt")
 	}
 }
+
