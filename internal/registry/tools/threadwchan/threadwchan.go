@@ -25,7 +25,7 @@ func (t *tool) Description() string {
 }
 
 func (t *tool) Help() string {
-	return "Reads /proc/[pid]/wchan and /proc/[pid]/status. If wchan is restricted or 0, it falls back to raw thread state."
+	return "Reads /proc/[pid]/wchan and /proc/[pid]/status. Mode 1 (Global): Groups threads by wchan and truncates PIDs. Mode 2 (Targeted): Returns a flat, non-truncated list of all threads for the target PID. If wchan is restricted or 0, it falls back to raw thread state."
 }
 
 func (t *tool) Category() string {
