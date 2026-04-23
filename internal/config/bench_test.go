@@ -86,3 +86,28 @@ func BenchmarkExpandTilde(b *testing.B) {
 		_ = expandTilde("~/some/path")
 	}
 }
+
+func BenchmarkDefault(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = Default()
+	}
+}
+
+func BenchmarkGetMeshPort(b *testing.B) {
+	host := Host{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = host.GetMeshPort(4001)
+	}
+}
+
+func BenchmarkGetSSHPort(b *testing.B) {
+	host := Host{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = host.GetSSHPort(22)
+	}
+}

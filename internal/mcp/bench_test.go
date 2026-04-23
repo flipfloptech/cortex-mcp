@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
@@ -207,5 +209,18 @@ func BenchmarkStartHTTPServer(b *testing.B) {
 		// we can't really start it in a tight loop without port conflicts,
 		// but we can pass an invalid address to fail fast and measure the setup overhead.
 		_ = StartHTTPServer("invalid-address", srv)
+	}
+}
+
+func BenchmarkCorsMiddleware(b *testing.B) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := corsMiddleware(handler)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+	rw := httptest.NewRecorder()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wrapped.ServeHTTP(rw, req)
 	}
 }

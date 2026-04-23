@@ -104,6 +104,40 @@ func BenchmarkBridgeToMesh(b *testing.B) {
 	}
 }
 
+func BenchmarkWithCache(b *testing.B) {
+	t := benchTool{name: "test", supported: true}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = WithCache(0, t)
+	}
+}
+
+func BenchmarkCopyResult(b *testing.B) {
+	res := &ToolResult{Status: StatusOK, Summary: "sum"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = copyResult(res)
+	}
+}
+
+func BenchmarkExecute(b *testing.B) {
+	c := WithCache(0, benchTool{name: "tool", supported: true})
+	ctx := context.Background()
+	args := json.RawMessage(`{}`)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.Execute(ctx, args)
+	}
+}
+
+func BenchmarkRegister(b *testing.B) {
+	t := benchTool{name: "tool1", supported: true}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Register(t)
+	}
+}
+
 func BenchmarkDetectNodeRoles(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
