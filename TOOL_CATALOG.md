@@ -76,7 +76,7 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 - New telemetry data points default to empty strings, `0`, or `false` gracefully if their respective data sources are missing or unreadable.
 
 #### `get_cpu_topology`
-*Category: `system` · Runs on: Every Linux node*
+*Category: `compute` · Runs on: Every Linux node*
 
 Provides a deterministic, pure-sysfs map of the hardware compute layout, enabling identification of thread-pinning violations, cross-socket latency bottlenecks, and SMT contention.
 

@@ -44,7 +44,7 @@ Parameters: None
 Supported on: Linux`
 }
 
-func (t *CPUTopologyTool) Category() string { return "system" }
+func (t *CPUTopologyTool) Category() string { return "compute" }
 
 func (t *CPUTopologyTool) Parameters() []registry.ToolParam { return nil }
 
