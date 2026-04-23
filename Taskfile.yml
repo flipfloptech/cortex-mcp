@@ -16,7 +16,7 @@ tasks:
   build:
     desc: Build the cortex-mcp binary (static, pure Go)
     cmds:
-      - CGO_ENABLED=0 go build -ldflags "-X github.com/cortex-mesh/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+      - CGO_ENABLED=0 go build -ldflags "-X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
     sources:
       - '**/*.go'
       - 'go.mod'

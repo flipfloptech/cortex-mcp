@@ -38,7 +38,7 @@ func SelfInstallOps() []LifecycleOp {
 		{Action: "write_file", Path: serviceUnitPath(), Content: generateServiceUnit(defaultInstallPath)},
 		{Action: "systemctl", Args: "daemon-reload"},
 		{Action: "systemctl", Args: fmt.Sprintf("enable %s", ServiceName)},
-		{Action: "systemctl", Args: fmt.Sprintf("restart %s", ServiceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("--no-block restart %s", ServiceName)},
 	}
 }
 
@@ -63,7 +63,7 @@ func nodeUpgradeOps(srcPath string) []LifecycleOp {
 	return []LifecycleOp{
 		{Action: "copy_file", Src: srcPath, Path: defaultInstallPath},
 		{Action: "systemctl", Args: "daemon-reload"},
-		{Action: "systemctl", Args: fmt.Sprintf("restart %s", ServiceName)},
+		{Action: "systemctl", Args: fmt.Sprintf("--no-block restart %s", ServiceName)},
 	}
 }
 
