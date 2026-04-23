@@ -24,6 +24,7 @@ type MeshOverview struct {
 	TotalNodes    int            `json:"total_nodes"`
 	DirectPeers   int            `json:"direct_peers"`
 	RoleCounts    map[string]int `json:"role_counts"`
+	VersionCounts map[string]int `json:"version_counts"`
 	Nodes         []NodeOverview `json:"nodes"`
 	Edges         []MeshEdge     `json:"edges"`
 	MermaidGraph  string         `json:"mermaid_graph"`
@@ -31,21 +32,23 @@ type MeshOverview struct {
 
 // NodeOverview is a per-node summary in the cluster overview.
 type NodeOverview struct {
-	NodeID    string   `json:"node_id"`
-	Hostname  string   `json:"hostname"`
-	Roles     []string `json:"roles"`
-	OS        string   `json:"os"`
-	Arch      string   `json:"arch"`
-	CPUs      int      `json:"cpus"`
-	Kernel    string   `json:"kernel"`
-	Distro    string   `json:"distro"`
-	Impedance float64  `json:"impedance"`
-	IsDirect  bool     `json:"is_direct"`
-	NextHop   string   `json:"next_hop"`
-	PeerCount int      `json:"peer_count"`
-	Tools     []string `json:"tools"`
-	Status    string   `json:"status"`
-	Error     string   `json:"error,omitempty"`
+	NodeID             string   `json:"node_id"`
+	Hostname           string   `json:"hostname"`
+	Roles              []string `json:"roles"`
+	OS                 string   `json:"os"`
+	Arch               string   `json:"arch"`
+	CPUs               int      `json:"cpus"`
+	Kernel             string   `json:"kernel"`
+	Distro             string   `json:"distro"`
+	Impedance          float64  `json:"impedance"`
+	IsDirect           bool     `json:"is_direct"`
+	NextHop            string   `json:"next_hop"`
+	PeerCount          int      `json:"peer_count"`
+	Tools              []string `json:"tools"`
+	ProtocolVersion    uint16   `json:"protocol_version"`
+	ApplicationVersion string   `json:"application_version"`
+	Status             string   `json:"status"`
+	Error              string   `json:"error,omitempty"`
 }
 
 // MeshEdge represents a direct connection between two nodes.
@@ -72,8 +75,9 @@ func NewMeshOverviewHandler(dispatcher Dispatcher, topology TopologyProvider) *M
 // Execute runs the full cluster overview aggregation.
 func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error) {
 	overview := &MeshOverview{
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		RoleCounts: make(map[string]int),
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		RoleCounts:    make(map[string]int),
+		VersionCounts: make(map[string]int),
 	}
 
 	// 1. Get gateway's own topology snapshot (local, zero network).
@@ -111,6 +115,11 @@ func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error
 		// Accumulate role counts.
 		for _, role := range no.Roles {
 			overview.RoleCounts[role]++
+		}
+
+		// Accumulate version counts.
+		if no.ApplicationVersion != "" {
+			overview.VersionCounts[no.ApplicationVersion]++
 		}
 	}
 
@@ -210,13 +219,15 @@ func parseSysInfoResult(nodeID string, content json.RawMessage) *NodeOverview {
 	// system_info wraps its output in a registry.ToolResult envelope.
 	var envelope struct {
 		Data struct {
-			Hostname string   `json:"hostname"`
-			OS       string   `json:"os"`
-			Arch     string   `json:"arch"`
-			CPUs     int      `json:"cpus"`
-			Kernel   string   `json:"kernel"`
-			Distro   string   `json:"distro"`
-			Roles    []string `json:"roles"`
+			Hostname           string   `json:"hostname"`
+			OS                 string   `json:"os"`
+			Arch               string   `json:"arch"`
+			CPUs               int      `json:"cpus"`
+			Kernel             string   `json:"kernel"`
+			Distro             string   `json:"distro"`
+			Roles              []string `json:"roles"`
+			ProtocolVersion    uint16   `json:"protocol_version"`
+			ApplicationVersion string   `json:"application_version"`
 		} `json:"data"`
 	}
 
@@ -232,6 +243,8 @@ func parseSysInfoResult(nodeID string, content json.RawMessage) *NodeOverview {
 	no.CPUs = envelope.Data.CPUs
 	no.Kernel = envelope.Data.Kernel
 	no.Distro = envelope.Data.Distro
+	no.ProtocolVersion = envelope.Data.ProtocolVersion
+	no.ApplicationVersion = envelope.Data.ApplicationVersion
 	if len(envelope.Data.Roles) > 0 {
 		no.Roles = envelope.Data.Roles
 	}

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
+	"github.com/flipfloptech/cortex-mcp/internal/version"
 )
 
 var (
@@ -136,6 +137,8 @@ type systemInfoData struct {
 	UsingMellanoxInfiniband bool                   `json:"using_mellanox_infiniband"`
 	MellanoxVersion         string                 `json:"mellanox_version,omitempty"`
 	LustreVersion           string                 `json:"lustre_version,omitempty"`
+	ProtocolVersion         uint16                 `json:"protocol_version"`
+	ApplicationVersion      string                 `json:"application_version"`
 }
 
 // Execute gathers system information and returns a standardized result.
@@ -174,6 +177,8 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 		UsingMellanoxInfiniband: hasIB,
 		MellanoxVersion:         mlxVersion,
 		LustreVersion:           lustreVer,
+		ProtocolVersion:         1,
+		ApplicationVersion:      version.ApplicationVersion,
 	}
 
 	result := registry.NewResult(

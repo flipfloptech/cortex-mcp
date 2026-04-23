@@ -78,6 +78,7 @@ import (
 	"github.com/flipfloptech/cortex-mcp/internal/mcp"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/flipfloptech/cortex-mcp/internal/registry/tools/lifecycle"
+	"github.com/flipfloptech/cortex-mcp/internal/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -469,11 +470,13 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 
 	// Create the mesh node with membrane config.
 	node, err := api.NewNode(ctx, api.NodeConfig{
-		NodeID:     nodeID,
-		Vault:      v, // Empty vault enables fleet nodes to request credentials for node_deploy
-		Dialer:     dialer,
-		KnownHosts: cfg.KnownHosts(),
-		Reconnect:  reconnectPolicy,
+		NodeID:             nodeID,
+		ProtocolVersion:    1,
+		ApplicationVersion: version.ApplicationVersion,
+		Vault:              v, // Empty vault enables fleet nodes to request credentials for node_deploy
+		Dialer:             dialer,
+		KnownHosts:         cfg.KnownHosts(),
+		Reconnect:          reconnectPolicy,
 		Events: api.NodeEvents{
 			OnPeerJoined:  func(peerID string) { zap.S().Infow("fleet: peer joined", "peer", peerID) },
 			OnPeerLost:    func(peerID string) { zap.S().Infow("fleet: peer lost", "peer", peerID) },
@@ -566,11 +569,13 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 
 	// --- Phase 2: Create mesh node ---
 	node, err := api.NewNode(ctx, api.NodeConfig{
-		NodeID:         nodeID,
-		Vault:          v,
-		Dialer:         dialer,
-		KnownHosts:     cfg.KnownHosts(),
-		GossipInterval: 3 * time.Second, // configurable: 3s for HPC, 10s for WAN
+		NodeID:             nodeID,
+		ProtocolVersion:    1,
+		ApplicationVersion: version.ApplicationVersion,
+		Vault:              v,
+		Dialer:             dialer,
+		KnownHosts:         cfg.KnownHosts(),
+		GossipInterval:     3 * time.Second, // configurable: 3s for HPC, 10s for WAN
 		Events: api.NodeEvents{
 			OnPeerJoined: func(peerID string) {
 				zap.S().Infow("peer joined", "peer_id", peerID)
