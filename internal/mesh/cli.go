@@ -829,7 +829,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			var versionMismatch bool
 			if !skipDeploy {
 				remoteVersion, verErr := getRemoteApplicationVersion(ctx, sshAddr, deployCred, lifecycle.InstallRemotePath(""))
-				if verErr != nil || remoteVersion != version.ApplicationVersion {
+				if verErr != nil || !strings.Contains(remoteVersion, version.ApplicationVersion) {
 					versionMismatch = true
 					if verErr != nil {
 						zap.S().Debugw("failed to get remote version, assuming mismatch", "error", verErr)
