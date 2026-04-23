@@ -134,6 +134,24 @@ Builds the execution hierarchy for a target process to identify workload origins
 - Returns an error if the `target_pid` does not exist or has died.
 - Returns `null` for cmdline if unreadable due to privileges or lack of initialization.
 
+#### `get_thread_wchan`
+*Category: `compute` · Runs on: Every Linux node*
+
+Diagnoses system hangs by showing exactly which kernel function threads are blocked on.
+
+**Data Sources:**
+- Reads `/proc/[pid]/wchan` for kernel wait channels.
+- Reads `/proc/[pid]/status` for thread state (`State:`).
+- Reads `/proc/[pid]/stat` to identify kernel threads (`PPID == 2`).
+
+**Mathematical Models:**
+- Aggregates results into a nested structure separating `blocked_wchan` counts from standard `thread_states`.
+- Identifies kernel threads and flags them by prefixing their names with `[kthread] ` in the output.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/1/wchan` is inaccessible.
+- If the kernel restricts wchan visibility (value is `"0"` or unreadable), it safely degrades by grouping that thread's state from `/proc/[pid]/status` into the `thread_states` bucket, ensuring `blocked_wchan` only contains true signal.
+
 ---
 
 ### Mesh Infrastructure Tools

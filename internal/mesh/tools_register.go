@@ -13,5 +13,6 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processtree"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/sysinfo"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/threadwchan"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/uptime"
 )
