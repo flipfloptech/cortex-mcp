@@ -45,7 +45,7 @@ func init() {
 	registry.Register(registry.WithCache(5*time.Minute, &SystemInfoTool{}))
 }
 
-// SystemInfoTool gathers detailed system information from the local node.
+// SystemInfoTool gathers detailed system info from the local node.
 type SystemInfoTool struct{}
 
 // Name returns the unique tool identifier.
@@ -53,14 +53,14 @@ func (t *SystemInfoTool) Name() string { return "get_system_info" }
 
 // Description returns a short summary for get_tool_list output.
 func (t *SystemInfoTool) Description() string {
-	return "Get detailed system information for this node"
+	return "Get detailed system info for this node"
 }
 
 // Help returns the full tool help text.
 func (t *SystemInfoTool) Help() string {
-	return `system_info — Get Detailed System Information
+	return `get_system_info — Get Detailed System Info
 
-Returns structured system information for this node including hostname,
+Returns structured system info for this node including hostname,
 OS, architecture, CPU count, kernel version, distro identification,
 and detected storage/cluster roles (SFA, MGS, MDS, OSS, Client).
 
@@ -141,7 +141,7 @@ type systemInfoData struct {
 	ApplicationVersion      string                 `json:"application_version"`
 }
 
-// Execute gathers system information and returns a standardized result.
+// Execute gathers system info and returns a standardized result.
 func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
 

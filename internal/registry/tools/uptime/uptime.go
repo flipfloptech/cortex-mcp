@@ -40,7 +40,7 @@ func (t *UptimeTool) Description() string {
 	return "Get system uptime and idle statistics."
 }
 
-// Help provides detailed usage instructions and schema information.
+// Help provides detailed usage instructions and schema info.
 func (t *UptimeTool) Help() string {
 	return `Gathers system uptime metrics from /proc/uptime.
 

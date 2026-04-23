@@ -22,7 +22,7 @@ func init() {
 	registry.Register(registry.WithCache(5*time.Second, &MemoryInfoTool{}))
 }
 
-// MemoryInfoTool gathers heavily curated, mathematical memory usage information.
+// MemoryInfoTool gathers heavily curated, mathematical memory usage info.
 type MemoryInfoTool struct{}
 
 // Name returns the unique tool identifier.
@@ -35,7 +35,7 @@ func (t *MemoryInfoTool) Description() string {
 
 // Help returns the full tool help text.
 func (t *MemoryInfoTool) Help() string {
-	return `get_memory_info — Get System Memory Information
+	return `get_memory_info — Get System Memory Info
 
 Returns a highly curated, mathematical summary of system memory.
 This is a math-free alternative to the 'free' command designed for LLMs,
@@ -101,7 +101,7 @@ type memoryInfoData struct {
 	EstimationMode string  `json:"estimation_mode"`
 }
 
-// Execute gathers the memory information and returns a standardized ToolResult.
+// Execute gathers the memory info and returns a standardized ToolResult.
 func (t *MemoryInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
 	hostname, _ := os.Hostname()
