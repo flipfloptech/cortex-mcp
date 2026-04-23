@@ -94,6 +94,26 @@ Provides a deterministic, pure-sysfs map of the hardware compute layout, enablin
 - **Virtualization Blindness**: In heavily abstracted VMs where L3 caches are unreadable, the tool avoids breaking the JSON shape by placing all cores into `l3_domain_0` and setting the `l3_topology_abstracted: true` safety flag on the system summary.
 - **Context Timeouts**: Incorporates aggressive `5s` context timeouts around sysfs reads to prevent agent hangs on unresponsive virtual filesystems.
 
+#### `get_cpu_power_state`
+*Category: `compute` · Runs on: Every Linux node*
+
+Returns a highly aggregated map of CPU frequency profiles (P-states) and idle sleep limits (C-states). Groups logical CPUs by their governor and EPP. Crucial for diagnosing latency spikes or thermal throttling.
+
+**Data Sources:**
+- **P-States**: Reads `/sys/devices/system/cpu/cpu*/cpufreq/` for `scaling_governor`, `energy_performance_preference`, `scaling_cur_freq`, `scaling_max_freq`, and `scaling_min_freq`.
+- **C-States**: Reads `/sys/devices/system/cpu/cpu0/cpuidle/` for `stateX/name` and `stateX/disable` to list enabled vs disabled idle states.
+- **Drivers**: Reads `scaling_driver` and `current_driver` to identify the power management controllers.
+
+**Mathematical Models / Output Structuring:**
+- **Compound Keys**: Groups frequency profiles by `[governor]-[epp]` (e.g., `powersave-performance`) to avoid collisions on modern architectures.
+- **Unit Conversion**: Averages the `scaling_cur_freq` across the group and converts all frequencies from KHz to MHz for human readability.
+- **Hardware Bounds**: Calculates the absolute minimum and maximum hardware bounds across the group defensively.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux.
+- **Virtualization / BIOS Lockout**: If the OS does not have visibility into P-states (no `cpu0/cpufreq`), safely degrades by setting `power_management_managed_by_os: false` and omitting frequency profiles.
+- **C-State Visibility**: If `cpuidle` is missing, drops the `c_state_limits` block entirely and flags `c_states_visible: false` to prevent misinterpretation.
+
 #### `get_uptime`
 *Category: `system` · Runs on: Every Linux node*
 
