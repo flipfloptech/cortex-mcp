@@ -17,10 +17,29 @@ type SystemSummary struct {
 	KernelThreads  int `json:"kernel_threads"`
 }
 
+type WchanProcessDetails struct {
+	Count       int   `json:"count"`
+	ExamplePids []int `json:"example_pids"`
+	OmittedPids int   `json:"omitted_pids,omitempty"`
+}
+
+type WchanDetails struct {
+	TotalThreads      int                             `json:"total_threads"`
+	AffectedProcesses map[string]*WchanProcessDetails `json:"affected_processes"`
+}
+
+type ThreadDetail struct {
+	TID   int    `json:"tid"`
+	Comm  string `json:"comm"`
+	Wchan string `json:"wchan"`
+	State string `json:"state"`
+}
+
 type ThreadWchanResult struct {
-	SystemSummary SystemSummary  `json:"system_summary"`
-	BlockedWchan  map[string]int `json:"blocked_wchan"`
-	ThreadStates  map[string]int `json:"thread_states"`
+	SystemSummary SystemSummary            `json:"system_summary"`
+	ThreadStates  map[string]int           `json:"thread_states,omitempty"`
+	BlockedWchan  map[string]*WchanDetails `json:"blocked_wchan,omitempty"`
+	Threads       []ThreadDetail           `json:"threads,omitempty"`
 }
 
 type threadTask struct {
@@ -32,6 +51,8 @@ type threadTask struct {
 type threadResult struct {
 	wchan     string
 	state     string
+	comm      string
+	tid       int
 	isKthread bool
 }
 
@@ -102,7 +123,17 @@ func GetThreadWchan(ctx context.Context, targetPid *int) (*ThreadWchanResult, er
 					continue // Task died or inaccessible
 				}
 
-				resultsCh <- threadResult{wchan: wchan, state: state, isKthread: task.isKthread}
+				commPath := fmt.Sprintf("/proc/%d/task/%d/comm", task.pid, task.tid)
+				commData, bPtr3, err := readFileBuffered(commPath)
+				var comm string
+				if err == nil {
+					comm = strings.TrimSpace(string(commData))
+				}
+				if bPtr3 != nil {
+					putBuf(bPtr3)
+				}
+
+				resultsCh <- threadResult{wchan: wchan, state: state, comm: comm, tid: task.tid, isKthread: task.isKthread}
 			}
 		}()
 	}
@@ -131,8 +162,14 @@ func GetThreadWchan(ctx context.Context, targetPid *int) (*ThreadWchanResult, er
 
 	result := &ThreadWchanResult{
 		SystemSummary: SystemSummary{},
-		BlockedWchan:  make(map[string]int),
 		ThreadStates:  make(map[string]int),
+	}
+
+	isMode1 := targetPid == nil
+	if isMode1 {
+		result.BlockedWchan = make(map[string]*WchanDetails)
+	} else {
+		result.Threads = make([]ThreadDetail, 0)
 	}
 
 	for res := range resultsCh {
@@ -146,16 +183,49 @@ func GetThreadWchan(ctx context.Context, targetPid *int) (*ThreadWchanResult, er
 			}
 		}
 
-		if res.wchan == "" || res.wchan == "0" {
-			// Degradation or running thread
-			result.ThreadStates[res.state]++
+		if isMode1 {
+			// Mode 1: Group by wchan, comm, truncate example pids to 15
+			if res.wchan == "" || res.wchan == "0" {
+				result.ThreadStates[res.state]++
+			} else {
+				result.SystemSummary.BlockedThreads++
+				result.ThreadStates[res.state]++ // Also track state for baseline perspective
+
+				wDetails, ok := result.BlockedWchan[res.wchan]
+				if !ok {
+					wDetails = &WchanDetails{
+						AffectedProcesses: make(map[string]*WchanProcessDetails),
+					}
+					result.BlockedWchan[res.wchan] = wDetails
+				}
+				wDetails.TotalThreads++
+
+				procDetails, ok := wDetails.AffectedProcesses[res.comm]
+				if !ok {
+					procDetails = &WchanProcessDetails{
+						ExamplePids: make([]int, 0, 15),
+					}
+					wDetails.AffectedProcesses[res.comm] = procDetails
+				}
+
+				procDetails.Count++
+				if len(procDetails.ExamplePids) < 15 {
+					procDetails.ExamplePids = append(procDetails.ExamplePids, res.tid)
+				} else {
+					procDetails.OmittedPids++
+				}
+			}
 		} else {
-			// Blocked on kernel function
-			result.BlockedWchan[res.wchan]++
-			result.SystemSummary.BlockedThreads++
-			// Track the D state (or any state) for accuracy if needed,
-			// but we also include it in ThreadStates per requirement
-			result.ThreadStates[res.state]++
+			// Mode 2: Flat threads array, no aggregation
+			if res.wchan != "" && res.wchan != "0" {
+				result.SystemSummary.BlockedThreads++
+			}
+			result.Threads = append(result.Threads, ThreadDetail{
+				TID:   res.tid,
+				Comm:  res.comm,
+				Wchan: res.wchan,
+				State: res.state,
+			})
 		}
 	}
 
