@@ -77,6 +77,15 @@ func BenchmarkGetTool(b *testing.B) {
 	}
 }
 
+func BenchmarkGetAnyTool(b *testing.B) {
+	tools := []Tool{benchTool{name: "tool1", supported: true}}
+	pr := NewPluginRegistryFrom("bench-node", tools)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = pr.GetAnyTool("tool1")
+	}
+}
+
 func BenchmarkNodeID(b *testing.B) {
 	pr := NewPluginRegistryFrom("bench-node", nil)
 	b.ResetTimer()
