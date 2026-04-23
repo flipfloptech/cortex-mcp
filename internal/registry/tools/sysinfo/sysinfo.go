@@ -31,7 +31,7 @@ type SystemInfoTool struct{}
 // Name returns the unique tool identifier.
 func (t *SystemInfoTool) Name() string { return "get_system_info" }
 
-// Description returns a short summary for list_tools output.
+// Description returns a short summary for get_tool_list output.
 func (t *SystemInfoTool) Description() string {
 	return "Get detailed system information for this node"
 }

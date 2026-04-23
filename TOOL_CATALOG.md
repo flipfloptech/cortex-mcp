@@ -8,19 +8,19 @@ The Cortex MCP gateway exposes tools to LLMs through a **meta-tool pattern**. In
 
 | Meta-Tool | Purpose | MCP Exposed |
 |---|---|---|
-| `list_tools` | Discover available tools across the mesh | ✅ Direct |
-| `tool_help` | Get JSON schema for a specific tool | ✅ Direct |
+| `get_tool_list` | Discover available tools across the mesh | ✅ Direct |
+| `get_tool_help` | Get JSON schema for a specific tool | ✅ Direct |
 | `call_tool` | Invoke any tool (unicast, fan-out, auto-route) | ✅ Direct |
 | `mesh_overview` | Aggregate fleet topology, roles, and Mermaid graph | ✅ Direct |
 
-All other tools are **indirectly accessible** through `call_tool`. The LLM uses `list_tools` to discover them and `call_tool` to invoke them.
+All other tools are **indirectly accessible** through `call_tool`. The LLM uses `get_tool_list` to discover them and `call_tool` to invoke them.
 
 ### Tool Visibility
 
 Tools have a `Hidden` flag in their `ToolDefinition`. Hidden tools:
-- **Do NOT appear** in `list_tools` output (invisible to the LLM's tool browsing)
+- **Do NOT appear** in `get_tool_list` output (invisible to the LLM's tool browsing)
 - **Are still callable** via `call_tool` if the LLM (or gateway) knows their name
-- **Are still documented** via `tool_help`
+- **Are still documented** via `get_tool_help`
 
 This is used for lifecycle management tools — they need to be callable by the gateway and test harness, but should not clutter the LLM's diagnostic tool namespace.
 
@@ -46,7 +46,7 @@ A single physical node can represent any combination of these roles (e.g., an SF
 
 ## Visible Tools (LLM-Discoverable)
 
-These tools appear in `list_tools` output and are the primary interface for LLM-driven diagnostics.
+These tools appear in `get_tool_list` output and are the primary interface for LLM-driven diagnostics.
 
 ### Plugin Tools (registry.Tool)
 
@@ -163,7 +163,7 @@ Returns a point-in-time snapshot of the mesh topology **as seen by the node it r
 
 ## Hidden Tools (Gateway/Harness Only)
 
-These tools have `Hidden: true` — they do **not** appear in `list_tools` and are invisible to the LLM during tool browsing. They remain callable via `call_tool` by the gateway, test harness, and any component that knows their name.
+These tools have `Hidden: true` — they do **not** appear in `get_tool_list` and are invisible to the LLM during tool browsing. They remain callable via `call_tool` by the gateway, test harness, and any component that knows their name.
 
 ### Lifecycle Management Tools
 
@@ -224,12 +224,12 @@ Deploys the mesh binary to another host via SSH. Any node in the fabric can act 
 
 These tools operate at the MCP gateway, not on individual nodes. They are **directly MCP-exposed** — the LLM calls them without going through `call_tool`.
 
-### `list_tools`
+### `get_tool_list`
 *Category: `meta` · MCP Access: Direct*
 
 Discovers all available **visible** tools across the mesh. Hidden tools are excluded. Returns name, description, and category for each tool.
 
-### `tool_help`
+### `get_tool_help`
 *Category: `meta` · MCP Access: Direct*
 
 Returns the full JSON schema, parameters, and long description for a specific tool. Works for both visible and hidden tools.

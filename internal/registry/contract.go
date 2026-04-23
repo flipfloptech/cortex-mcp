@@ -21,10 +21,10 @@ type Tool interface {
 	// Name returns the unique tool identifier (e.g., "lustre_mds_health").
 	Name() string
 
-	// Description returns a short, one-line summary for list_tools output.
+	// Description returns a short, one-line summary for get_tool_list output.
 	Description() string
 
-	// Help returns the full tool help text. This is rendered by tool_help
+	// Help returns the full tool help text. This is rendered by get_tool_help
 	// and should include:
 	//   - What the tool does and why
 	//   - What kind of filtering/analysis it performs (deterministic vs heuristic)
@@ -39,7 +39,7 @@ type Tool interface {
 	Parameters() []ToolParam
 
 	// Hidden indicates whether this tool should be hidden from general
-	// LLM discovery (list_tools) while remaining explicitly callable.
+	// LLM discovery (get_tool_list) while remaining explicitly callable.
 	Hidden() bool
 
 	// IsSupported inspects the local environment and returns true if this

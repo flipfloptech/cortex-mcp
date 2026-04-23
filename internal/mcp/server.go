@@ -53,15 +53,15 @@ func NewServer(dispatcher Dispatcher, topology TopologyProvider, plugins *regist
 		srv.meshOverview = NewMeshOverviewHandler(dispatcher, topology)
 	}
 
-	// list_tools
+	// get_tool_list
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "list_tools",
+		Name:        "get_tool_list",
 		Description: "Discover available tools across the entire Cortex Mesh. Returns a list of tool names, categories, and descriptions.",
 	}, srv.handleListTools)
 
-	// tool_help
+	// get_tool_help
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "tool_help",
+		Name:        "get_tool_help",
 		Description: "Get the detailed JSON schema and description for a specific tool in the mesh.",
 	}, srv.handleToolHelp)
 
@@ -97,7 +97,7 @@ type EmptyInput struct{}
 
 func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, input EmptyInput) (*mcp.CallToolResult, any, error) {
 	if s.topology == nil || s.plugins == nil {
-		return s.dispatchToMesh(ctx, "list_tools", nil)
+		return s.dispatchToMesh(ctx, "get_tool_list", nil)
 	}
 
 	snap := s.topology.MeshTopology()
@@ -139,7 +139,7 @@ type ToolHelpInput struct {
 func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, input ToolHelpInput) (*mcp.CallToolResult, any, error) {
 	if s.plugins == nil {
 		args, _ := json.Marshal(input)
-		return s.dispatchToMesh(ctx, "tool_help", args)
+		return s.dispatchToMesh(ctx, "get_tool_help", args)
 	}
 
 	tool, ok := s.plugins.GetAnyTool(input.ToolName)
@@ -262,8 +262,8 @@ func (s *Server) handleSystemIntroduction(ctx context.Context, req *mcp.GetPromp
 	desc := `You are connected to the Cortex Mesh via the MCP Gateway.
 The Cortex Mesh is a decentralized fleet of nodes. You have four tools available:
 
-1. 'list_tools' -> Returns the list of available tools across the entire mesh. Call this FIRST.
-2. 'tool_help' -> Returns the exact JSON schema required to call a specific tool.
+1. 'get_tool_list' -> Returns the list of available tools across the entire mesh. Call this FIRST.
+2. 'get_tool_help' -> Returns the exact JSON schema required to call a specific tool.
 3. 'call_tool' -> Invokes a tool on a specific node, a group, or all nodes.
 4. 'mesh_overview' -> Returns a complete cluster topology with every node's role (SFA/MGS/MDS/OSS/Client), connectivity graph, and a Mermaid diagram. Use this to understand the fleet before diving into specifics.
 
@@ -272,7 +272,7 @@ When using 'call_tool', you can specify 'node_name'.
 - Use '*' to fan-out and execute the tool on ALL nodes simultaneously.
 - Use '@group' (e.g. '@storage') to execute on a specific sub-group of nodes.
 
-Start by running 'mesh_overview' for a complete picture, then 'list_tools' to see available capabilities.`
+Start by running 'mesh_overview' for a complete picture, then 'get_tool_list' to see available capabilities.`
 
 	return &mcp.GetPromptResult{
 		Description: "Onboarding instruction for Cortex Mesh",

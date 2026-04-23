@@ -52,7 +52,7 @@ func (t *ProcessTreeTool) Category() string {
 	return "compute"
 }
 
-// Hidden indicates whether this tool should be hidden from list_tools.
+// Hidden indicates whether this tool should be hidden from get_tool_list.
 func (t *ProcessTreeTool) Hidden() bool {
 	return false
 }

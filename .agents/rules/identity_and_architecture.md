@@ -50,7 +50,7 @@ description: Core identity, philosophy, and architectural mental model for the c
 ### The Meta-Tools Pattern
 
 - `cortex-mcp` exposes exactly 3 meta-tools to the LLM over MCP:
-  1. `list_tools`: Uses Sonar to find what's available in the mesh.
-  2. `tool_help`: Fetches schemas for specific tools.
+  1. `get_tool_list`: Uses Sonar to find what's available in the mesh.
+  2. `get_tool_help`: Fetches schemas for specific tools.
   3. `call_tool`: Invokes a tool, optionally fanning out or auto-routing.
 - This prevents overwhelming the LLM context window with hundreds of granular distributed tools.

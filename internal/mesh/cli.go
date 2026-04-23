@@ -18,7 +18,7 @@
 //  10. Start gossip ticker for impedance-cost-vector exchange
 //  11. Sonar discovery — broadcast to find tools across the mesh
 //  12. Remote invocation via NeuronBridge (GrpcDialer + DialInvoke)
-//  13. Gateway meta-tool dispatch (list_tools, tool_help, call_tool)
+//  13. Gateway meta-tool dispatch (get_tool_list, get_tool_help, call_tool)
 //  14. Fan-out invocation across all deployed nodes
 //  15. Clean teardown — close node, deployed nodes exit
 //
