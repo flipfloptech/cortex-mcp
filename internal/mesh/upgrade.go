@@ -40,10 +40,10 @@ func needsUpgrade(skipDeploy bool) bool {
 }
 
 // upgradeRestartCommand returns the command to restart the service
-// after a binary upgrade. Execs the binary with the install subcommand
+// after a binary upgrade. Execs the binary with the local-op install subcommand
 // which handles daemon-reload + enable + restart.
 func upgradeRestartCommand(remotePath string) string {
-	return fmt.Sprintf("%s install", remotePath)
+	return fmt.Sprintf("sudo %s local-op install", remotePath)
 }
 
 // upgradeRemoteNode pushes a new binary to an existing node via SSH/SFTP
@@ -89,7 +89,7 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 	}
 
 	// Phase 2: Atomically replace the existing binary.
-	mvCmd := fmt.Sprintf("mv -f %q %q", tmpPath, remotePath)
+	mvCmd := fmt.Sprintf("sudo mv -f %q %q", tmpPath, remotePath)
 	if err := execSSHCommand(client, mvCmd); err != nil {
 		return fmt.Errorf("upgrade: atomic replace on %q: %w", targetHost, err)
 	}
