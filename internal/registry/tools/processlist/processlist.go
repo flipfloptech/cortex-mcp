@@ -124,8 +124,10 @@ func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 	}
 
 	var argsMap map[string]interface{}
-	if err := json.Unmarshal(args, &argsMap); err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, "failed to parse arguments: "+err.Error()), nil
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &argsMap); err != nil {
+			return registry.NewErrorResult(t.Name(), hostname, "failed to parse arguments: "+err.Error()), nil
+		}
 	}
 
 	opts := process.FilterOptions{

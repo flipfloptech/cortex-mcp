@@ -85,12 +85,14 @@ func (t *ProcessTreeTool) Execute(ctx context.Context, args json.RawMessage) (*r
 		hostname = "unknown"
 	}
 
-	if err := json.Unmarshal(args, &params); err != nil {
-		return registry.NewErrorResult(
-			t.Name(),
-			hostname,
-			fmt.Sprintf("Failed to parse arguments: %v", err),
-		), nil
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &params); err != nil {
+			return registry.NewErrorResult(
+				t.Name(),
+				hostname,
+				fmt.Sprintf("Failed to parse arguments: %v", err),
+			), nil
+		}
 	}
 
 	if params.TargetPID <= 0 {
