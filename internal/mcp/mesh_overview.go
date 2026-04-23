@@ -181,7 +181,7 @@ func (h *MeshOverviewHandler) fanOutTool(ctx context.Context, toolName string) m
 
 	result, err := h.dispatcher.Dispatch(ctx, "call_tool", args)
 	if err != nil {
-		zap.S().Warnw("mesh_overview fan-out failed", "tool", toolName, "error", err)
+		zap.S().Warnw("get_mesh_overview fan-out failed", "tool", toolName, "error", err)
 		return nil
 	}
 
@@ -195,7 +195,7 @@ func (h *MeshOverviewHandler) fanOutTool(ctx context.Context, toolName string) m
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(result.Content, &resp); err != nil {
-		zap.S().Warnw("mesh_overview: failed to parse fan-out response", "tool", toolName, "error", err)
+		zap.S().Warnw("get_mesh_overview: failed to parse fan-out response", "tool", toolName, "error", err)
 		return nil
 	}
 

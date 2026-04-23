@@ -11,7 +11,7 @@ The Cortex MCP gateway exposes tools to LLMs through a **meta-tool pattern**. In
 | `get_tool_list` | Discover available tools across the mesh | ✅ Direct |
 | `get_tool_help` | Get JSON schema for a specific tool | ✅ Direct |
 | `call_tool` | Invoke any tool (unicast, fan-out, auto-route) | ✅ Direct |
-| `mesh_overview` | Aggregate fleet topology, roles, and Mermaid graph | ✅ Direct |
+| `get_mesh_overview` | Aggregate fleet topology, roles, and Mermaid graph | ✅ Direct |
 
 All other tools are **indirectly accessible** through `call_tool`. The LLM uses `get_tool_list` to discover them and `call_tool` to invoke them.
 
@@ -301,7 +301,7 @@ Invokes any tool in the mesh (visible or hidden). Supports three dispatch modes:
 - **Unicast** (exact `node_name`): Sends to a specific node.
 - **Fan-out** (pattern `node_name`): Executes on all matching nodes. Supports `*`, nodeset ranges (`node[1-10]`), exclusions (`oss[01-72]!oss[10-15]`), and groups (`@storage`).
 
-### `mesh_overview`
+### `get_mesh_overview`
 *Category: `meta` · MCP Access: Direct*
 
 Provides a complete cluster topology in a single call. Fans out `system_info` and `mesh_topology` to every node in the mesh, then aggregates the results at the gateway.

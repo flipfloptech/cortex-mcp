@@ -71,7 +71,7 @@ func NewServer(dispatcher Dispatcher, topology TopologyProvider, plugins *regist
 		Description: "Execute a tool on a remote node in the Cortex Mesh.",
 	}, srv.handleCallTool)
 
-	// mesh_overview
+	// get_mesh_overview
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_mesh_overview",
 		Description: "Get a complete cluster topology: every node, its role (SFA/MGS/MDS/OSS/Client), connectivity, tools, and a Mermaid topology diagram. Fans out to all nodes and aggregates.",
@@ -280,20 +280,20 @@ func (s *Server) handleMeshOverview(ctx context.Context, req *mcp.CallToolReques
 			IsError: true,
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: "mesh_overview not available: no mesh topology provider configured",
+					Text: "get_mesh_overview not available: no mesh topology provider configured",
 				},
 			},
 		}, nil, nil
 	}
 
-	zap.S().Infow("mesh_overview requested")
+	zap.S().Infow("get_mesh_overview requested")
 	result, err := s.meshOverview.Execute(ctx)
 	if err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: fmt.Sprintf("mesh_overview error: %v", err),
+					Text: fmt.Sprintf("get_mesh_overview error: %v", err),
 				},
 			},
 		}, nil, nil
@@ -341,14 +341,14 @@ The Cortex Mesh is a decentralized fleet of nodes. You have four tools available
 1. 'get_tool_list' -> Returns the list of available tools across the entire mesh. Call this FIRST.
 2. 'get_tool_help' -> Returns the exact JSON schema required to call a specific tool.
 3. 'call_tool' -> Invokes a tool on a specific node, a group, or all nodes.
-4. 'mesh_overview' -> Returns a complete cluster topology with every node's role (SFA/MGS/MDS/OSS/Client), connectivity graph, and a Mermaid diagram. Use this to understand the fleet before diving into specifics.
+4. 'get_mesh_overview' -> Returns a complete cluster topology with every node's role (SFA/MGS/MDS/OSS/Client), connectivity graph, and a Mermaid diagram. Use this to understand the fleet before diving into specifics.
 
 When using 'call_tool', you can specify 'node_name'.
 - Leave 'node_name' empty to let the mesh auto-route to the best node.
 - Use '*' to fan-out and execute the tool on ALL nodes simultaneously.
 - Use '@group' (e.g. '@storage') to execute on a specific sub-group of nodes.
 
-Start by running 'mesh_overview' for a complete picture, then 'get_tool_list' to see available capabilities.`
+Start by running 'get_mesh_overview' for a complete picture, then 'get_tool_list' to see available capabilities.`
 
 	return &mcp.GetPromptResult{
 		Description: "Onboarding instruction for Cortex Mesh",
