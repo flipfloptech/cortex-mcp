@@ -124,14 +124,6 @@ func BenchmarkResolveTarget(b *testing.B) {
 	}
 }
 
-func BenchmarkProbeExistingNode(b *testing.B) {
-	ctx := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = probeExistingNode(ctx, "127.0.0.1:1") // fast-fail on closed port
-	}
-}
-
 // ── Identity Persistence ─────────────────────────────────────────────
 
 func BenchmarkIdentityPath(b *testing.B) {

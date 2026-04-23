@@ -35,21 +35,6 @@ const (
 	upgradeWaitAfterRestart = 3 * time.Second
 )
 
-// probeExistingNode attempts a quick TCP connection to addr.
-// Returns the raw TCP connection if successful, nil if unreachable.
-// The caller is responsible for closing the returned connection.
-func probeExistingNode(ctx context.Context, addr string) net.Conn {
-	dialCtx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-
-	var d net.Dialer
-	conn, err := d.DialContext(dialCtx, "tcp", addr)
-	if err != nil {
-		return nil
-	}
-	return conn
-}
-
 // needsUpgrade returns true if we should push a new binary to the node.
 // When skipDeploy is true, the binary is already in place (developer
 // pre-copied it) so no upload is needed.
