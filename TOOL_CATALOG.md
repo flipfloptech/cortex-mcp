@@ -168,6 +168,23 @@ Analyzes memory fragmentation, which is critical when a system has free RAM but 
 **Degradation Profile:**
 - `IsSupported()` returns `false` if `/proc/buddyinfo` is missing (non-Linux OS).
 
+#### `get_memory_info`
+*Category: `memory` · Runs on: Every Linux node*
+
+A highly structured, math-free alternative to the `free` command, giving the LLM an instant read on starvation and swap thrashing by standardizing all memory metrics into Megabytes (MB) as raw integers.
+
+**Data Sources:**
+- Reads `/proc/meminfo`.
+
+**Mathematical Models:**
+- **True Used:** Calculates `MemTotal - MemAvailable` (or falls back to legacy calculation on older kernels) to give the exact amount of memory actively consumed by applications, preventing hallucination that Linux page caches are "wasted" memory.
+- **Swap Ratio:** Calculates `(SwapTotal - SwapFree) / SwapTotal * 100` as a float rounded to two decimal places to detect early paging.
+- **Swap Active:** Boolean flag instantly drawing attention to potential thrashing.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux or if `/proc/meminfo` is missing.
+- Older kernels (pre-3.14) do not expose `MemAvailable`. The tool degrades gracefully by calculating legacy math (Free + Buffers + Cached) and flags the payload with `"estimation_mode": "legacy"`. Otherwise, `"estimation_mode": "standard"`.
+
 ---
 
 ### Mesh Infrastructure Tools
