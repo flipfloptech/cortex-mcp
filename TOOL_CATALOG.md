@@ -152,6 +152,22 @@ Diagnoses system hangs by showing exactly which kernel function threads are bloc
 - `IsSupported()` returns `false` if `/proc/1/wchan` is inaccessible.
 - If the kernel restricts wchan visibility (value is `"0"` or unreadable), it safely degrades by grouping that thread's state from `/proc/[pid]/status` into the `thread_states` bucket, ensuring `blocked_wchan` only contains true signal.
 
+#### `get_buddy_info`
+*Category: `memory` · Runs on: Every Linux node*
+
+Analyzes memory fragmentation, which is critical when a system has free RAM but still fails to allocate large contiguous pages.
+
+**Data Sources:**
+- Reads `/proc/buddyinfo` for contiguous memory block availability across NUMA nodes and zones.
+
+**Mathematical Models:**
+- Converts raw block counts into bytes using a standard 4KB base page size.
+- Calculates a "fragmentation score" (0-100 index) using the formula: `(Free Bytes in Orders 0-3 / Total Free Bytes) * 100`. A score of 100 means highly fragmented (memory is shattered into unusable microscopic fragments).
+- Aggregates the results into a flat array per NUMA node and zone, alongside a global `system_summary`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/buddyinfo` is missing (non-Linux OS).
+
 ---
 
 ### Mesh Infrastructure Tools
