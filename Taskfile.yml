@@ -98,12 +98,13 @@ tasks:
       - go mod tidy
 
   check:
-    desc: Run all quality gates (fmt, vet, lint, test)
+    desc: Run all quality gates (fmt, vet, lint, test, benchcov)
     cmds:
       - task: fmt-check
       - task: vet
       - task: lint
       - task: test
+      - task: benchcov
 
   pre-commit:
     desc: Alias for check — run before committing
