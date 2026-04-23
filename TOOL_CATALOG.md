@@ -75,6 +75,25 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 - If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. If no Lustre/SFA sysfs paths exist, `roles` returns `["generic"]` — the tool never errors.
 - New telemetry data points default to empty strings, `0`, or `false` gracefully if their respective data sources are missing or unreadable.
 
+#### `get_cpu_topology`
+*Category: `system` · Runs on: Every Linux node*
+
+Provides a deterministic, pure-sysfs map of the hardware compute layout, enabling identification of thread-pinning violations, cross-socket latency bottlenecks, and SMT contention.
+
+**Data Sources:**
+- **NUMA Nodes**: Maps NUMA to logical threads via `/sys/devices/system/node/node*/cpulist`.
+- **HW Topology**: Reads socket IDs, core IDs, and SMT siblings from `/sys/devices/system/cpu/cpu*/topology/`.
+- **L3 Cache Locality**: Extracts cache domains from `/sys/devices/system/cpu/cpu*/cache/index3/shared_cpu_list`.
+
+**Mathematical Models / Output Structuring:**
+- **String Expansion**: Parses kernel list formats (e.g. `0-7,64-71`) into deterministic, sorted integer arrays.
+- **Hierarchical Aggregation**: Groups results strictly by `NUMA Node -> L3 Cache Domain -> Physical Cores`, avoiding flat, repetitious lists of 100+ logical cores.
+
+**Degradation Profile:**
+- **UMA Fallback**: If `/sys/devices/system/node/` is missing or contains only one node, sets `is_numa: false` and buckets all cores safely under `numa_node_0`.
+- **Virtualization Blindness**: In heavily abstracted VMs where L3 caches are unreadable, the tool avoids breaking the JSON shape by placing all cores into `l3_domain_0` and setting the `l3_topology_abstracted: true` safety flag on the system summary.
+- **Context Timeouts**: Incorporates aggressive `5s` context timeouts around sysfs reads to prevent agent hangs on unresponsive virtual filesystems.
+
 #### `get_uptime`
 *Category: `system` · Runs on: Every Linux node*
 
