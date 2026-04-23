@@ -109,7 +109,9 @@ func (t *UninstallTool) Execute(ctx context.Context, _ json.RawMessage) (*regist
 	if strings.HasPrefix(binaryPath, defaultInstallPath) || strings.HasPrefix(binaryPath, "/opt/") {
 		ops = SelfUninstallOps()
 	} else {
-		ops = ephemeralCleanupOps(binaryPath)
+		ops = []LifecycleOp{
+			{Action: "kill_abstract_socket", Path: "@cortex-mcp-lock"},
+		}
 	}
 
 	resp := map[string]interface{}{

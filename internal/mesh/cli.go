@@ -69,6 +69,7 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
 	"github.com/cortex-mesh/cortex-mesh/membrane"
+	"github.com/cortex-mesh/cortex-mesh/nucleus"
 	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
@@ -107,20 +108,6 @@ func Execute() {
 
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to mesh.toml config file")
 	rootCmd.PersistentFlags().BoolVar(&skipDeploy, "skip-deploy", false, "skip SFTP upload when deploying nodes")
-
-	bridgeCmd := &cobra.Command{
-		Use:   "bridge <addr>",
-		Short: "Raw TCP bridge for firewall traversal",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, _, _, _ := initEnv(configPath)
-			defer cancel()
-			if err := runBridge(ctx, args[0], os.Stdin, os.Stdout); err != nil {
-				fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
-				os.Exit(1)
-			}
-		},
-	}
 
 	serveCmd := &cobra.Command{
 		Use:   "serve",
@@ -276,7 +263,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd)
+	rootCmd.AddCommand(serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -457,14 +444,12 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		}
 	}
 
-	reconnectPolicy := api.ReconnectPolicy{}
-	if isDaemon {
-		reconnectPolicy = api.ReconnectPolicy{
-			Enabled:      true,
-			InitialDelay: 1 * time.Second,
-			MaxDelay:     30 * time.Second,
-			Timeout:      5 * time.Minute,
-		}
+	reconnectPolicy := api.ReconnectPolicy{
+		Enabled:      true,
+		InitialDelay: 1 * time.Second,
+		MaxDelay:     30 * time.Second,
+		Timeout:      0,
+		MaxAttempts:  0,
 	}
 
 	privKey, ok := membraneCfg.Certificate.PrivateKey.(ed25519.PrivateKey)
@@ -479,10 +464,14 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		os.Exit(1)
 	}
 
+	var nodePtr *api.Node
+	dialer := createResilientDialer(cfg, v, &nodePtr)
+
 	// Create the mesh node with membrane config.
 	node, err := api.NewNode(ctx, api.NodeConfig{
 		NodeID:     nodeID,
 		Vault:      v, // Empty vault enables fleet nodes to request credentials for node_deploy
+		Dialer:     dialer,
 		KnownHosts: cfg.KnownHosts(),
 		Reconnect:  reconnectPolicy,
 		Events: api.NodeEvents{
@@ -491,9 +480,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			OnIsolated:    func() { zap.S().Warnw("fleet: isolated — zero peers") },
 			OnReconnected: func(peerID string) { zap.S().Infow("fleet: reconnected!", "peer", peerID) },
 			OnOrphaned: func() {
-				zap.S().Errorw("fleet: orphaned — reconnect exhausted, shutting down")
-				_ = transport.SelfCleanup()
-				os.Exit(0)
+				zap.S().Warnw("fleet: orphaned — reconnect exhausted")
 			},
 		},
 	})
@@ -501,7 +488,13 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		zap.S().Errorw("create fleet node", "error", err)
 		os.Exit(1)
 	}
+	nodePtr = node
 	node.SetMembraneConfig(membraneCfg)
+
+	// Register configured proxies as capabilities.
+	for _, p := range cfg.Proxies {
+		node.RegisterCapability(fmt.Sprintf("proxy:%s=%s", p.Pattern, p.URL))
+	}
 
 	// Register tools with capability advertising.
 	meshReg := tools.NewRegistry(node)
@@ -555,11 +548,27 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		zap.S().Fatalw("generate node cert failed", "error", err)
 	}
 
+	_, ok := gatewayCert.PrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		zap.S().Fatalw("gateway private key is not ed25519")
+	}
+
+	// Initialize the credential vault.
+	v, err := initVault(cfg)
+	if err != nil {
+		zap.S().Fatalw("init vault failed", "error", err)
+	}
+
 	zap.S().Infow("mesh PKI initialized", "node_id", nodeID, "new_ca", isNew)
+
+	var nodePtr *api.Node
+	dialer := createResilientDialer(cfg, v, &nodePtr)
 
 	// --- Phase 2: Create mesh node ---
 	node, err := api.NewNode(ctx, api.NodeConfig{
 		NodeID:         nodeID,
+		Vault:          v,
+		Dialer:         dialer,
 		KnownHosts:     cfg.KnownHosts(),
 		GossipInterval: 3 * time.Second, // configurable: 3s for HPC, 10s for WAN
 		Events: api.NodeEvents{
@@ -576,28 +585,32 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 				zap.S().Infow("mesh reconnected", "peer_id", peerID)
 			},
 			OnOrphaned: func() {
-				zap.S().Errorw("mesh orphaned", "action", "cleanup")
-				if err := transport.SelfCleanup(); err != nil {
-					zap.S().Debugw("self-cleanup", "error", err)
-				}
+				zap.S().Warnw("mesh orphaned", "action", "keep-alive")
 			},
 		},
 		Reconnect: api.ReconnectPolicy{
 			Enabled:      true,
 			InitialDelay: 1 * time.Second,
 			MaxDelay:     30 * time.Second,
-			Timeout:      5 * time.Minute,
+			Timeout:      0,
+			MaxAttempts:  0,
 		},
 	})
 	if err != nil {
 		zap.S().Fatalw("create mesh node failed", "error", err)
 	}
+	nodePtr = node
 	defer func() {
 		if err := node.Close(); err != nil {
 			zap.S().Debugw("close node", "error", err)
 		}
 	}()
 	node.SetMembraneConfig(pki.membraneConfig(gatewayCert))
+
+	// Register configured proxies as capabilities.
+	for _, p := range cfg.Proxies {
+		node.RegisterCapability(fmt.Sprintf("proxy:%s=%s", p.Pattern, p.URL))
+	}
 
 	// Register tools with capability advertising (unless PureClient mode).
 	meshReg := tools.NewRegistry(node)
@@ -607,12 +620,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	}
 
 	zap.S().Infow("node created", "node_id", nodeID, "caps", len(meshReg.ListLocal()), "reconnect_policy", "1s->30s")
-
-	// Initialize the credential vault.
-	v, err := initVault(cfg)
-	if err != nil {
-		zap.S().Fatalw("init vault failed", "error", err)
-	}
 
 	bridge := tools.NewNeuronBridge(node)
 
@@ -713,13 +720,6 @@ type deployedNode struct {
 	conn   net.Conn
 }
 
-// printHeader displays startup information.
-func printHeader(nodeID string) {
-	fmt.Fprintf(os.Stderr, "\n=== Cortex MCP Application ===\n")
-	fmt.Fprintf(os.Stderr, "Gateway node: %s\n", nodeID)
-	fmt.Fprintf(os.Stderr, "\n")
-}
-
 // initVault creates and populates the credential vault.
 func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 	_, privKey, err := ed25519.GenerateKey(rand.Reader)
@@ -799,93 +799,44 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			continue
 		}
 
-		// --- Connectivity decision tree ---
-		// 1. TCP reachable → direct connect (upgrade if needed)
-		// 2. TCP firewalled, service active → SSH bridge
-		// 3. Neither → fresh deploy
-		probeConn := probeExistingNode(ctx, meshAddr)
+		dialer := createResilientDialer(cfg, v, &node)
+		conn, err := dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
 
-		if probeConn != nil {
-			// --- Path 1: TCP reachable, direct connect ---
-			_ = probeConn.Close()
-
+		if err == nil {
+			// Found an existing active path! (TCP, Proxy, or SSH Tunnel)
 			if needsUpgrade(skipDeploy) {
-				zap.S().Infow("upgrading remote node via direct TCP", "node_id", remoteNodeID, "addr", sshAddr)
+				_ = conn.Close()
+				zap.S().Infow("upgrading remote node", "node_id", remoteNodeID, "addr", sshAddr)
 				remotePath := lifecycle.InstallRemotePath("")
 				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
 				time.Sleep(upgradeWaitAfterRestart)
-			} else {
-				zap.S().Infow("reconnecting to remote node", "node_id", remoteNodeID, "addr", meshAddr)
-			}
 
-			var d net.Dialer
-			conn, err := d.DialContext(ctx, "tcp", meshAddr)
-			if err != nil {
-				zap.S().Errorw("mesh connect TCP failed", "node_id", remoteNodeID, "error", err)
-				continue
-			}
-
-			if err := node.AddPeer(ctx, conn, false); err != nil {
-				zap.S().Errorw("mTLS membrane handshake failed via TCP", "node_id", remoteNodeID, "error", err)
-				_ = conn.Close()
-				continue
-			}
-
-			zap.S().Infow("connected to mesh peer via TCP", "node_id", remoteNodeID)
-			deployed = append(deployed, deployedNode{
-				nodeID: remoteNodeID,
-				conn:   conn,
-			})
-			continue
-		}
-
-		// TCP unreachable — check if service is installed but firewalled.
-		if checkServiceActive(ctx, sshAddr, deployCred) {
-			// --- Path 2: Service active, port firewalled → SSH bridge ---
-			if needsUpgrade(skipDeploy) {
-				zap.S().Infow("upgrading remote node via SSH bridge", "node_id", remoteNodeID, "addr", sshAddr)
-				remotePath := lifecycle.InstallRemotePath("")
-				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
-					zap.S().Errorw("upgrade via SSH bridge failed", "node_id", remoteNodeID, "error", err)
+				// Redial after upgrade
+				conn, err = dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
+				if err != nil {
+					zap.S().Errorw("reconnect after upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}
-				time.Sleep(upgradeWaitAfterRestart)
-			} else {
-				zap.S().Infow("bridging to remote node via SSH", "node_id", remoteNodeID, "addr", sshAddr)
 			}
 
-			remotePath := lifecycle.InstallRemotePath("")
-			stream, err := sshExecBridge(ctx, sshAddr, deployCred, remotePath, meshPort)
-			if err != nil {
-				zap.S().Errorw("SSH bridge failed", "node_id", remoteNodeID, "error", err)
-				continue
-			}
-
-			// Wait for bridge readiness (same 4-byte magic as deploy).
-			readyBuf := make([]byte, 4)
-			if _, err := io.ReadFull(stream, readyBuf); err != nil {
-				zap.S().Errorw("bridge readiness failed", "node_id", remoteNodeID, "error", err)
-				_ = stream.Close()
-				continue
-			}
-
-			conn := transport.NewStdioConn(stream, stream)
 			if err := node.AddPeer(ctx, conn, false); err != nil {
-				zap.S().Errorw("mTLS membrane handshake failed over bridge", "node_id", remoteNodeID, "error", err)
+				zap.S().Errorw("mTLS membrane handshake failed", "node_id", remoteNodeID, "error", err)
 				_ = conn.Close()
 				continue
 			}
 
-			zap.S().Infow("connected to mesh peer via SSH bridge", "node_id", remoteNodeID)
+			zap.S().Infow("connected to mesh peer", "node_id", remoteNodeID)
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
 			})
 			continue
 		}
+
+		zap.S().Debugw("all connection paths failed, attempting deployment", "node_id", remoteNodeID, "error", err)
 
 		// --- Path 3: No existing node → fresh deploy ---
 		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", sshAddr)
@@ -941,12 +892,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			}
 			_ = stream.Close()
 
-			// Dial the newly spawned daemon on its TCP port (with retries for boot-up time)
+			// Dial the newly spawned daemon using the resilient dialer (with retries for boot-up time)
 			var conn net.Conn
 			var dialErr error
 			for i := 0; i < 5; i++ {
-				var d net.Dialer
-				conn, dialErr = d.DialContext(ctx, "tcp", meshAddr)
+				conn, dialErr = dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
 				if dialErr == nil {
 					break
 				}
@@ -954,7 +904,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			}
 
 			if dialErr != nil {
-				zap.S().Errorw("mesh connect TCP after install failed", "node_id", remoteNodeID, "error", dialErr)
+				zap.S().Errorw("mesh connect after install failed", "node_id", remoteNodeID, "error", dialErr)
 				continue
 			}
 
@@ -1286,5 +1236,96 @@ func buildNodeDeployHandler(node *api.Node) tools.ToolHandler {
 		data, _ := json.Marshal(resp)
 
 		return &tools.ToolResult{Content: data}, nil
+	}
+}
+
+// createResilientDialer creates a custom Dialer for cortex-mesh that implements
+// the TCP -> Proxy -> SSH Tunnel fallback chain.
+func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api.Node) func(ctx context.Context, target nucleus.DialTarget) (net.Conn, error) {
+	return func(ctx context.Context, target nucleus.DialTarget) (net.Conn, error) {
+		hostStr, _, splitErr := net.SplitHostPort(target.Address)
+		if splitErr != nil {
+			hostStr = target.Address
+		}
+
+		// 1. Direct TCP
+		var d net.Dialer
+		conn, err := d.DialContext(ctx, "tcp", target.Address)
+		if err == nil {
+			zap.S().Debugw("dialer: direct TCP success", "target", target.Hostname, "addr", target.Address)
+			return conn, nil
+		}
+
+		// 2. HTTP CONNECT Proxy (via matched config patterns)
+		for _, p := range cfg.Proxies {
+			matched, _ := filepath.Match(p.Pattern, hostStr)
+			if matched {
+				conn, err := transport.DialProxy(ctx, p.URL, target.Address)
+				if err == nil {
+					zap.S().Debugw("dialer: proxy success", "target", target.Hostname, "proxy", p.URL)
+					return conn, nil
+				}
+				zap.S().Debugw("dialer: proxy failed", "target", target.Hostname, "proxy", p.URL, "error", err)
+			}
+		}
+
+		// 3. Gossiped Proxies (Look up capabilities "proxy:*")
+		if nodePtr != nil && *nodePtr != nil {
+			node := *nodePtr
+			snap := node.CapabilityIndex().Snapshot()
+			for _, caps := range snap {
+				for _, c := range caps {
+					if strings.HasPrefix(c, "proxy:") {
+						parts := strings.SplitN(strings.TrimPrefix(c, "proxy:"), "=", 2)
+						if len(parts) == 2 {
+							pattern, url := parts[0], parts[1]
+							matched, _ := filepath.Match(pattern, hostStr)
+							if matched {
+								conn, err := transport.DialProxy(ctx, url, target.Address)
+								if err == nil {
+									zap.S().Debugw("dialer: gossiped proxy success", "target", target.Hostname, "proxy", url)
+									return conn, nil
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 4. SSH Port Forwarding
+		cred, ok := v.Match(hostStr)
+		if ok {
+			deployCred, err := toDeployCredential(cred)
+			if err == nil {
+				// Use the SSH port from host config if defined, else fallback to global SSH port
+				sshPort := cfg.Node.SSHPort
+				if hCfg, found := cfg.Hosts[target.Hostname]; found && hCfg.SSHPort > 0 {
+					sshPort = hCfg.SSHPort
+				}
+				sshAddr := fmt.Sprintf("%s:%d", hostStr, sshPort)
+
+				sshConf := &ssh.ClientConfig{
+					User:            deployCred.SSHUser,
+					Auth:            []ssh.AuthMethod{},
+					HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+					Timeout:         10 * time.Second,
+				}
+				if deployCred.SSHKeyData != nil {
+					sshConf.Auth = append(sshConf.Auth, ssh.PublicKeys(deployCred.SSHKeyData))
+				} else if deployCred.SSHPass != "" {
+					sshConf.Auth = append(sshConf.Auth, ssh.Password(deployCred.SSHPass))
+				}
+
+				conn, err := transport.DialSSHTunnel(ctx, sshAddr, target.Address, sshConf)
+				if err == nil {
+					zap.S().Debugw("dialer: SSH tunnel success", "target", target.Hostname, "ssh_addr", sshAddr)
+					return conn, nil
+				}
+				zap.S().Debugw("dialer: SSH tunnel failed", "target", target.Hostname, "ssh_addr", sshAddr, "error", err)
+			}
+		}
+
+		return nil, fmt.Errorf("all dialing methods failed for %s", target.Hostname)
 	}
 }

@@ -11,14 +11,33 @@
 package sysinfo
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
+)
+
+var (
+	procSelfCgroupPath    = "/proc/self/cgroup"
+	procSelfMountinfoPath = "/proc/self/mountinfo"
+	dockerEnvPath         = "/.dockerenv"
+	runContainerEnvPath   = "/run/.containerenv"
+	sysVendorPath         = "/sys/class/dmi/id/sys_vendor"
+	productNamePath       = "/sys/class/dmi/id/product_name"
+	hypervisorTypePath    = "/sys/hypervisor/type"
+	infinibandClassPath   = "/sys/class/infiniband"
+	mlx5CoreVersionPath   = "/sys/module/mlx5_core/version"
+	lustreVersionPath     = "/sys/fs/lustre/version"
+	procCmdlinePath       = "/proc/cmdline"
+	procStatPath          = "/proc/stat"
+	procMeminfoPath       = "/proc/meminfo"
 )
 
 func init() {
@@ -98,14 +117,24 @@ func (t *SystemInfoTool) IsSupported() (bool, string) {
 
 // systemInfoData is the structured output for system_info.
 type systemInfoData struct {
-	Hostname string                 `json:"hostname"`
-	OS       string                 `json:"os"`
-	Arch     string                 `json:"arch"`
-	CPUs     int                    `json:"cpus"`
-	Kernel   string                 `json:"kernel"`
-	Distro   string                 `json:"distro,omitempty"`
-	Roles    []string               `json:"roles"`
-	RoleInfo *registry.NodeRoleInfo `json:"role_info"`
+	Hostname              string                 `json:"hostname"`
+	OS                    string                 `json:"os"`
+	Arch                  string                 `json:"arch"`
+	CPUs                  int                    `json:"cpus"`
+	Kernel                string                 `json:"kernel"`
+	Distro                string                 `json:"distro,omitempty"`
+	Roles                 []string               `json:"roles"`
+	RoleInfo              *registry.NodeRoleInfo `json:"role_info"`
+	TotalMemoryMB         int64                  `json:"total_memory_mb"`
+	BootTime              int64                  `json:"boot_time"`
+	KernelCmdline         string                 `json:"kernel_cmdline,omitempty"`
+	IsVirtualized         bool                   `json:"is_virtualized"`
+	IsContainerized       bool                   `json:"is_containerized"`
+	VirtContext           string                 `json:"virt_context,omitempty"`
+	HasMellanoxEthernet   bool                   `json:"has_mellanox_ethernet"`
+	HasMellanoxInfiniband bool                   `json:"has_mellanox_infiniband"`
+	MellanoxVersion       string                 `json:"mellanox_version,omitempty"`
+	LustreVersion         string                 `json:"lustre_version,omitempty"`
 }
 
 // Execute gathers system information and returns a standardized result.
@@ -117,15 +146,32 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 	distro := readDistro()
 	roleInfo := registry.DetectNodeRoles()
 
+	isVirt, isCont, virtType := detectVirtualization()
+	hasEth, hasIB := detectMellanox()
+	mlxVersion := readMellanoxVersion(kernel)
+	lustreVer := readLustreVersion()
+	cmdline := readKernelCmdline()
+	totalMem, btime := readNodeScale()
+
 	data := systemInfoData{
-		Hostname: hostname,
-		OS:       runtime.GOOS,
-		Arch:     runtime.GOARCH,
-		CPUs:     runtime.NumCPU(),
-		Kernel:   kernel,
-		Distro:   distro,
-		Roles:    roleInfo.Roles(),
-		RoleInfo: roleInfo,
+		Hostname:              hostname,
+		OS:                    runtime.GOOS,
+		Arch:                  runtime.GOARCH,
+		CPUs:                  runtime.NumCPU(),
+		Kernel:                kernel,
+		Distro:                distro,
+		Roles:                 roleInfo.Roles(),
+		RoleInfo:              roleInfo,
+		TotalMemoryMB:         totalMem,
+		BootTime:              btime,
+		KernelCmdline:         cmdline,
+		IsVirtualized:         isVirt,
+		IsContainerized:       isCont,
+		VirtContext:           virtType,
+		HasMellanoxEthernet:   hasEth,
+		HasMellanoxInfiniband: hasIB,
+		MellanoxVersion:       mlxVersion,
+		LustreVersion:         lustreVer,
 	}
 
 	result := registry.NewResult(
@@ -160,4 +206,176 @@ func readDistro() string {
 		return id
 	}
 	return ""
+}
+
+// detectVirtualization implements the bulletproof container/VM detection waterfall.
+func detectVirtualization() (isVirt bool, isCont bool, virtType string) {
+	// Layer 1: /proc/self/cgroup
+	if data, err := os.ReadFile(procSelfCgroupPath); err == nil {
+		content := string(data)
+		if strings.Contains(content, "docker") {
+			return true, true, "docker"
+		}
+		if strings.Contains(content, "kubepods") {
+			return true, true, "kubepods"
+		}
+		if strings.Contains(content, "lxc") {
+			return true, true, "lxc"
+		}
+		if strings.Contains(content, "containerd") {
+			return true, true, "containerd"
+		}
+	}
+
+	// Layer 2: /proc/self/mountinfo
+	if data, err := os.ReadFile(procSelfMountinfoPath); err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.Contains(line, " / ") {
+				if strings.Contains(line, "overlay") || strings.Contains(line, "aufs") || strings.Contains(line, "shiftfs") {
+					return true, true, "overlay"
+				}
+			}
+		}
+	}
+
+	// Layer 3: Environment Breadcrumbs
+	if _, err := os.Stat(dockerEnvPath); err == nil {
+		return true, true, "docker"
+	}
+	if _, err := os.Stat(runContainerEnvPath); err == nil {
+		return true, true, "podman"
+	}
+
+	// Virtual Machine Waterfall
+	// Layer 1: DMI Strings
+	if data, err := os.ReadFile(sysVendorPath); err == nil {
+		vendor := strings.TrimSpace(string(data))
+		vendorLower := strings.ToLower(vendor)
+		if strings.Contains(vendorLower, "qemu") || strings.Contains(vendorLower, "vmware") || strings.Contains(vendorLower, "microsoft") || strings.Contains(vendorLower, "xen") {
+			return true, false, vendor
+		}
+	}
+
+	if data, err := os.ReadFile(productNamePath); err == nil {
+		product := strings.TrimSpace(string(data))
+		prodLower := strings.ToLower(product)
+		if strings.Contains(prodLower, "virtualbox") || strings.Contains(prodLower, "kvm") || strings.Contains(prodLower, "amazon ec2") {
+			return true, false, product
+		}
+	}
+
+	// Layer 2: Hypervisor Sysfs
+	if data, err := os.ReadFile(hypervisorTypePath); err == nil {
+		htype := strings.TrimSpace(string(data))
+		if htype != "" {
+			return true, false, htype
+		}
+	}
+
+	return false, false, "bare-metal"
+}
+
+// detectMellanox checks for the presence of Ethernet or Infiniband link layers on mlx5 devices.
+func detectMellanox() (hasEth bool, hasIB bool) {
+	devices, err := os.ReadDir(infinibandClassPath)
+	if err != nil {
+		return false, false
+	}
+	for _, dev := range devices {
+		if !strings.HasPrefix(dev.Name(), "mlx5_") {
+			continue
+		}
+		portsDir := filepath.Join(infinibandClassPath, dev.Name(), "ports")
+		ports, err := os.ReadDir(portsDir)
+		if err != nil {
+			continue
+		}
+		for _, port := range ports {
+			linkLayerPath := filepath.Join(portsDir, port.Name(), "link_layer")
+			data, err := os.ReadFile(linkLayerPath)
+			if err != nil {
+				continue
+			}
+			layer := strings.TrimSpace(string(data))
+			if strings.EqualFold(layer, "Ethernet") {
+				hasEth = true
+			} else if strings.EqualFold(layer, "InfiniBand") {
+				hasIB = true
+			}
+		}
+	}
+	return hasEth, hasIB
+}
+
+// readMellanoxVersion reads the MOFED/upstream driver version and formats it appropriately.
+func readMellanoxVersion(kernelVersion string) string {
+	data, err := os.ReadFile(mlx5CoreVersionPath)
+	if err != nil {
+		return ""
+	}
+	ver := strings.TrimSpace(string(data))
+	if ver == "" {
+		return ""
+	}
+	if ver == kernelVersion {
+		return ver + " (Upstream)"
+	}
+	return ver + " (MOFED)"
+}
+
+// readLustreVersion reads the installed Lustre/Exascaler version.
+func readLustreVersion() string {
+	data, err := os.ReadFile(lustreVersionPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// readKernelCmdline returns the kernel boot parameters.
+func readKernelCmdline() string {
+	data, err := os.ReadFile(procCmdlinePath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// readNodeScale returns the total memory in MB and boot time in seconds since epoch.
+func readNodeScale() (totalMemMB int64, bootTime int64) {
+	if memData, err := os.ReadFile(procMeminfoPath); err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(memData)))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "MemTotal:") {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					if kb, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+						totalMemMB = kb / 1024
+					}
+				}
+				break
+			}
+		}
+	}
+
+	if statData, err := os.ReadFile(procStatPath); err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(statData)))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "btime ") {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					if bt, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+						bootTime = bt
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return totalMemMB, bootTime
 }

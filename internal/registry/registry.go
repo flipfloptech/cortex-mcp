@@ -85,6 +85,8 @@ func (pr *PluginRegistry) Unsupported() map[string]string {
 	return out
 }
 
+// GetTool returns a supported tool by name.
+// TODO: evaluate for removal if never used directly by gateway logic.
 func (pr *PluginRegistry) GetTool(name string) (Tool, bool) {
 	t, ok := pr.supportedMap[name]
 	return t, ok

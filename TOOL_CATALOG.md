@@ -64,10 +64,16 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 - **OS Distribution**: Parsed from `/etc/os-release`, prioritizing the `PRETTY_NAME` field and falling back to `ID`.
 - **Node Roles**: Detected via `registry.DetectNodeRoles()`, which inspects sysfs paths for SFA controllers, Lustre MGS/MDS/OSS targets, and mounted Lustre clients. Returns `["generic"]` when no specialized roles are detected.
 - **Role Info**: Detailed `NodeRoleInfo` struct with per-target lists (e.g., active MDTs, OSTs, mounted filesystems).
+- **Virtualization Context**: "Bulletproof" waterfall detection inspecting `/proc/self/cgroup`, `/proc/self/mountinfo`, `.dockerenv`, and DMI/hypervisor sysfs paths to identify container/VM runtimes.
+- **Mellanox Context**: Inspects `/sys/class/infiniband` to detect Ethernet/InfiniBand presence and `/sys/module/mlx5_core/version` for MOFED driver versions vs Upstream kernel drivers.
+- **Software Stack**: Detects installed Lustre versions via `/sys/fs/lustre/version`.
+- **Node Scale**: Collects total memory capacity from `/proc/meminfo` and system boot time from `/proc/stat`.
+- **Kernel Boot**: Retrieves boot parameters directly from `/proc/cmdline`.
 
 **Degradation Profile:**
 - `IsSupported()` will only return `false` if the host operating system is not Linux.
 - If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. If no Lustre/SFA sysfs paths exist, `roles` returns `["generic"]` — the tool never errors.
+- New telemetry data points default to empty strings, `0`, or `false` gracefully if their respective data sources are missing or unreadable.
 
 #### `uptime`
 *Category: `system` · Runs on: Every Linux node*

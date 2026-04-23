@@ -24,6 +24,9 @@ type MeshConfig struct {
 	// SSH/TLS credentials for deployment.
 	Credentials []CredentialEntry `toml:"credentials"`
 
+	// HTTP CONNECT proxies for mesh connectivity fallbacks.
+	Proxies []ProxyEntry `toml:"proxies"`
+
 	// Groups for logically targeting nodes via the mesh.
 	Groups map[string][]string `toml:"groups,omitempty"`
 }
@@ -74,6 +77,15 @@ type CredentialEntry struct {
 
 	// CertFile is the path to a TLS certificate file (type = "tls_cert").
 	CertFile string `toml:"cert_file"`
+}
+
+// ProxyEntry defines an HTTP CONNECT proxy configuration.
+type ProxyEntry struct {
+	// Pattern is the host glob pattern (e.g., "10.0.1.*", "*.internal.corp").
+	Pattern string `toml:"pattern"`
+
+	// URL is the full proxy URL (e.g., "http://proxy.corp:8080").
+	URL string `toml:"url"`
 }
 
 // Default returns a new MeshConfig initialized with standard port defaults.

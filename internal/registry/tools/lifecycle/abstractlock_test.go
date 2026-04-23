@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,37 +31,42 @@ func TestAcquireLock_SuccessAndConflict(t *testing.T) {
 	}
 }
 
-func TestKillLockedProcess_ProvidesPID(t *testing.T) {
+func TestAcquireLock_ProvidesJSONPayload(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	socketName := fmt.Sprintf("@cortex-mcp-test-kill-%d", time.Now().UnixNano())
 
-	// Acquire lock so we have a process serving its PID
+	// Acquire lock so we have a process serving its JSON payload
 	closer, err := AcquireLock(ctx, socketName)
 	if err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 	defer func() { _ = closer.Close() }()
 
-	// Test the PID reading mechanism directly by dialing
+	// Test the JSON reading mechanism directly by dialing
 	conn, err := net.DialTimeout("unix", socketName, 2*time.Second)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
 
-	buf := make([]byte, 32)
+	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil {
-		t.Fatalf("failed to read PID: %v", err)
+		t.Fatalf("failed to read payload: %v", err)
 	}
 
-	pidStr := string(buf[:n])
-	expected := fmt.Sprintf("%d", os.Getpid())
-	if pidStr != expected {
-		t.Errorf("expected PID %s, got %s", expected, pidStr)
+	payloadStr := string(buf[:n])
+
+	// Fast way to check if it's JSON and has the PID
+	expectedPid := fmt.Sprintf(`"pid":%d`, os.Getpid())
+	if !strings.Contains(payloadStr, expectedPid) {
+		t.Errorf("expected payload to contain %s, got %s", expectedPid, payloadStr)
+	}
+	if !strings.Contains(payloadStr, `"path":`) {
+		t.Errorf("expected payload to contain path, got %s", payloadStr)
 	}
 }
 
@@ -91,7 +97,7 @@ func BenchmarkKillLockedProcess(b *testing.B) {
 	}
 }
 
-func BenchmarkReadPIDFromSocket(b *testing.B) {
+func BenchmarkReadPayloadFromSocket(b *testing.B) {
 	ctx := context.Background()
 	socketName := fmt.Sprintf("@cortex-mcp-bench-read-%d", time.Now().UnixNano())
 	closer, _ := AcquireLock(ctx, socketName)
@@ -99,6 +105,6 @@ func BenchmarkReadPIDFromSocket(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = readPIDFromSocket(ctx, socketName)
+		_, _ = readPayloadFromSocket(ctx, socketName)
 	}
 }

@@ -108,28 +108,3 @@ func TestSelfUninstallOps(t *testing.T) {
 		t.Error("selfUninstallOps missing binary removal")
 	}
 }
-
-// --- Ephemeral cleanup ops ---
-// When a node is running ephemerally (from /tmp), uninstall should
-// self-destruct rather than try systemd operations.
-
-func TestEphemeralCleanupOps(t *testing.T) {
-	t.Parallel()
-
-	ops := ephemeralCleanupOps("/tmp/cortex-mesh-abc123")
-
-	if len(ops) == 0 {
-		t.Fatal("expected at least one cleanup op")
-	}
-
-	var hasRemove bool
-	for _, op := range ops {
-		if op.Action == "remove_file" && op.Path == "/tmp/cortex-mesh-abc123" {
-			hasRemove = true
-		}
-	}
-
-	if !hasRemove {
-		t.Error("ephemeralCleanupOps should remove the binary path")
-	}
-}

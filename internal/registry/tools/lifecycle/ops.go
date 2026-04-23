@@ -56,14 +56,6 @@ func SelfUninstallOps() []LifecycleOp {
 	}
 }
 
-// ephemeralCleanupOps returns operations to self-destruct an ephemeral
-// node running from a temporary path (e.g., /tmp/cortex-mesh-abc123).
-func ephemeralCleanupOps(binaryPath string) []LifecycleOp {
-	return []LifecycleOp{
-		{Action: "remove_file", Path: binaryPath},
-	}
-}
-
 // nodeUpgradeOps returns the sequence of operations to upgrade an
 // installed node: copy the new binary from src to the install path,
 // then restart the service.
