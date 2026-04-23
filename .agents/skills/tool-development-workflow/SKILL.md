@@ -1,11 +1,11 @@
 ---
-name: plugin-development-workflow
-description: Formal workflow for implementing new diagnostic tools (plugins) in the Cortex MCP registry, combining the strict TDD process with the registry.Tool architectural contract.
+name: tool-development-workflow
+description: Formal workflow for implementing new diagnostic tools in the Cortex MCP registry, combining the strict TDD process with the registry.Tool architectural contract.
 ---
 
-# Cortex MCP Plugin Development Workflow
+# Cortex MCP Tool Development Workflow
 
-This document outlines the strict protocol for creating new diagnostic tools (plugins) for the Cortex MCP registry. It merges the project's `tdd-development-workflow` with the architectural requirements of `registry.Tool`.
+This document outlines the strict protocol for creating new diagnostic tools for the Cortex MCP registry. It merges the project's `tdd-development-workflow` with the architectural requirements of `registry.Tool`.
 
 ## Core Architectural Contract
 
@@ -29,6 +29,41 @@ type Tool interface {
 - **LLM-Centric Formatting**: Raw math is difficult for LLMs. If a calculation is required (e.g., Idle Percentage, Human-Readable Durations), the Go code *must* perform it and include it in the `ToolResult.Data`.
 - **Tool Composition (Decouple Logic from Transport)**: An MCP Tool is fundamentally just a JSON-RPC adapter. When building tools that rely on other tools (like parsing device mappings or log files), we must **never** have Tools calling other Tools via the registry interface. Passing JSON strings back and forth internally is slow and loses type safety.
   - **The Pattern**: Extract the core diagnostic logic into reusable Go packages (e.g., standard Go functions returning strongly-typed structs or maps). Make the MCP Tools thin wrappers that invoke these Go functions directly. This keeps the codebase highly testable and ensures that performance improvements in base libraries automatically propagate to all composed tools without JSON parsing overhead.
+
+## The Categorization Protocol
+
+When adding a new tool to the MCP server, run it through this ruleset. The first YES determines the tool's category.
+
+### 1. Hardware
+**The Rule**: Does the tool query the physical silicon, chassis sensors, firmware, or out-of-band management controllers (BMC), bypassing the Linux kernel's logical abstractions?
+- **Inclusions**: IPMI, DMI/SMBIOS decoding, core temperature sensors, ECC memory corrections (EDAC/MCE), physical DIMM inventory.
+- **Exclusions**: Logical block devices or NVMe I/O stats (route to Storage).
+
+### 2. Fabric (Network, InfiniBand, Mellanox)
+**The Rule**: Does the tool measure data moving between nodes, the state of the network interface controllers (NICs/HCAs), or the topology of the cluster interconnect?
+- **Inclusions**: TCP/UDP sockets, IP routing, ethtool stats, InfiniBand link states, RoCE congestion counters, Subnet Manager logs, MTU sizes.
+- **Exclusions**: Distributed filesystem mount capacities (route to Storage).
+
+### 3. Storage (Includes Lustre/NFS)
+**The Rule**: Does the tool measure the persistence, capacity, queue depths, or input/output operations (I/O) of data on disk or over a storage-specific protocol?
+- **Inclusions**: Block device mapping (lsblk), local disk I/O (iostat equivalents), NVMe SMART data, filesystem capacity/inodes, Lustre/NFS client RPC states.
+- **Exclusions**: Pure RAM disks or page caches (route to Memory).
+
+### 4. Memory
+**The Rule**: Does the tool measure the allocation, fragmentation, swapping, or exhaustion of volatile system RAM?
+- **Inclusions**: Free/Used stats, page caches, NUMA node allocation hits/misses, kernel slab usage, buddy allocator fragmentation, OOM killer logs.
+- **Exclusions**: Physical DIMM slot speeds or ECC errors (route to Hardware).
+
+### 5. Compute
+**The Rule**: Does the tool measure what code is executing, how the kernel scheduler is handling it, or the physical topology of the processors it runs on?
+- **Inclusions**: Process lists, thread wait channels (wchan), CPU/NUMA cache topologies, CPU power governors, interrupt (IRQ) balancing, cgroup limits.
+- **Exclusions**: Overall system load averages (route to System).
+
+### 6. System (The Fallback / Global State)
+**The Rule**: Does the tool provide macroscopic context about the operating system as a whole, rather than diving into a specific hardware subsystem?
+- **Inclusions**: Uptime, 1/5/15-minute load averages, kernel boot parameters, systemd daemon states, global sysctl limits, OS versioning, generic journalctl/dmesg queries.
+- **Exclusions**: Anything that isolates a specific resource (CPU/RAM/Disk/NIC).
+
 ## Phase 0: Branching
 
 Always start from the latest `dev` branch. Tools are isolated features.
