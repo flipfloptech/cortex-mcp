@@ -80,7 +80,6 @@ In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new ser
 - `stop`: Stop the `cortex-mesh` systemd service on all remote hosts.
 - `uninstall`: Remove the systemd service and binary from all remote hosts.
 - `mcp`: Launch the gateway in MCP server mode over Streamable HTTP (used by LLMs).
-- `harness`: Run the automated soak-testing harness against the deployment.
 
 ## Tool Catalog
 

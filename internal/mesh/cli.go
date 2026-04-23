@@ -73,7 +73,6 @@ import (
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/cortex-mesh/cortex-mesh/vault"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
-	"github.com/flipfloptech/cortex-mcp/internal/harness"
 	"github.com/flipfloptech/cortex-mcp/internal/logger"
 	"github.com/flipfloptech/cortex-mcp/internal/mcp"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
@@ -85,14 +84,11 @@ import (
 // toolEntry pairs a definition with its handler for re-registration.
 // GatewayOptions contains operation modes for the bootstrap node.
 type GatewayOptions struct {
-	Install         bool
-	Stop            bool
-	Target          string
-	PureClient      bool
-	ServeHTTP       string // address to serve HTTP on
-	HarnessType     string // "check", "soak", "deploy"
-	HarnessCount    int
-	HarnessDuration time.Duration
+	Install    bool
+	Stop       bool
+	Target     string
+	PureClient bool
+	ServeHTTP  string // address to serve HTTP on
 }
 
 func Execute() {
@@ -279,40 +275,7 @@ func Execute() {
 		},
 	}
 
-	harnessCmd := &cobra.Command{
-		Use:   "harness [type]",
-		Short: "Run test harness (check, soak, deploy)",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			hType := args[0]
-			if hType != "check" && hType != "soak" && hType != "deploy" {
-				fmt.Fprintf(os.Stderr, "invalid harness type: %s\n", hType)
-				os.Exit(1)
-			}
-			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
-			defer cancel()
-
-			// parse optional duration/count
-			count, _ := cmd.Flags().GetInt("count")
-			durStr, _ := cmd.Flags().GetString("duration")
-			dur, _ := time.ParseDuration(durStr)
-
-			opts := GatewayOptions{
-				PureClient:      true, // Just be a client, let other nodes do the work
-				HarnessType:     hType,
-				HarnessCount:    count,
-				HarnessDuration: dur,
-			}
-			// For deploy soak, we don't skip deploy initially, but we might want to let the harness control it.
-			// Actually, deploy soak will deploy them inside the loop. Let's start with skipDeploy = true.
-
-			runGateway(ctx, cancel, nodeID, cfg, plugins, true, opts)
-		},
-	}
-	harnessCmd.Flags().Int("count", 0, "Number of iterations (0 = infinite)")
-	harnessCmd.Flags().String("duration", "0", "Duration of soak test (e.g. 1h, 30m, 0 = infinite)")
-
-	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, harnessCmd, buildImportExaCmd(), localOpCmd)
+	rootCmd.AddCommand(bridgeCmd, serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -728,57 +691,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		}
 	}
 
-	// --- Phase 10c: Test Harness ---
-	if opts.HarnessType != "" {
-		zap.S().Infow("running test harness", "type", opts.HarnessType)
-		h := harness.NewHarness(gw)
-		var remoteNodes []string
-		snap := node.CapabilityIndex().Snapshot()
-		allTools := node.LookupCapabilityWildcard("tool:")
-		for _, nt := range allTools {
-			if nt.NodeID != nodeID {
-				remoteNodes = append(remoteNodes, nt.NodeID)
-			}
-		}
-
-		if len(remoteNodes) == 0 && opts.HarnessType != "deploy" {
-			fmt.Fprintf(os.Stderr, "  ⚠ No remote nodes found to run harness against\n")
-		} else {
-			// Get all tool names from wildcard index
-			toolSet := make(map[string]bool)
-			for _, nt := range allTools {
-				for _, cap := range snap[nt.NodeID] {
-					if strings.HasPrefix(cap, "tool:") {
-						toolSet[strings.TrimPrefix(cap, "tool:")] = true
-					}
-				}
-			}
-			var toolsList []string
-			for t := range toolSet {
-				toolsList = append(toolsList, t)
-			}
-
-			switch opts.HarnessType {
-			case "check":
-				rep := h.RunToolCheck(ctx, toolsList, remoteNodes)
-				fmt.Fprintf(os.Stderr, "  ✓ Check complete: %d total, %d success, %d failed\n", rep.Total, rep.Successful, rep.Failed)
-			case "soak":
-				rep := h.RunToolSoak(ctx, toolsList, remoteNodes, opts.HarnessCount, opts.HarnessDuration)
-				fmt.Fprintf(os.Stderr, "  ✓ Soak complete: %d total, %d success, %d failed\n", rep.Total, rep.Successful, rep.Failed)
-			case "deploy":
-				da := &deploySoakAdapter{
-					node:       node,
-					pki:        pki,
-					knownHosts: knownHosts,
-					v:          v,
-					cfg:        cfg,
-				}
-				rep := h.RunDeploySoak(ctx, da, opts.HarnessCount, opts.HarnessDuration)
-				fmt.Fprintf(os.Stderr, "  ✓ Deploy soak complete: %d total, %d success, %d failed\n", rep.Total, rep.Successful, rep.Failed)
-			}
-		}
-	}
-
 	// --- Phase 11: Cleanup ---
 	zap.S().Infow("cleanup starting")
 	cancel()
@@ -798,32 +710,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 type deployedNode struct {
 	nodeID string
 	conn   net.Conn
-}
-
-// deploySoakAdapter implements harness.FleetDeployer for testing.
-type deploySoakAdapter struct {
-	node       *api.Node
-	pki        *ephemeralPKI
-	knownHosts map[string][]string
-	v          *vault.Vault
-	cfg        *config.MeshConfig
-	nodes      []deployedNode
-}
-
-func (a *deploySoakAdapter) Deploy(ctx context.Context) error {
-	a.nodes = deployAndConnect(ctx, a.node, a.pki, a.cfg, a.v, false, false, false)
-	return nil
-}
-
-func (a *deploySoakAdapter) Uninstall(ctx context.Context) error {
-	uninstallFleet(ctx, a.cfg, "")
-	for _, dn := range a.nodes {
-		if dn.conn != nil {
-			_ = dn.conn.Close()
-		}
-	}
-	a.nodes = nil
-	return nil
 }
 
 // printHeader displays startup information.
