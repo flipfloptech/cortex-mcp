@@ -117,24 +117,25 @@ func (t *SystemInfoTool) IsSupported() (bool, string) {
 
 // systemInfoData is the structured output for system_info.
 type systemInfoData struct {
-	Hostname              string                 `json:"hostname"`
-	OS                    string                 `json:"os"`
-	Arch                  string                 `json:"arch"`
-	CPUs                  int                    `json:"cpus"`
-	Kernel                string                 `json:"kernel"`
-	Distro                string                 `json:"distro,omitempty"`
-	Roles                 []string               `json:"roles"`
-	RoleInfo              *registry.NodeRoleInfo `json:"role_info"`
-	TotalMemoryMB         int64                  `json:"total_memory_mb"`
-	BootTime              int64                  `json:"boot_time"`
-	KernelCmdline         string                 `json:"kernel_cmdline,omitempty"`
-	IsVirtualized         bool                   `json:"is_virtualized"`
-	IsContainerized       bool                   `json:"is_containerized"`
-	VirtContext           string                 `json:"virt_context,omitempty"`
-	HasMellanoxEthernet   bool                   `json:"has_mellanox_ethernet"`
-	HasMellanoxInfiniband bool                   `json:"has_mellanox_infiniband"`
-	MellanoxVersion       string                 `json:"mellanox_version,omitempty"`
-	LustreVersion         string                 `json:"lustre_version,omitempty"`
+	Hostname                string                 `json:"hostname"`
+	OS                      string                 `json:"os"`
+	Arch                    string                 `json:"arch"`
+	CPUs                    int                    `json:"cpus"`
+	Kernel                  string                 `json:"kernel"`
+	Distro                  string                 `json:"distro,omitempty"`
+	Roles                   []string               `json:"roles"`
+	RoleInfo                *registry.NodeRoleInfo `json:"role_info"`
+	TotalMemoryMB           int64                  `json:"total_memory_mb"`
+	BootTime                int64                  `json:"boot_time"`
+	KernelCmdline           string                 `json:"kernel_cmdline,omitempty"`
+	IsVirtualized           bool                   `json:"is_virtualized"`
+	IsContainerized         bool                   `json:"is_containerized"`
+	VirtContext             string                 `json:"virt_context,omitempty"`
+	HasMellanox             bool                   `json:"has_mellanox"`
+	UsingMellanoxEthernet   bool                   `json:"using_mellanox_ethernet"`
+	UsingMellanoxInfiniband bool                   `json:"using_mellanox_infiniband"`
+	MellanoxVersion         string                 `json:"mellanox_version,omitempty"`
+	LustreVersion           string                 `json:"lustre_version,omitempty"`
 }
 
 // Execute gathers system information and returns a standardized result.
@@ -154,24 +155,25 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 	totalMem, btime := readNodeScale()
 
 	data := systemInfoData{
-		Hostname:              hostname,
-		OS:                    runtime.GOOS,
-		Arch:                  runtime.GOARCH,
-		CPUs:                  runtime.NumCPU(),
-		Kernel:                kernel,
-		Distro:                distro,
-		Roles:                 roleInfo.Roles(),
-		RoleInfo:              roleInfo,
-		TotalMemoryMB:         totalMem,
-		BootTime:              btime,
-		KernelCmdline:         cmdline,
-		IsVirtualized:         isVirt,
-		IsContainerized:       isCont,
-		VirtContext:           virtType,
-		HasMellanoxEthernet:   hasEth,
-		HasMellanoxInfiniband: hasIB,
-		MellanoxVersion:       mlxVersion,
-		LustreVersion:         lustreVer,
+		Hostname:                hostname,
+		OS:                      runtime.GOOS,
+		Arch:                    runtime.GOARCH,
+		CPUs:                    runtime.NumCPU(),
+		Kernel:                  kernel,
+		Distro:                  distro,
+		Roles:                   roleInfo.Roles(),
+		RoleInfo:                roleInfo,
+		TotalMemoryMB:           totalMem,
+		BootTime:                btime,
+		KernelCmdline:           cmdline,
+		IsVirtualized:           isVirt,
+		IsContainerized:         isCont,
+		VirtContext:             virtType,
+		HasMellanox:             mlxVersion != "",
+		UsingMellanoxEthernet:   hasEth,
+		UsingMellanoxInfiniband: hasIB,
+		MellanoxVersion:         mlxVersion,
+		LustreVersion:           lustreVer,
 	}
 
 	result := registry.NewResult(
