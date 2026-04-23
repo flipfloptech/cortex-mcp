@@ -105,6 +105,13 @@ func TestGetTopology_NUMA(t *testing.T) {
 		t.Error("expected numa_node_0")
 	} else if len(node0.L3CacheDomains) != 1 {
 		t.Errorf("expected 1 l3 cache domain in node 0, got %d", len(node0.L3CacheDomains))
+	} else {
+		// Verify socket ID on physical core
+		if l3, ok := node0.L3CacheDomains["l3_domain_0"]; ok {
+			if len(l3.PhysicalCores) > 0 && l3.PhysicalCores[0].SocketID != 0 {
+				t.Errorf("expected core socket_id to be 0, got %d", l3.PhysicalCores[0].SocketID)
+			}
+		}
 	}
 }
 
@@ -146,5 +153,12 @@ func TestGetTopology_UMA_Abstracted(t *testing.T) {
 		t.Error("expected numa_node_0")
 	} else if len(node0.L3CacheDomains) != 1 {
 		t.Errorf("expected 1 l3 cache domain in node 0, got %d", len(node0.L3CacheDomains))
+	} else {
+		// Verify socket ID on physical core
+		if l3, ok := node0.L3CacheDomains["l3_domain_0"]; ok {
+			if len(l3.PhysicalCores) > 0 && l3.PhysicalCores[0].SocketID != 0 {
+				t.Errorf("expected core socket_id to be 0, got %d", l3.PhysicalCores[0].SocketID)
+			}
+		}
 	}
 }

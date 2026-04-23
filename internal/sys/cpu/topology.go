@@ -22,6 +22,7 @@ type SystemSummary struct {
 
 // PhysicalCore represents a physical core containing logical threads (SMT/Hyperthreading).
 type PhysicalCore struct {
+	SocketID       int   `json:"socket_id"`
 	CoreID         int   `json:"core_id"`
 	LogicalThreads []int `json:"logical_threads"`
 }
@@ -34,7 +35,6 @@ type L3CacheDomain struct {
 
 // NumaNode represents a physical CPU socket and its memory resources.
 type NumaNode struct {
-	SocketID       int                      `json:"socket_id"`
 	L3CacheDomains map[string]L3CacheDomain `json:"l3_cache_domains"`
 }
 
@@ -175,6 +175,7 @@ func GetTopology(ctx context.Context, sysfsBase string) (*SystemTopology, error)
 	// Track seen L3 and Cores to build the hierarchy
 	// Node -> L3 -> Core -> CPUs
 	type coreInfo struct {
+		socketID int
 		coreID   int
 		siblings []int
 	}
@@ -185,12 +186,12 @@ func GetTopology(ctx context.Context, sysfsBase string) (*SystemTopology, error)
 
 	for nodeID, cpus := range numaNodes {
 		totalLogicalCPUs += len(cpus)
-		socketID := 0 // default
 
 		l3Domains := make(map[int]l3Info)
 
 		for _, cpuID := range cpus {
 			cpuDir := filepath.Join(cpuBase, fmt.Sprintf("cpu%d", cpuID))
+			socketID := 0 // default
 
 			// Socket ID
 			pkgPath := filepath.Join(cpuDir, "topology/physical_package_id")
@@ -252,6 +253,7 @@ func GetTopology(ctx context.Context, sysfsBase string) (*SystemTopology, error)
 			// Actually, thread_siblings_list should always be in the same core and node.
 			if _, coreExists := domain.cores[coreID]; !coreExists {
 				domain.cores[coreID] = coreInfo{
+					socketID: socketID,
 					coreID:   coreID,
 					siblings: siblings,
 				}
@@ -261,7 +263,6 @@ func GetTopology(ctx context.Context, sysfsBase string) (*SystemTopology, error)
 
 		// Build the NumaNode struct
 		numaNode := NumaNode{
-			SocketID:       socketID,
 			L3CacheDomains: make(map[string]L3CacheDomain),
 		}
 
@@ -287,6 +288,7 @@ func GetTopology(ctx context.Context, sysfsBase string) (*SystemTopology, error)
 			for _, cid := range coreIDs {
 				cInfo := domain.cores[cid]
 				pCores = append(pCores, PhysicalCore{
+					SocketID:       cInfo.socketID,
 					CoreID:         cInfo.coreID,
 					LogicalThreads: cInfo.siblings,
 				})
