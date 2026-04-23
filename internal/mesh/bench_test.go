@@ -229,12 +229,8 @@ func BenchmarkLoadOrGeneratePKI(b *testing.B) {
 	}
 }
 
-func BenchmarkNeedsUpgrade(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = needsUpgrade(false)
-	}
-}
+func BenchmarkGetRemoteApplicationVersion(b *testing.B) { b.Skip("requires live SSH server") }
+func BenchmarkExecSSHCommandOutput(b *testing.B)        { b.Skip("requires live SSH server") }
 
 func BenchmarkCaPath(b *testing.B) {
 	b.ResetTimer()

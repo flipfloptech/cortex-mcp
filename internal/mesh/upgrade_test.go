@@ -17,24 +17,3 @@ func TestUpgradeRestartCommand_Systemd(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, cmd)
 	}
 }
-
-// --- needsUpgrade tests ---
-// Determines whether we should push a new binary based on flag state.
-
-func TestNeedsUpgrade_SkipDeployFalse(t *testing.T) {
-	t.Parallel()
-
-	// When skipDeploy is false, we always upload — so upgrade is needed.
-	if !needsUpgrade(false) {
-		t.Error("expected upgrade needed when skipDeploy=false")
-	}
-}
-
-func TestNeedsUpgrade_SkipDeployTrue(t *testing.T) {
-	t.Parallel()
-
-	// When skipDeploy is true, skip the upload — no upgrade needed.
-	if needsUpgrade(true) {
-		t.Error("expected no upgrade when skipDeploy=true")
-	}
-}

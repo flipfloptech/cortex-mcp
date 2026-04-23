@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cortex-mesh/cortex-mesh/transport"
@@ -32,11 +33,24 @@ const (
 	upgradeWaitAfterRestart = 3 * time.Second
 )
 
-// needsUpgrade returns true if we should push a new binary to the node.
-// When skipDeploy is true, the binary is already in place (developer
-// pre-copied it) so no upload is needed.
-func needsUpgrade(skipDeploy bool) bool {
-	return !skipDeploy
+// getRemoteApplicationVersion connects via SSH and retrieves the cortex-mesh version
+func getRemoteApplicationVersion(ctx context.Context, targetAddr string, cred transport.DeployCredential, remotePath string) (string, error) {
+	client, err := dialSSH(ctx, targetAddr, cred)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if cerr := client.Close(); cerr != nil {
+			zap.S().Debugw("exec SSH close", "error", cerr)
+		}
+	}()
+
+	out, err := execSSHCommandOutput(client, remotePath+" version")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(out), nil
 }
 
 // upgradeRestartCommand returns the command to restart the service
@@ -158,6 +172,26 @@ func execSSHCommand(client *ssh.Client, cmd string) error {
 	}
 
 	return nil
+}
+
+// execSSHCommandOutput runs a command on the remote host via SSH and returns its output.
+func execSSHCommandOutput(client *ssh.Client, cmd string) (string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("open SSH session: %w", err)
+	}
+	defer func() {
+		if cerr := session.Close(); cerr != nil && cerr != io.EOF {
+			zap.S().Debugw("exec output: close session", "error", cerr)
+		}
+	}()
+
+	output, err := session.CombinedOutput(cmd)
+	if err != nil {
+		return string(output), fmt.Errorf("exec %q: %w (output: %s)", cmd, err, string(output))
+	}
+
+	return string(output), nil
 }
 
 // buildSSHAuth constructs SSH auth methods from a deploy credential.

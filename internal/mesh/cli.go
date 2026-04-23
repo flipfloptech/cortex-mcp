@@ -180,6 +180,14 @@ func Execute() {
 		},
 	}
 
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print the application version",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(version.ApplicationVersion)
+		},
+	}
+
 	reinstallCmd := &cobra.Command{
 		Use:   "reinstall [target]",
 		Short: "Wipe and forcefully reinstall fleet nodes",
@@ -264,7 +272,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd)
+	rootCmd.AddCommand(serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -530,6 +538,15 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		} else {
 			zap.S().Infow("daemon listening on TCP", "addr", tcpLis.Addr())
 		}
+	}
+
+	if isDaemon {
+		go func() {
+			// Give the mesh time to initialize before proactively probing seeds for version mismatches.
+			time.Sleep(3 * time.Second)
+			zap.S().Infow("fleet node fanning out proactive peer connections")
+			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false)
+		}()
 	}
 
 	zap.S().Infow("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
@@ -809,7 +826,20 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 
 		if err == nil {
 			// Found an existing active path! (TCP, Proxy, or SSH Tunnel)
-			if needsUpgrade(skipDeploy) {
+			var versionMismatch bool
+			if !skipDeploy {
+				remoteVersion, verErr := getRemoteApplicationVersion(ctx, sshAddr, deployCred, lifecycle.InstallRemotePath(""))
+				if verErr != nil || remoteVersion != version.ApplicationVersion {
+					versionMismatch = true
+					if verErr != nil {
+						zap.S().Debugw("failed to get remote version, assuming mismatch", "error", verErr)
+					} else {
+						zap.S().Infow("version mismatch detected", "remote", remoteVersion, "local", version.ApplicationVersion)
+					}
+				}
+			}
+
+			if versionMismatch {
 				_ = conn.Close()
 				zap.S().Infow("upgrading remote node", "node_id", remoteNodeID, "addr", sshAddr)
 				remotePath := lifecycle.InstallRemotePath("")
@@ -844,6 +874,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 		zap.S().Debugw("all connection paths failed, attempting deployment", "node_id", remoteNodeID, "error", err)
 
 		// --- Path 3: No existing node → fresh deploy ---
+		if pki == nil {
+			zap.S().Debugw("not a gateway node, skipping fresh deployment", "node_id", remoteNodeID)
+			continue
+		}
+
 		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", sshAddr)
 
 		stream, err := deployer.Deploy(ctx, sshAddr, deployCred, nil)
