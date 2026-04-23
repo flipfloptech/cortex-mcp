@@ -126,6 +126,47 @@ func TestPluginRegistry_GetTool_NotFound(t *testing.T) {
 	}
 }
 
+// TestPluginRegistry_GetAnyTool_Found verifies that GetAnyTool returns both supported and unsupported tools by name.
+func TestPluginRegistry_GetAnyTool_Found(t *testing.T) {
+	t.Parallel()
+
+	supported := &mockTool{name: "target_tool", supported: true, category: "test"}
+	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: "test"}
+	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{supported, unsupported})
+
+	// Should find supported tool
+	found, ok := pr.GetAnyTool("target_tool")
+	if !ok {
+		t.Fatal("GetAnyTool should find 'target_tool'")
+	}
+	if found.Name() != "target_tool" {
+		t.Errorf("GetAnyTool returned tool with name %q, want %q", found.Name(), "target_tool")
+	}
+
+	// Should also find unsupported tool
+	found, ok = pr.GetAnyTool("hidden_tool")
+	if !ok {
+		t.Fatal("GetAnyTool should find 'hidden_tool'")
+	}
+	if found.Name() != "hidden_tool" {
+		t.Errorf("GetAnyTool returned tool with name %q, want %q", found.Name(), "hidden_tool")
+	}
+}
+
+// TestPluginRegistry_GetAnyTool_NotFound verifies that GetAnyTool returns false
+// for tools that don't exist in the compiled binary at all.
+func TestPluginRegistry_GetAnyTool_NotFound(t *testing.T) {
+	t.Parallel()
+
+	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: "test"}
+	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{unsupported})
+
+	_, ok := pr.GetAnyTool("nonexistent")
+	if ok {
+		t.Error("GetAnyTool should not find nonexistent tool")
+	}
+}
+
 // TestPluginRegistry_NodeID verifies the registry tracks its node identity.
 func TestPluginRegistry_NodeID(t *testing.T) {
 	t.Parallel()
