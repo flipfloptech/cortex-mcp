@@ -267,6 +267,7 @@ func Execute() {
 			}
 			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
+			defer fmt.Fprintln(os.Stderr) // Print newline to cleanly drop the shell prompt on exit
 			opts := GatewayOptions{
 				PureClient: true,
 				ServeHTTP:  addr,
@@ -286,7 +287,7 @@ func Execute() {
 // and the plugin registry. The plugin registry evaluates each tool's IsSupported()
 // against the local environment — unsupported tools are logged and excluded.
 func initEnv(configPath string) (context.Context, context.CancelFunc, string, *config.MeshConfig, *registry.PluginRegistry) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	cfg, err := loadConfig(configPath)
 
 	// Setup best-in-class logging before doing anything else
