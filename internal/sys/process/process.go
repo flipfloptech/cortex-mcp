@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -233,8 +232,42 @@ func getPIDs() []int {
 	return pids
 }
 
+func parseUintBytes(b []byte) uint64 {
+	var n uint64
+	for _, c := range b {
+		if c >= '0' && c <= '9' {
+			n = n*10 + uint64(c-'0')
+		}
+	}
+	return n
+}
+
+func parseState(b []byte) string {
+	if len(b) > 0 {
+		switch b[0] {
+		case 'S':
+			return "S"
+		case 'R':
+			return "R"
+		case 'I':
+			return "I"
+		case 'Z':
+			return "Z"
+		case 'D':
+			return "D"
+		case 'T':
+			return "T"
+		case 't':
+			return "t"
+		case 'X', 'x':
+			return "X"
+		}
+	}
+	return string(b)
+}
+
 func readStat(pid int) (procStat, error) {
-	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/stat", pid))
+	data, bPtr, err := readFileBuffered("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return procStat{}, err
 	}
@@ -262,14 +295,13 @@ func readStat(pid int) (procStat, error) {
 		}
 
 		if fieldIdx == 2 {
-			state = string(data[pos : pos+end])
+			state = parseState(data[pos : pos+end])
 		} else if fieldIdx == 3 {
-			ppidUint, _ := strconv.ParseUint(string(data[pos:pos+end]), 10, 32)
-			ppid = int(ppidUint)
+			ppid = int(parseUintBytes(data[pos : pos+end]))
 		} else if fieldIdx == 13 {
-			utime, _ = strconv.ParseUint(string(data[pos:pos+end]), 10, 64)
+			utime = parseUintBytes(data[pos : pos+end])
 		} else if fieldIdx == 14 {
-			stime, _ = strconv.ParseUint(string(data[pos:pos+end]), 10, 64)
+			stime = parseUintBytes(data[pos : pos+end])
 			break // We don't need any fields after stime
 		}
 
@@ -287,7 +319,7 @@ func readStat(pid int) (procStat, error) {
 }
 
 func readStatus(pid int) (int, uint64, error) {
-	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/status", pid))
+	data, bPtr, err := readFileBuffered("/proc/" + strconv.Itoa(pid) + "/status")
 	if err != nil {
 		return 0, 0, err
 	}
@@ -309,8 +341,6 @@ func readStatus(pid int) (int, uint64, error) {
 		line := data[pos : pos+end]
 
 		if bytes.HasPrefix(line, uidPrefix) {
-			// Find the first value in Uid: uid euid suid fsuid
-			// Split by tab/space
 			valStart := len(uidPrefix)
 			for valStart < len(line) && (line[valStart] == '\t' || line[valStart] == ' ') {
 				valStart++
@@ -320,7 +350,7 @@ func readStatus(pid int) (int, uint64, error) {
 				valEnd++
 			}
 			if valEnd > valStart {
-				uid, _ = strconv.Atoi(string(line[valStart:valEnd]))
+				uid = int(parseUintBytes(line[valStart:valEnd]))
 				foundUid = true
 			}
 		} else if bytes.HasPrefix(line, vmRSSPrefix) {
@@ -333,7 +363,7 @@ func readStatus(pid int) (int, uint64, error) {
 				valEnd++
 			}
 			if valEnd > valStart {
-				kb, _ := strconv.ParseUint(string(line[valStart:valEnd]), 10, 64)
+				kb := parseUintBytes(line[valStart:valEnd])
 				vmRSS = kb * 1024
 				foundVmRSS = true
 			}
@@ -350,7 +380,7 @@ func readStatus(pid int) (int, uint64, error) {
 }
 
 func readCmdline(pid int) (string, error) {
-	data, bPtr, err := readFileBuffered(fmt.Sprintf("/proc/%d/cmdline", pid))
+	data, bPtr, err := readFileBuffered("/proc/" + strconv.Itoa(pid) + "/cmdline")
 	if err != nil {
 		return "", err
 	}
@@ -360,13 +390,12 @@ func readCmdline(pid int) (string, error) {
 		return "", fmt.Errorf("empty cmdline")
 	}
 
-	// Fast in-place replace
 	for i, b := range data {
 		if b == 0 {
 			data[i] = ' '
 		}
 	}
-	return strings.TrimSpace(string(data)), nil
+	return string(bytes.TrimSpace(data)), nil
 }
 
 func getUsername(uid int, cache map[int]string) string {

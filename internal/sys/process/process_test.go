@@ -38,3 +38,50 @@ func BenchmarkGetList(b *testing.B) {
 		_, _ = GetList(ctx, opts)
 	}
 }
+
+func TestParseUintBytes(t *testing.T) {
+	tests := []struct {
+		input string
+		want  uint64
+	}{
+		{"12345", 12345},
+		{"0", 0},
+		{"  42\n", 42}, // Handles leading/trailing non-digits implicitly in our loop
+		{"9999999999", 9999999999},
+		{"", 0},
+		{"abc", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := parseUintBytes([]byte(tt.input))
+			if got != tt.want {
+				t.Errorf("parseUintBytes(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseState(t *testing.T) {
+	tests := []struct {
+		input []byte
+		want  string
+	}{
+		{[]byte("S (sleeping)"), "S"},
+		{[]byte("R (running)"), "R"},
+		{[]byte("Z (zombie)"), "Z"},
+		{[]byte("I (idle)"), "I"},
+		{[]byte("Unknown"), "Unknown"},
+		{[]byte("S"), "S"},
+		{[]byte("R"), "R"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.input), func(t *testing.T) {
+			got := parseState(tt.input)
+			if got != tt.want {
+				t.Errorf("parseState(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

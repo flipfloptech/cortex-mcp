@@ -106,6 +106,32 @@ func BenchmarkGetUsername(b *testing.B) {
 }
 
 func BenchmarkParseStat(b *testing.B) {
-	// Let's add a benchmark for the underlying parsing logic if there is one
-	// or just let the main benchmark cover it.
+	// Replaced by parser benchmarks
+}
+
+func BenchmarkParseWchan(b *testing.B) {
+	data := []byte("do_epoll_wait\n")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = parseWchan(data)
+	}
+}
+
+func BenchmarkParseUintBytes(b *testing.B) {
+	data := []byte("123456789")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = parseUintBytes(data)
+	}
+}
+
+func BenchmarkParseState(b *testing.B) {
+	data := []byte("S (sleeping)")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = parseState(data)
+	}
 }

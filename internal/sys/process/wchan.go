@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -99,17 +98,21 @@ func GetThreadWchan(ctx context.Context, targetPid *int) (*ThreadWchanResult, er
 				default:
 				}
 
-				wchanPath := fmt.Sprintf("/proc/%d/task/%d/wchan", task.pid, task.tid)
+				pidStr := strconv.Itoa(task.pid)
+				tidStr := strconv.Itoa(task.tid)
+				basePath := "/proc/" + pidStr + "/task/" + tidStr + "/"
+
+				wchanPath := basePath + "wchan"
 				wchanData, bPtr1, err := readFileBuffered(wchanPath)
 				var wchan string
 				if err == nil {
-					wchan = strings.TrimSpace(string(wchanData))
+					wchan = parseWchan(wchanData)
 				}
 				if bPtr1 != nil {
 					putBuf(bPtr1)
 				}
 
-				statusPath := fmt.Sprintf("/proc/%d/task/%d/status", task.pid, task.tid)
+				statusPath := basePath + "status"
 				statusData, bPtr2, err := readFileBuffered(statusPath)
 				var state string
 				if err == nil {
@@ -123,11 +126,11 @@ func GetThreadWchan(ctx context.Context, targetPid *int) (*ThreadWchanResult, er
 					continue // Task died or inaccessible
 				}
 
-				commPath := fmt.Sprintf("/proc/%d/task/%d/comm", task.pid, task.tid)
+				commPath := basePath + "comm"
 				commData, bPtr3, err := readFileBuffered(commPath)
 				var comm string
 				if err == nil {
-					comm = strings.TrimSpace(string(commData))
+					comm = string(bytes.TrimSpace(commData))
 				}
 				if bPtr3 != nil {
 					putBuf(bPtr3)
@@ -260,6 +263,35 @@ func getTIDs(pid int) []int {
 	return tids
 }
 
+func parseWchan(b []byte) string {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return ""
+	}
+	if len(b) == 1 && b[0] == '0' {
+		return "0"
+	}
+	if bytes.Equal(b, []byte("do_epoll_wait")) {
+		return "do_epoll_wait"
+	}
+	if bytes.Equal(b, []byte("do_sys_poll")) {
+		return "do_sys_poll"
+	}
+	if bytes.Equal(b, []byte("hrtimer_nanosleep")) {
+		return "hrtimer_nanosleep"
+	}
+	if bytes.Equal(b, []byte("futex_wait_queue_me")) {
+		return "futex_wait_queue_me"
+	}
+	if bytes.Equal(b, []byte("ep_poll")) {
+		return "ep_poll"
+	}
+	if bytes.Equal(b, []byte("poll_schedule_timeout")) {
+		return "poll_schedule_timeout"
+	}
+	return string(b)
+}
+
 func parseStateFromStatus(data []byte) string {
 	pos := 0
 	prefix := []byte("State:\t")
@@ -271,7 +303,28 @@ func parseStateFromStatus(data []byte) string {
 		line := data[pos : pos+end]
 
 		if bytes.HasPrefix(line, prefix) {
-			return string(line[len(prefix):])
+			val := line[len(prefix):]
+			if len(val) > 0 {
+				switch val[0] {
+				case 'S':
+					return "S (sleeping)"
+				case 'R':
+					return "R (running)"
+				case 'I':
+					return "I (idle)"
+				case 'Z':
+					return "Z (zombie)"
+				case 'D':
+					return "D (disk sleep)"
+				case 'T':
+					return "T (stopped)"
+				case 't':
+					return "t (tracing stop)"
+				case 'X', 'x':
+					return "X (dead)"
+				}
+			}
+			return string(val)
 		}
 		pos += end + 1
 	}
