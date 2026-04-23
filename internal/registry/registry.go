@@ -29,6 +29,7 @@ type PluginRegistry struct {
 	supportedMap  map[string]Tool
 	supportedList []Tool
 	unsupported   map[string]string // name → reason
+	allMap        map[string]Tool   // all registered tools, supported or not
 }
 
 // NewPluginRegistry creates a registry from the global tool pool.
@@ -51,9 +52,11 @@ func NewPluginRegistryFrom(nodeID string, tools []Tool) *PluginRegistry {
 		supportedMap:  make(map[string]Tool),
 		supportedList: make([]Tool, 0, len(tools)),
 		unsupported:   make(map[string]string),
+		allMap:        make(map[string]Tool),
 	}
 
 	for _, t := range tools {
+		pr.allMap[t.Name()] = t
 		ok, reason := t.IsSupported()
 		if ok {
 			pr.supportedMap[t.Name()] = t
@@ -84,6 +87,13 @@ func (pr *PluginRegistry) Unsupported() map[string]string {
 
 func (pr *PluginRegistry) GetTool(name string) (Tool, bool) {
 	t, ok := pr.supportedMap[name]
+	return t, ok
+}
+
+// GetAnyTool returns a tool definition regardless of local support status.
+// This is used by the gateway to resolve schemas for remote tools discovered via gossip.
+func (pr *PluginRegistry) GetAnyTool(name string) (Tool, bool) {
+	t, ok := pr.allMap[name]
 	return t, ok
 }
 

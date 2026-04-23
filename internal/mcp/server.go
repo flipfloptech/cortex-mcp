@@ -112,18 +112,10 @@ func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, 
 			}
 		}
 	}
-
-	// Always include locally supported tools on the gateway
-	for _, t := range s.plugins.Supported() {
-		if !t.Hidden() {
-			activeTools[t.Name()] = struct{}{}
-		}
-	}
-
 	// Lookup schema for each active tool
 	entries := make([]gateway.ListToolsEntry, 0)
 	for toolName := range activeTools {
-		if tool, ok := s.plugins.GetTool(toolName); ok && !tool.Hidden() {
+		if tool, ok := s.plugins.GetAnyTool(toolName); ok && !tool.Hidden() {
 			entries = append(entries, gateway.ListToolsEntry{
 				Name:        tool.Name(),
 				Description: tool.Description(),
@@ -150,7 +142,7 @@ func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, i
 		return s.dispatchToMesh(ctx, "tool_help", args)
 	}
 
-	tool, ok := s.plugins.GetTool(input.ToolName)
+	tool, ok := s.plugins.GetAnyTool(input.ToolName)
 	if !ok {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -159,7 +151,6 @@ func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, i
 			},
 		}, nil, nil
 	}
-
 	var meshParams []tools.ToolParam
 	for _, p := range tool.Parameters() {
 		meshParams = append(meshParams, tools.ToolParam{
