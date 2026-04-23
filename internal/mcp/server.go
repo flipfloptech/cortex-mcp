@@ -194,6 +194,82 @@ type CallToolInput struct {
 }
 
 func (s *Server) handleCallTool(ctx context.Context, req *mcp.CallToolRequest, input CallToolInput) (*mcp.CallToolResult, any, error) {
+	if s.plugins != nil {
+		if tool, ok := s.plugins.GetAnyTool(input.ToolName); ok {
+			// Validate required arguments and types
+			for _, param := range tool.Parameters() {
+				val, exists := input.Args[param.Name]
+				if param.Required && (!exists || val == nil) {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{
+								Text: fmt.Sprintf("invalid arguments for '%s': missing required argument '%s'. Please call 'get_tool_help' with tool_name='%s' to see the full schema.", input.ToolName, param.Name, input.ToolName),
+							},
+						},
+					}, nil, nil
+				}
+				if exists && val != nil {
+					valid := true
+					var expectedType string
+					switch param.Type {
+					case "string":
+						_, valid = val.(string)
+						expectedType = "string"
+					case "boolean":
+						_, valid = val.(bool)
+						expectedType = "boolean"
+					case "number":
+						_, valid = val.(float64)
+						expectedType = "number"
+					case "integer":
+						if f, ok := val.(float64); ok {
+							valid = f == float64(int(f))
+						} else {
+							valid = false
+						}
+						expectedType = "integer"
+					case "array":
+						_, valid = val.([]interface{})
+						expectedType = "array"
+					}
+
+					if !valid && expectedType != "" {
+						return &mcp.CallToolResult{
+							IsError: true,
+							Content: []mcp.Content{
+								&mcp.TextContent{
+									Text: fmt.Sprintf("invalid arguments for '%s': argument '%s' must be of type '%s'. Please call 'get_tool_help' with tool_name='%s' to see the full schema.", input.ToolName, param.Name, expectedType, input.ToolName),
+								},
+							},
+						}, nil, nil
+					}
+				}
+			}
+
+			// Check for unknown arguments
+			for argName := range input.Args {
+				known := false
+				for _, param := range tool.Parameters() {
+					if param.Name == argName {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{
+								Text: fmt.Sprintf("invalid arguments for '%s': unknown argument '%s'. Please call 'get_tool_help' with tool_name='%s' to see the full schema.", input.ToolName, argName, input.ToolName),
+							},
+						},
+					}, nil, nil
+				}
+			}
+		}
+	}
+
 	args, _ := json.Marshal(input)
 	return s.dispatchToMesh(ctx, "call_tool", args)
 }

@@ -181,9 +181,9 @@ func TestServer_CallToolValidation(t *testing.T) {
 			input: CallToolInput{
 				ToolName: "test_tool",
 				Args: map[string]interface{}{
-					"req_str":  "hello",
-					"req_int":  float64(42),
-					"unknown":  "bad",
+					"req_str": "hello",
+					"req_int": float64(42),
+					"unknown": "bad",
 				},
 			},
 			expectErr:     true,
@@ -246,4 +246,3 @@ func TestServer_SystemIntroductionPrompt(t *testing.T) {
 		t.Error("expected non-empty text content in prompt")
 	}
 }
-
