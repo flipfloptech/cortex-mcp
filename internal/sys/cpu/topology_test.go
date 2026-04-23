@@ -10,7 +10,7 @@ import (
 
 // createMockSysfs creates a temporary directory with the specified file structure
 // and returns its path.
-func createMockSysfs(t *testing.T, files map[string]string) string {
+func createMockSysfs(t testing.TB, files map[string]string) string {
 	t.Helper()
 	base := t.TempDir()
 	for path, content := range files {

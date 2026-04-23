@@ -2,7 +2,7 @@ package cpu
 
 import (
 	"context"
-	"os"
+
 	"testing"
 )
 
@@ -40,11 +40,7 @@ func BenchmarkGetTopology(b *testing.B) {
 		"devices/system/cpu/cpu17/cache/index3/shared_cpu_list":  "1,17",
 	}
 
-	base := createMockSysfs(nil, files) // nil T because we just want the base path
-	defer func() {
-		// Cleanup since we used nil T
-		_ = os.RemoveAll(base)
-	}()
+	base := createMockSysfs(b, files)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -53,10 +49,9 @@ func BenchmarkGetTopology(b *testing.B) {
 }
 
 func BenchmarkReadFileWithContext(b *testing.B) {
-	base := createMockSysfs(nil, map[string]string{
+	base := createMockSysfs(b, map[string]string{
 		"testfile": "hello world",
 	})
-	defer func() { _ = os.RemoveAll(base) }()
 	path := base + "/testfile"
 	ctx := context.Background()
 
