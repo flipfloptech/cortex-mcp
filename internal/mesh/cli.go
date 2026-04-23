@@ -344,7 +344,7 @@ func (e *staticGroupResolver) List(source string) ([]string, error) {
 
 func registerNodeTools(registry *tools.Registry, node *api.Node) {
 	registry.Register(tools.ToolDefinition{
-		Name:            "mesh_topology",
+		Name:            "get_mesh_topology",
 		Description:     "Reports the current mesh topology: peer count, known nodes, resolver entries, and per-node details",
 		LongDescription: "Returns a point-in-time snapshot of the mesh topology as seen by this node. Includes directly connected peers, all nodes learned via gossip (with impedance and capabilities), and the resolver cache size. Useful for verifying deployment completeness and debugging connectivity.",
 		Category:        "mesh",
@@ -1030,7 +1030,7 @@ func toDeployCredential(cred vault.Credential) (transport.DeployCredential, erro
 
 // runGatewayFanOut demonstrates fan-out dispatch across deployed nodes.
 
-// runGatewayTopology invokes the mesh_topology tool via the gateway and pretty-prints the output.
+// runGatewayTopology invokes the get_mesh_topology tool via the gateway and pretty-prints the output.
 
 // fanOutDirect invokes the "get_system_info" tool on all deployed nodes concurrently.
 

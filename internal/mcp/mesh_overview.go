@@ -94,8 +94,8 @@ func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error
 	// 2. Fan-out system_info to all nodes.
 	sysInfoByNode := h.fanOutTool(ctx, "get_system_info")
 
-	// 3. Fan-out mesh_topology to all nodes.
-	topoByNode := h.fanOutTool(ctx, "mesh_topology")
+	// 3. Fan-out get_mesh_topology to all nodes.
+	topoByNode := h.fanOutTool(ctx, "get_mesh_topology")
 
 	// 4. Parse system_info results and build node overviews.
 	nodeMap := make(map[string]*NodeOverview)
@@ -123,7 +123,7 @@ func (h *MeshOverviewHandler) Execute(ctx context.Context) (*MeshOverview, error
 		}
 	}
 
-	// 5. Parse mesh_topology results from every node and build the edge set.
+	// 5. Parse get_mesh_topology results from every node and build the edge set.
 	edgeSet := make(map[edgeKey]MeshEdge) // key: deduped by node IDs
 
 	// Include gateway's own direct edges.
@@ -252,7 +252,7 @@ func parseSysInfoResult(nodeID string, content json.RawMessage) *NodeOverview {
 	return no
 }
 
-// parseTopoEdges extracts direct peer edges from a mesh_topology result.
+// parseTopoEdges extracts direct peer edges from a get_mesh_topology result.
 func parseTopoEdges(edgeSet map[edgeKey]MeshEdge, reporterID string, content json.RawMessage) {
 	var topo struct {
 		NodeDetails []struct {

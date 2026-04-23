@@ -20,7 +20,7 @@ func (m *mockTopologyProvider) MeshTopology() api.TopologySnapshot {
 }
 
 // buildMockDispatcher creates a dispatcher that returns canned fan-out results
-// for system_info and mesh_topology calls.
+// for get_system_info and get_mesh_topology calls.
 func buildMockDispatcher(sysInfoResults, topoResults map[string]json.RawMessage) *mockDispatcher {
 	return &mockDispatcher{
 		dispatchFunc: func(ctx context.Context, toolName string, args json.RawMessage) (*tools.ToolResult, error) {
@@ -42,7 +42,7 @@ func buildMockDispatcher(sysInfoResults, topoResults map[string]json.RawMessage)
 					})
 					results = append(results, nr)
 				}
-			case "mesh_topology":
+			case "get_mesh_topology":
 				for nodeID, content := range topoResults {
 					nr, _ := json.Marshal(map[string]interface{}{
 						"node_id":  nodeID,

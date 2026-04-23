@@ -52,7 +52,7 @@ These tools appear in `get_tool_list` output and are the primary interface for L
 
 These follow the `registry.Tool` interface and are auto-registered via `init()`.
 
-#### `system_info`
+#### `get_system_info`
 *Category: `system` · Runs on: Every node*
 
 Gathers foundational telemetry about the host system. This tool is designed to run universally on any Linux environment, including minimal containers and heavily stripped OS deployments.
@@ -75,7 +75,7 @@ Gathers foundational telemetry about the host system. This tool is designed to r
 - If `/proc/sys/kernel/osrelease` or `/etc/os-release` are missing or unreadable, the tool degrades gracefully by returning `"unknown"` or empty strings. If no Lustre/SFA sysfs paths exist, `roles` returns `["generic"]` — the tool never errors.
 - New telemetry data points default to empty strings, `0`, or `false` gracefully if their respective data sources are missing or unreadable.
 
-#### `uptime`
+#### `get_uptime`
 *Category: `system` · Runs on: Every Linux node*
 
 Reads and calculates system uptime and CPU idle time. Formats the data into pre-processed human-readable strings to reduce the mathematical overhead for LLMs consuming the API.
@@ -91,7 +91,7 @@ Reads and calculates system uptime and CPU idle time. Formats the data into pre-
 **Degradation Profile:**
 - `IsSupported()` returns `false` if the host OS is not Linux, or if `/proc/uptime` is unreadable/missing.
 
-#### `loadavg`
+#### `get_loadavg`
 *Category: `system` · Runs on: Every Linux node*
 
 Reads the system load averages and scheduling entity statistics to provide a snapshot of system CPU and I/O pressure.
@@ -197,7 +197,7 @@ A highly structured, math-free alternative to the `free` command, giving the LLM
 
 ### Mesh Infrastructure Tools
 
-#### `mesh_topology`
+#### `get_mesh_topology`
 *Category: `mesh` · Runs on: Every node*
 
 Returns a point-in-time snapshot of the mesh topology **as seen by the node it runs on**. All data is sourced locally — zero network traffic. When fanned out to `*`, the union of all nodes' direct-peer relationships produces the complete mesh graph.
@@ -304,11 +304,11 @@ Invokes any tool in the mesh (visible or hidden). Supports three dispatch modes:
 ### `get_mesh_overview`
 *Category: `meta` · MCP Access: Direct*
 
-Provides a complete cluster topology in a single call. Fans out `system_info` and `mesh_topology` to every node in the mesh, then aggregates the results at the gateway.
+Provides a complete cluster topology in a single call. Fans out `get_system_info` and `get_mesh_topology` to every node in the mesh, then aggregates the results at the gateway.
 
 **Algorithm:**
-1. **Fan-out `system_info`** to `*` (all nodes) — collects hostname, OS, arch, CPUs, kernel, distro, and detected storage roles from every node.
-2. **Fan-out `mesh_topology`** to `*` (all nodes) — collects each node's direct peers, impedance costs, next-hop routing, and capabilities.
+1. **Fan-out `get_system_info`** to `*` (all nodes) — collects hostname, OS, arch, CPUs, kernel, distro, and detected storage roles from every node.
+2. **Fan-out `get_mesh_topology`** to `*` (all nodes) — collects each node's direct peers, impedance costs, next-hop routing, and capabilities.
 3. **Edge deduplication**: Unions all `IsDirect=true` relationships across all nodes to produce the complete mesh graph.
 4. **Role count aggregation**: Counts occurrences of each role (SFA, MGS, MDS, OSS, Client, Generic) across all nodes.
 5. **Mermaid rendering**: Generates a `graph TD` diagram from the real edge set, with nodes colored by primary role.
