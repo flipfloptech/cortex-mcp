@@ -1,10 +1,7 @@
 package mesh
 
 import (
-	"context"
-	"net"
 	"testing"
-	"time"
 )
 
 // --- upgradeRestartCommand tests ---

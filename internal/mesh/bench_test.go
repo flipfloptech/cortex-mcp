@@ -2,7 +2,6 @@ package mesh
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"testing"
 
@@ -101,28 +100,6 @@ func BenchmarkInstallRemotePath(b *testing.B) {
 }
 
 // ── Network & Address Utilities ──────────────────────────────────────
-
-func BenchmarkIsRoutableAddress(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = isRoutableAddress("192.168.1.1")
-	}
-}
-
-func BenchmarkIsMembraneTLSError(b *testing.B) {
-	err := error(nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = isMembraneTLSError(err)
-	}
-}
-
-func BenchmarkResolveTarget(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = resolveTarget("127.0.0.1")
-	}
-}
 
 // ── Identity Persistence ─────────────────────────────────────────────
 

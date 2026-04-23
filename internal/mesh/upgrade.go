@@ -27,9 +27,6 @@ import (
 )
 
 const (
-	// probeTimeout is the TCP dial timeout when checking if a node is alive.
-	probeTimeout = 3 * time.Second
-
 	// upgradeWaitAfterRestart is how long to wait for the service to
 	// come back up after systemctl restart.
 	upgradeWaitAfterRestart = 3 * time.Second
