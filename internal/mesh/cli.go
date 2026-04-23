@@ -1082,8 +1082,9 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 
 		// Use SelfDeployer to deploy the binary to a unique /tmp path and run local-op uninstall
 		deployer := &transport.SelfDeployer{
-			RemotePath: fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
-			ExecArgs:   []string{"local-op", "uninstall"},
+			RemotePath:  fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
+			ExecArgs:    []string{"local-op", "uninstall"},
+			NoWaitReady: true,
 		}
 		stream, err := deployer.Deploy(ctx, sshAddr, deployCred, nil)
 		if err != nil {
