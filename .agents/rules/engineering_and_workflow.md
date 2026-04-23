@@ -13,7 +13,7 @@ description: Coding standards, security protocols, and development workflows for
 
 ## Go Coding Standards
 
-- **Version**: Go 1.25+ is the project standard (see `go.mod` for the exact minimum).
+- **Version**: Go 1.26+ is the project standard (see `go.mod` for the exact minimum).
 - **Use the Absolute Best Tools**: Always select the absolute best, most performant, and reliable tool for the job. For structured logging, use high-end frameworks like `go.uber.org/zap`.
 - **Concurrency**: Respect `context.Context` cancellation everywhere.
 - **Error Handling**: Wrap errors with context (`fmt.Errorf("config parse: %w", err)`).
