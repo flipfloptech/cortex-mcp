@@ -113,6 +113,13 @@ func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 	}
 
+	// Always include locally supported tools on the gateway
+	for _, t := range s.plugins.Supported() {
+		if !t.Hidden() {
+			activeTools[t.Name()] = struct{}{}
+		}
+	}
+
 	// Lookup schema for each active tool
 	entries := make([]gateway.ListToolsEntry, 0)
 	for toolName := range activeTools {
