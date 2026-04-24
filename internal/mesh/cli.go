@@ -1092,7 +1092,6 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 				err = nil
 				sshAddr = currentSSHAddr
 				meshAddr = currentMeshAddr
-				hostStr = currentHostStr
 				deployCred = currentDeployCred
 				break
 			}
