@@ -1014,50 +1014,94 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			continue
 		}
 
-		baseAddr := hostCfg.Addresses[0]
-		// Determine base host (strip any existing port for calculation)
-		hostStr, portStr, splitErr := net.SplitHostPort(baseAddr)
-		if splitErr != nil {
-			hostStr = baseAddr
-			portStr = ""
-		}
-
-		sshPort := hostCfg.GetSSHPort(cfg.Node.SSHPort)
-		meshPort := hostCfg.GetMeshPort(cfg.Node.MeshPort)
-
-		var sshAddr, meshAddr string
-		if portStr != "" {
-			sshAddr = baseAddr
-			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort)
-		} else {
-			sshAddr = fmt.Sprintf("%s:%d", hostStr, sshPort)
-			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort)
-		}
-
-		// Look up credentials from the vault. Optional if we are not installing/deploying.
+		var sshAddr, meshAddr, hostStr string
 		var deployCred transport.DeployCredential
+		var conn net.Conn
+		var err error
+
+		// Set default values based on the first address (used if all dial attempts fail)
+		baseAddr0 := hostCfg.Addresses[0]
+		hostStr, portStr0, splitErr0 := net.SplitHostPort(baseAddr0)
+		if splitErr0 != nil {
+			hostStr = baseAddr0
+			portStr0 = ""
+		}
+		sshPort0 := hostCfg.GetSSHPort(cfg.Node.SSHPort)
+		meshPort0 := hostCfg.GetMeshPort(cfg.Node.MeshPort)
+		if portStr0 != "" {
+			sshAddr = baseAddr0
+			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort0)
+		} else {
+			sshAddr = fmt.Sprintf("%s:%d", hostStr, sshPort0)
+			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort0)
+		}
+
 		cred, ok := v.Match(sshAddr)
 		if !ok {
 			cred, ok = v.Match(hostStr)
 		}
-		if !ok {
-			if install {
-				zap.S().Warnw("no matching credentials in vault for install", "node_id", remoteNodeID, "addr", sshAddr)
-				continue
-			} else {
-				zap.S().Debugw("no matching credentials in vault, skipping ssh tunnel for dialing", "node_id", remoteNodeID, "addr", sshAddr)
-			}
-		} else {
-			var err error
-			deployCred, err = toDeployCredential(cred)
-			if err != nil {
-				zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", sshAddr, "error", err)
-				continue
-			}
+		if ok {
+			deployCred, _ = toDeployCredential(cred)
 		}
 
 		dialer := createResilientDialer(cfg, v, &node)
-		conn, err := dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
+		var dialErrs []string
+
+		for _, baseAddr := range hostCfg.Addresses {
+			var currentSSHAddr, currentMeshAddr, currentHostStr string
+			var currentDeployCred transport.DeployCredential
+
+			currentHostStr, currentPortStr, splitErr := net.SplitHostPort(baseAddr)
+			if splitErr != nil {
+				currentHostStr = baseAddr
+				currentPortStr = ""
+			}
+
+			sshPort := hostCfg.GetSSHPort(cfg.Node.SSHPort)
+			meshPort := hostCfg.GetMeshPort(cfg.Node.MeshPort)
+
+			if currentPortStr != "" {
+				currentSSHAddr = baseAddr
+				currentMeshAddr = fmt.Sprintf("%s:%d", currentHostStr, meshPort)
+			} else {
+				currentSSHAddr = fmt.Sprintf("%s:%d", currentHostStr, sshPort)
+				currentMeshAddr = fmt.Sprintf("%s:%d", currentHostStr, meshPort)
+			}
+
+			currentCred, ok := v.Match(currentSSHAddr)
+			if !ok {
+				currentCred, ok = v.Match(currentHostStr)
+			}
+			if !ok {
+				if install {
+					zap.S().Warnw("no matching credentials in vault for install", "node_id", remoteNodeID, "addr", currentSSHAddr)
+				} else {
+					zap.S().Debugw("no matching credentials in vault, skipping ssh tunnel for dialing", "node_id", remoteNodeID, "addr", currentSSHAddr)
+				}
+			} else {
+				var credErr error
+				currentDeployCred, credErr = toDeployCredential(currentCred)
+				if credErr != nil {
+					zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", currentSSHAddr, "error", credErr)
+				}
+			}
+
+			c, dialErr := dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: currentMeshAddr})
+			if dialErr == nil {
+				conn = c
+				err = nil
+				sshAddr = currentSSHAddr
+				meshAddr = currentMeshAddr
+				hostStr = currentHostStr
+				deployCred = currentDeployCred
+				break
+			}
+			dialErrs = append(dialErrs, fmt.Sprintf("%s=%v", baseAddr, dialErr))
+		}
+
+		if conn == nil {
+			err = fmt.Errorf("all addresses failed: %s", strings.Join(dialErrs, "; "))
+		}
 
 		if err == nil {
 			if install && !force {
@@ -1127,17 +1171,13 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			continue
 		}
 
-		zap.S().Debugw("all connection paths failed, attempting deployment", "node_id", remoteNodeID, "error", err)
-
 		// --- Path 3: No existing node → fresh deploy ---
-		if pki == nil {
-			zap.S().Debugw("not a gateway node, skipping fresh deployment", "node_id", remoteNodeID)
+		if pki == nil || !install {
+			zap.S().Debugw("all connection paths failed", "node_id", remoteNodeID, "error", err)
 			continue
 		}
-		if !install {
-			zap.S().Debugw("not an install operation, skipping fresh deployment", "node_id", remoteNodeID)
-			continue
-		}
+
+		zap.S().Debugw("all connection paths failed, attempting deployment", "node_id", remoteNodeID, "error", err)
 
 		if !force {
 			// Quick check: does the node have the binary already but the service is just stopped?
