@@ -104,10 +104,7 @@ var (
 	regenerateKeysFlag bool
 )
 
-func promptConfirmation(action string, force bool, r io.Reader, w io.Writer) error {
-	if force {
-		return nil
-	}
+func promptConfirmation(action string, r io.Reader, w io.Writer) error {
 	_, _ = fmt.Fprintf(w, "WARNING: This will %s the fleet nodes.\nType '%s' to confirm: ", action, action)
 	scanner := bufio.NewScanner(r)
 	if !scanner.Scan() {
@@ -175,7 +172,7 @@ func Execute() {
 		Short: "Remove nodes (ephemeral or persistent)",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := promptConfirmation("uninstall", forceFlag, os.Stdin, os.Stderr); err != nil {
+			if err := promptConfirmation("uninstall", os.Stdin, os.Stderr); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -269,7 +266,7 @@ func Execute() {
 		Short: "Persist nodes as systemd services",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := promptConfirmation("install", forceFlag, os.Stdin, os.Stderr); err != nil {
+			if err := promptConfirmation("install", os.Stdin, os.Stderr); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
