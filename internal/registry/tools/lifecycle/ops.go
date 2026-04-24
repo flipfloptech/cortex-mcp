@@ -45,15 +45,19 @@ func SelfInstallOps() []LifecycleOp {
 // SelfUninstallOps returns the sequence of operations to fully remove
 // the cortex-mesh systemd service, unit file, and binary.
 func SelfUninstallOps() []LifecycleOp {
-	return []LifecycleOp{
+	ops := []LifecycleOp{
 		{Action: "systemctl", Args: fmt.Sprintf("stop %s", ServiceName)},
 		{Action: "systemctl", Args: fmt.Sprintf("disable %s", ServiceName)},
 		{Action: "remove_file", Path: serviceUnitPath()},
 		{Action: "systemctl", Args: "daemon-reload"},
 		// Kill any lingering legacy processes via abstract socket lock
 		{Action: "kill_abstract_socket", Path: "@cortex-mcp-lock"},
-		{Action: "remove_file", Path: defaultInstallPath},
+		{Action: "remove_dir", Path: "/opt/cortex-mesh"},
 	}
+	if home, err := os.UserHomeDir(); err == nil {
+		ops = append(ops, LifecycleOp{Action: "remove_dir", Path: home + "/.cortex-mesh"})
+	}
+	return ops
 }
 
 // nodeUpgradeOps returns the sequence of operations to upgrade an
@@ -96,6 +100,10 @@ func ExecuteOp(op LifecycleOp) error {
 	case "remove_file":
 		zap.S().Infow("lifecycle", "action", "remove_file", "path", op.Path)
 		return os.Remove(op.Path)
+
+	case "remove_dir":
+		zap.S().Infow("lifecycle", "action", "remove_dir", "path", op.Path)
+		return os.RemoveAll(op.Path)
 
 	case "copy_binary":
 		zap.S().Infow("lifecycle", "action", "copy_binary", "dest", op.Path)

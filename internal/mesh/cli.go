@@ -1090,7 +1090,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 					zap.S().Infow("forcing reinstall of remote node (preserving keys)", "node_id", remoteNodeID, "addr", sshAddr)
 				}
 				remotePath := lifecycle.InstallRemotePath("")
-				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
+				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath, cfg); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
 					continue
 				}

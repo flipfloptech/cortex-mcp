@@ -13,6 +13,7 @@
 package mesh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go.uber.org/zap"
@@ -22,7 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/cortex-mesh/cortex-mesh/transport"
+	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
@@ -67,9 +70,10 @@ func upgradeRestartCommand(remotePath string) string {
 // Flow:
 //  1. SSH to targetHost using cred
 //  2. SFTP the local binary to remotePath (overwrites existing)
-//  3. Exec the binary with the install subcommand to re-register and restart
-//  4. Close SSH connection
-func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string) error {
+//  3. SFTP the local mesh.toml to /opt/cortex-mesh/etc/mesh.toml
+//  4. Exec the binary with the install subcommand to re-register and restart
+//  5. Close SSH connection
+func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string, cfg *config.MeshConfig) error {
 	// Resolve the local binary path.
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -108,7 +112,22 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		return fmt.Errorf("upgrade: atomic replace on %q: %w", targetHost, err)
 	}
 
-	// Phase 3: Restart via the binary's install subcommand.
+	// Phase 3: Upload the configuration file via SFTP.
+	if cfg != nil {
+		strippedCfg := cfg.Stripped()
+		var configBuf bytes.Buffer
+		if err := toml.NewEncoder(&configBuf).Encode(strippedCfg); err != nil {
+			return fmt.Errorf("upgrade: encode stripped config: %w", err)
+		}
+		configRemotePath := "/opt/cortex-mesh/etc/mesh.toml"
+		if err := uploadBinaryViaSFTP(client, bytes.NewReader(configBuf.Bytes()), configRemotePath); err != nil {
+			return fmt.Errorf("upgrade: upload config to %q: %w", targetHost, err)
+		}
+		// Secure the config file
+		execSSHCommand(client, fmt.Sprintf("sudo chmod 600 %q", configRemotePath))
+	}
+
+	// Phase 4: Restart via the binary's install subcommand.
 	if err := execSSHCommand(client, upgradeRestartCommand(remotePath)); err != nil {
 		return fmt.Errorf("upgrade: restart on %q: %w", targetHost, err)
 	}

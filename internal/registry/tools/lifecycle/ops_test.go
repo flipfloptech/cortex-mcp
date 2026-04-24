@@ -86,7 +86,8 @@ func TestSelfUninstallOps(t *testing.T) {
 			if strings.Contains(op.Path, ".service") {
 				hasRemoveUnit = true
 			}
-			if strings.Contains(op.Path, InstallRemotePath("")) {
+		case "remove_dir":
+			if strings.Contains(op.Path, "/opt/cortex-mesh") {
 				hasRemoveBinary = true
 			}
 		}
