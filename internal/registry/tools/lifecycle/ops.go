@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // liveMode is set to true when the binary enters "serve" or "daemon" mode.
@@ -95,6 +96,9 @@ func ExecuteOp(op LifecycleOp) error {
 
 	case "write_file":
 		zap.S().Infow("lifecycle", "action", "write_file", "path", op.Path)
+		if err := os.MkdirAll(filepath.Dir(op.Path), 0755); err != nil {
+			return fmt.Errorf("mkdir path: %w", err)
+		}
 		return os.WriteFile(op.Path, []byte(op.Content), 0644)
 
 	case "remove_file":
@@ -116,6 +120,9 @@ func ExecuteOp(op LifecycleOp) error {
 			return fmt.Errorf("read binary: %w", err)
 		}
 		tmpPath := op.Path + ".tmp"
+		if err := os.MkdirAll(filepath.Dir(op.Path), 0755); err != nil {
+			return fmt.Errorf("mkdir path: %w", err)
+		}
 		if err := os.WriteFile(tmpPath, data, 0755); err != nil {
 			return fmt.Errorf("write tmp binary: %w", err)
 		}
@@ -132,6 +139,9 @@ func ExecuteOp(op LifecycleOp) error {
 			return fmt.Errorf("read source: %w", err)
 		}
 		tmpPath := op.Path + ".tmp"
+		if err := os.MkdirAll(filepath.Dir(op.Path), 0755); err != nil {
+			return fmt.Errorf("mkdir path: %w", err)
+		}
 		if err := os.WriteFile(tmpPath, data, 0755); err != nil {
 			return fmt.Errorf("write tmp file: %w", err)
 		}
