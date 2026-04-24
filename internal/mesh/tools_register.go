@@ -12,6 +12,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/buddyinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/cpupowerstate"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/cputopology"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/irqaffinity"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/loadavg"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/memoryinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"

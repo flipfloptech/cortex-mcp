@@ -217,7 +217,7 @@ func TestCpuPowerState_MissingCpuidle(t *testing.T) {
 	}
 }
 
-func BenchmarkCpuPowerState(b *testing.B) {
+func BenchmarkExecute(b *testing.B) {
 	dir := setupMockSysfs(&testing.T{})
 	sysDevicesSystemCpuPath = dir
 
@@ -226,5 +226,84 @@ func BenchmarkCpuPowerState(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, _ = tool.Execute(context.Background(), nil)
+	}
+}
+
+func BenchmarkNew(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		New()
+	}
+}
+
+func BenchmarkName(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Name()
+	}
+}
+
+func BenchmarkDescription(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Description()
+	}
+}
+
+func BenchmarkHelp(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Help()
+	}
+}
+
+func BenchmarkCategory(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Category()
+	}
+}
+
+func BenchmarkParameters(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Parameters()
+	}
+}
+
+func BenchmarkHidden(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.Hidden()
+	}
+}
+
+func BenchmarkIsSupported(b *testing.B) {
+	tool := New()
+	for i := 0; i < b.N; i++ {
+		tool.IsSupported()
+	}
+}
+
+func BenchmarkMaxSlice(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		maxSlice([]int{1, 2, 3})
+	}
+}
+
+func BenchmarkMinSlice(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		minSlice([]int{1, 2, 3})
+	}
+}
+
+func BenchmarkAvgSlice(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		avgSlice([]int{1, 2, 3})
+	}
+}
+
+func BenchmarkReadKHz(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_, _ = readKHz("nonexistent")
 	}
 }

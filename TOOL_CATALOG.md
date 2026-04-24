@@ -94,6 +94,24 @@ Provides a deterministic, pure-sysfs map of the hardware compute layout, enablin
 - **Virtualization Blindness**: In heavily abstracted VMs where L3 caches are unreadable, the tool avoids breaking the JSON shape by placing all cores into `l3_domain_0` and setting the `l3_topology_abstracted: true` safety flag on the system summary.
 - **Context Timeouts**: Incorporates aggressive `5s` context timeouts around sysfs reads to prevent agent hangs on unresponsive virtual filesystems.
 
+#### `get_irq_affinity`
+*Category: `compute` · Runs on: Every Linux node*
+
+Provides a consolidated map of hardware interrupt distribution, identifying the highest-volume devices and the specific CPU cores burdened by them.
+
+**Data Sources:**
+- Reads `/proc/interrupts` directly to map interrupts to logical CPU cores.
+
+**Mathematical Models / Output Structuring:**
+- **Active CPUs Filtering**: Strip the Zeroes logic to only include CPUs where the interrupt count represents >1% of the total hits for that IRQ.
+- **Top N Limitations**: Filters out background noise by sorting IRQs by total volume and returning only the Top 20 highest volume IRQs, ensuring token-efficiency regardless of core count.
+- **Burden Summary**: Aggregates the total hardware interrupts per CPU to return the top 5 most heavily burdened logical cores.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux or if `/proc/interrupts` is missing.
+- Handles missing device names by falling back to the IRQ number.
+- Correctly parses and groups non-numeric IRQs (e.g., `NMI`, `LOC`, `IPI`) ensuring robust execution on edge environments.
+
 #### `get_cpu_power_state`
 *Category: `compute` · Runs on: Every Linux node*
 
