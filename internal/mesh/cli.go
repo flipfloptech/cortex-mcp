@@ -50,6 +50,7 @@
 package mesh
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -89,11 +90,34 @@ import (
 // toolEntry pairs a definition with its handler for re-registration.
 // GatewayOptions contains operation modes for the bootstrap node.
 type GatewayOptions struct {
-	Install    bool
-	Stop       bool
-	Target     string
-	PureClient bool
-	ServeHTTP  string // address to serve HTTP on
+	Install        bool
+	Stop           bool
+	Target         string
+	PureClient     bool
+	ServeHTTP      string // address to serve HTTP on
+	Force          bool
+	RegenerateKeys bool
+}
+
+var (
+	forceFlag          bool
+	regenerateKeysFlag bool
+)
+
+func promptConfirmation(action string, force bool, r io.Reader, w io.Writer) error {
+	if force {
+		return nil
+	}
+	_, _ = fmt.Fprintf(w, "WARNING: This will %s the fleet nodes.\nType '%s' to confirm: ", action, action)
+	scanner := bufio.NewScanner(r)
+	if !scanner.Scan() {
+		return fmt.Errorf("aborted")
+	}
+	input := strings.TrimSpace(scanner.Text())
+	if input != action {
+		return fmt.Errorf("aborted: input '%s' did not match '%s'", input, action)
+	}
+	return nil
 }
 
 func Execute() {
@@ -151,6 +175,10 @@ func Execute() {
 		Short: "Remove nodes (ephemeral or persistent)",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := promptConfirmation("uninstall", forceFlag, os.Stdin, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 			ctx, cancel, _, cfg, _ := initEnv(configPath)
 			defer cancel()
 			target := ""
@@ -160,6 +188,7 @@ func Execute() {
 			uninstallFleet(ctx, cfg, target)
 		},
 	}
+	uninstallCmd.Flags().BoolVar(&forceFlag, "force", false, "Bypass confirmation prompt")
 
 	localOpCmd := &cobra.Command{
 		Use:    "local-op <action>",
@@ -202,22 +231,7 @@ func Execute() {
 		},
 	}
 
-	reinstallCmd := &cobra.Command{
-		Use:   "reinstall [target]",
-		Short: "Wipe and forcefully reinstall fleet nodes",
-		Args:  cobra.MaximumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
-			defer cancel()
-			target := ""
-			if len(args) > 0 {
-				target = args[0]
-			}
-			uninstallFleet(ctx, cfg, target)
-			opts := GatewayOptions{Install: true, Target: target}
-			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
-		},
-	}
+	// reinstallCmd removed: use install --force instead
 
 	startCmd := &cobra.Command{
 		Use:   "start [target]",
@@ -255,16 +269,27 @@ func Execute() {
 		Short: "Persist nodes as systemd services",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := promptConfirmation("install", forceFlag, os.Stdin, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 			target := ""
 			if len(args) > 0 {
 				target = args[0]
 			}
-			opts := GatewayOptions{Install: true, Target: target}
+			opts := GatewayOptions{
+				Install:        true,
+				Target:         target,
+				Force:          forceFlag,
+				RegenerateKeys: regenerateKeysFlag,
+			}
 			runGateway(ctx, cancel, nodeID, cfg, plugins, skipDeploy, opts)
 		},
 	}
+	installCmd.Flags().BoolVar(&forceFlag, "force", false, "Bypass confirmation prompt and already-installed checks")
+	installCmd.Flags().BoolVar(&regenerateKeysFlag, "regenerate-keys", false, "Force a clean wipe and generate new mTLS keys for the node")
 
 	mcpCmd := &cobra.Command{
 		Use:   "mcp [ip:port]",
@@ -286,7 +311,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(serveCmd, daemonCmd, bridgeCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
+	rootCmd.AddCommand(serveCmd, daemonCmd, bridgeCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -570,7 +595,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			// Give the mesh time to initialize before proactively probing seeds for version mismatches.
 			time.Sleep(3 * time.Second)
 			zap.S().Infow("fleet node fanning out proactive peer connections")
-			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false, nil)
+			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false, nil, false, false)
 		}()
 	}
 
@@ -666,7 +691,7 @@ func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginR
 
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false, nil)
+		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false, nil, false, false)
 	}()
 
 	zap.S().Infow("bridge node ready — serving lifecycle tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
@@ -782,7 +807,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	var deployedNodes []deployedNode
 	if install || opts.Stop {
 		zap.S().Infow("deploying to mesh seed hosts (foreground mode)")
-		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false, nil)
+		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false, nil, opts.Force, opts.RegenerateKeys)
 		if len(deployedNodes) == 0 {
 			zap.S().Warnw("no remote nodes successfully joined - check credentials")
 		}
@@ -878,7 +903,7 @@ func runConnectionReconciler(ctx context.Context, node *api.Node, pki *ephemeral
 	indirectBackoffs := make(map[string]*nodeBackoff)
 
 	// Trigger an initial, immediate reconciliation round.
-	deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs)
+	deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs, false, false)
 
 	// Backoff configuration
 	baseInterval := 5 * time.Second
@@ -895,7 +920,7 @@ func runConnectionReconciler(ctx context.Context, node *api.Node, pki *ephemeral
 			return
 		case <-timer.C:
 			zap.S().Debugw("reconciler round starting")
-			nodesConnected := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs)
+			nodesConnected := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs, false, false)
 
 			// Exponential backoff logic: reset if we made a connection, back off if we didn't.
 			if len(nodesConnected) > 0 {
@@ -946,7 +971,7 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install, reconcileMode bool, indirectBackoffs map[string]*nodeBackoff) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install, reconcileMode bool, indirectBackoffs map[string]*nodeBackoff, force, regenerateKeys bool) []deployedNode {
 	// Grab current topology snapshot to prevent dialing known hosts
 	topology := node.MeshTopology()
 	isDirect := make(map[string]bool)
@@ -1041,6 +1066,20 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 		conn, err := dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
 
 		if err == nil {
+			if install && !force {
+				zap.S().Warnw("node already installed and running, use --force to overwrite", "node_id", remoteNodeID)
+				_ = conn.Close()
+				continue
+			}
+
+			if install && force && regenerateKeys {
+				zap.S().Infow("node already installed, but --regenerate-keys requested. forcing fresh deploy", "node_id", remoteNodeID)
+				_ = conn.Close()
+				err = fmt.Errorf("forced key regeneration") // trigger fallthrough to Path 3
+			}
+		}
+
+		if err == nil {
 			// Found an existing active path! (TCP, Proxy, or SSH Tunnel)
 			var versionMismatch bool
 			if !skipDeploy {
@@ -1055,9 +1094,13 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 				}
 			}
 
-			if versionMismatch {
+			if versionMismatch || (install && force && !regenerateKeys) {
 				_ = conn.Close()
-				zap.S().Infow("upgrading remote node", "node_id", remoteNodeID, "addr", sshAddr)
+				if versionMismatch {
+					zap.S().Infow("upgrading remote node", "node_id", remoteNodeID, "addr", sshAddr)
+				} else {
+					zap.S().Infow("forcing reinstall of remote node (preserving keys)", "node_id", remoteNodeID, "addr", sshAddr)
+				}
 				remotePath := lifecycle.InstallRemotePath("")
 				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
@@ -1100,6 +1143,15 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 		if !install {
 			zap.S().Debugw("not an install operation, skipping fresh deployment", "node_id", remoteNodeID)
 			continue
+		}
+
+		if !force {
+			// Quick check: does the node have the binary already but the service is just stopped?
+			remoteVersion, verErr := getRemoteApplicationVersion(ctx, sshAddr, deployCred, lifecycle.InstallRemotePath(""))
+			if verErr == nil && remoteVersion != "" {
+				zap.S().Warnw("node already installed but stopped, use start command or --force to overwrite", "node_id", remoteNodeID)
+				continue
+			}
 		}
 
 		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", sshAddr)
