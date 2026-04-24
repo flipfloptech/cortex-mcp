@@ -1588,6 +1588,8 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 			hostStr = target.Address
 		}
 
+		var errs []string
+
 		// 1. Direct TCP
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp", target.Address)
@@ -1595,6 +1597,7 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 			zap.S().Debugw("dialer: direct TCP success", "target", target.Hostname, "addr", target.Address)
 			return conn, nil
 		}
+		errs = append(errs, fmt.Sprintf("tcp=%v", err))
 
 		// 2. HTTP CONNECT Proxy (via matched config patterns)
 		for _, p := range cfg.Proxies {
@@ -1605,7 +1608,7 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 					zap.S().Debugw("dialer: proxy success", "target", target.Hostname, "proxy", p.URL)
 					return conn, nil
 				}
-				zap.S().Debugw("dialer: proxy failed", "target", target.Hostname, "proxy", p.URL, "error", err)
+				errs = append(errs, fmt.Sprintf("proxy(%s)=%v", p.URL, err))
 			}
 		}
 
@@ -1626,6 +1629,7 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 									zap.S().Debugw("dialer: gossiped proxy success", "target", target.Hostname, "proxy", url)
 									return conn, nil
 								}
+								errs = append(errs, fmt.Sprintf("gossip_proxy(%s)=%v", url, err))
 							}
 						}
 					}
@@ -1662,10 +1666,14 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 					zap.S().Debugw("dialer: SSH tunnel success", "target", target.Hostname, "ssh_addr", sshAddr)
 					return conn, nil
 				}
-				zap.S().Debugw("dialer: SSH tunnel failed", "target", target.Hostname, "ssh_addr", sshAddr, "error", err)
+				errs = append(errs, fmt.Sprintf("ssh=%v", err))
+			} else {
+				errs = append(errs, fmt.Sprintf("ssh_cred_err=%v", err))
 			}
+		} else {
+			errs = append(errs, "ssh=no_creds_in_vault")
 		}
 
-		return nil, fmt.Errorf("all dialing methods failed for %s", target.Hostname)
+		return nil, fmt.Errorf("all dialing methods failed for %s: %s", target.Hostname, strings.Join(errs, ", "))
 	}
 }
