@@ -253,6 +253,69 @@ func TestParseLimits_SubCore(t *testing.T) {
 	}
 }
 
+func TestParseLimits_Hierarchy(t *testing.T) {
+	tempDir := t.TempDir()
+	sysFs := filepath.Join(tempDir, "sys", "fs", "cgroup")
+	if err := os.MkdirAll(sysFs, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	systemSlice := filepath.Join(sysFs, "system.slice")
+	scope := filepath.Join(systemSlice, "run-123.scope")
+	if err := os.MkdirAll(scope, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(sysFs, "cpuset.cpus"), []byte("0-3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(systemSlice, "cpu.max"), []byte("50000 100000\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(scope, "memory.max"), []byte("536870912\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scope, "memory.current"), []byte("10485760\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := &CgroupLimitsTool{
+		sysFsCgroupPath: sysFs,
+		procPath:        filepath.Join(tempDir, "proc"),
+	}
+
+	limits, err := tool.getEffectiveLimits(scope)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if limits.CPU.IsUnlimited {
+		t.Errorf("Expected CPU to be limited")
+	}
+	if limits.CPU.AllowedLogicalCores != 0.5 {
+		t.Errorf("Expected AllowedLogicalCores=0.5, got %v", limits.CPU.AllowedLogicalCores)
+	}
+
+	if limits.Memory.IsUnlimited {
+		t.Errorf("Expected Memory to be limited")
+	}
+	if limits.Memory.LimitMB != 512 {
+		t.Errorf("Expected LimitMB=512, got %d", limits.Memory.LimitMB)
+	}
+	if limits.Memory.CurrentUsageMB != 10 {
+		t.Errorf("Expected CurrentUsageMB=10, got %d", limits.Memory.CurrentUsageMB)
+	}
+
+	if !limits.Cpuset.IsPinned {
+		t.Errorf("Expected Cpuset IsPinned=true")
+	}
+	if len(limits.Cpuset.AllowedCPUs) != 4 {
+		t.Errorf("Expected 4 allowed CPUs, got %d", len(limits.Cpuset.AllowedCPUs))
+	}
+}
+
 func BenchmarkCgroupLimitsTool_ExecuteTargeted(b *testing.B) {
 	cgroupDir, procDir := setupMockCgroupFs(&testing.T{}, true, true, true)
 	tool := &CgroupLimitsTool{
@@ -265,6 +328,16 @@ func BenchmarkCgroupLimitsTool_ExecuteTargeted(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = tool.Execute(ctx, args)
+	}
+}
+
+func BenchmarkGetEffectiveLimits(b *testing.B) {
+	cgroupDir, procDir := setupMockCgroupFs(&testing.T{}, true, true, true)
+	tool := &CgroupLimitsTool{sysFsCgroupPath: cgroupDir, procPath: procDir}
+	slurmDir := filepath.Join(cgroupDir, "slurm", "job_14502")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = tool.getEffectiveLimits(slurmDir)
 	}
 }
 

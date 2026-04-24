@@ -190,7 +190,7 @@ func (t *CgroupLimitsTool) executeTargetedMode(hostname string, start time.Time,
 	}
 
 	fullPath := filepath.Join(t.sysFsCgroupPath, cgroupPath)
-	limits, err := t.parseLimits(fullPath)
+	limits, err := t.getEffectiveLimits(fullPath)
 	if err != nil {
 		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to parse limits: %v", err)), nil
 	}
@@ -228,7 +228,7 @@ func (t *CgroupLimitsTool) executeGlobalMode(hostname string, start time.Time) (
 	for _, mgr := range managers {
 		fullPath := filepath.Join(t.sysFsCgroupPath, mgr)
 		if registry.PathExists(fullPath) {
-			limits, err := t.parseLimits(fullPath)
+			limits, err := t.getEffectiveLimits(fullPath)
 			if err == nil {
 				out.WorkloadManagers[mgr] = limits
 			}
@@ -249,6 +249,72 @@ func (t *CgroupLimitsTool) executeGlobalMode(hostname string, start time.Time) (
 	)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
+}
+
+func (t *CgroupLimitsTool) getEffectiveLimits(fullPath string) (ResourceLimits, error) {
+	effective := ResourceLimits{}
+	effective.CPU.IsUnlimited = true
+	effective.Memory.IsUnlimited = true
+
+	current := fullPath
+	isLeaf := true
+
+	for registry.PathExists(current) {
+		local, _ := t.parseLimits(current)
+
+		// CPU Max
+		if !local.CPU.IsUnlimited {
+			if effective.CPU.IsUnlimited || local.CPU.AllowedLogicalCores < effective.CPU.AllowedLogicalCores {
+				effective.CPU.AllowedLogicalCores = local.CPU.AllowedLogicalCores
+				effective.CPU.IsUnlimited = false
+			}
+		}
+
+		// Throttling
+		if local.CPU.ThrottlingDetected {
+			effective.CPU.ThrottlingDetected = true
+		}
+		if local.CPU.ThrottledTimeMs > effective.CPU.ThrottledTimeMs {
+			effective.CPU.ThrottledTimeMs = local.CPU.ThrottledTimeMs
+		}
+
+		// Memory Max
+		if !local.Memory.IsUnlimited {
+			if effective.Memory.IsUnlimited || local.Memory.LimitMB < effective.Memory.LimitMB {
+				effective.Memory.LimitMB = local.Memory.LimitMB
+				effective.Memory.IsUnlimited = false
+			}
+		}
+
+		if isLeaf {
+			effective.Memory.CurrentUsageMB = local.Memory.CurrentUsageMB
+		}
+
+		// OOM Kills
+		if local.Memory.OOMKillsDetected > effective.Memory.OOMKillsDetected {
+			effective.Memory.OOMKillsDetected = local.Memory.OOMKillsDetected
+		}
+
+		// Cpuset
+		if local.Cpuset.IsPinned && !effective.Cpuset.IsPinned {
+			effective.Cpuset = local.Cpuset
+		}
+
+		isLeaf = false
+
+		if current == t.sysFsCgroupPath || current == "/" {
+			break
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		if !strings.HasPrefix(parent, t.sysFsCgroupPath) {
+			break
+		}
+		current = parent
+	}
+	return effective, nil
 }
 
 func (t *CgroupLimitsTool) parseLimits(cgroupDir string) (ResourceLimits, error) {
