@@ -13,7 +13,6 @@
 package mesh
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go.uber.org/zap"
@@ -23,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
 	"github.com/pkg/sftp"
@@ -112,22 +110,7 @@ func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.De
 		return fmt.Errorf("upgrade: atomic replace on %q: %w", targetHost, err)
 	}
 
-	// Phase 3: Upload the configuration file via SFTP.
-	if cfg != nil {
-		strippedCfg := cfg.Stripped()
-		var configBuf bytes.Buffer
-		if err := toml.NewEncoder(&configBuf).Encode(strippedCfg); err != nil {
-			return fmt.Errorf("upgrade: encode stripped config: %w", err)
-		}
-		configRemotePath := "/opt/cortex-mesh/etc/mesh.toml"
-		if err := uploadBinaryViaSFTP(client, bytes.NewReader(configBuf.Bytes()), configRemotePath); err != nil {
-			return fmt.Errorf("upgrade: upload config to %q: %w", targetHost, err)
-		}
-		// Secure the config file
-		execSSHCommand(client, fmt.Sprintf("sudo chmod 600 %q", configRemotePath))
-	}
-
-	// Phase 4: Restart via the binary's install subcommand.
+	// Phase 3: Restart via the binary's install subcommand.
 	if err := execSSHCommand(client, upgradeRestartCommand(remotePath)); err != nil {
 		return fmt.Errorf("upgrade: restart on %q: %w", targetHost, err)
 	}
