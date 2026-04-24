@@ -14,9 +14,33 @@ tasks:
       - task: check
 
   build:
-    desc: Build the cortex-mcp binary (static, pure Go)
+    desc: Alias for build:debug
     cmds:
-      - CGO_ENABLED=0 go build -ldflags "-X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+      - task: build:debug
+
+  build:debug:
+    desc: Build the cortex-mcp binary for debugging (disables optimizations)
+    cmds:
+      - CGO_ENABLED=0 go build -gcflags="all=-N -l" -ldflags "-X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+    sources:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+    generates:
+      - "{{.BINARY_NAME}}"
+
+  build:prod:
+    desc: Build a size-optimized, UPX-compressed production binary
+    vars:
+      UPX:
+        sh: which upx 2>/dev/null || find "$HOME/.local/share/mise/installs/upx" -name upx -type f -executable 2>/dev/null | head -1 || echo ""
+    preconditions:
+      - sh: test -n "{{.UPX}}"
+        msg: |
+          upx is not installed. Please install it (e.g. mise install upx) to compress production builds.
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+      - "{{.UPX}} --best --lzma {{.BINARY_NAME}}"
     sources:
       - '**/*.go'
       - 'go.mod'
