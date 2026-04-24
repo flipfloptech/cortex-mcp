@@ -806,7 +806,8 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		zap.S().Infow("deploying to mesh seed hosts (foreground mode)")
 		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false, nil, opts.Force, opts.RegenerateKeys)
 		if len(deployedNodes) == 0 {
-			zap.S().Warnw("no remote nodes successfully joined - check credentials")
+			zap.S().Errorw("no remote nodes successfully joined - check credentials")
+			return
 		}
 
 		if opts.Stop {
@@ -826,8 +827,12 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 			} else {
 				zap.S().Infow("stop broadcast successful", "nodes", len(res))
 			}
-			cancel()
 			time.Sleep(500 * time.Millisecond)
+			return
+		}
+
+		if install {
+			// Installation is complete, no need to wait for gossip or start background reconcilers.
 			return
 		}
 	}
@@ -869,22 +874,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		}
 	}
 
-	// --- Phase 11: Cleanup ---
-	zap.S().Infow("cleanup starting")
-	cancel()
-	if err := node.Close(); err != nil {
-		zap.S().Debugw("close node", "error", err)
-	}
-	// We only have deployedNodes if we were in foreground install/stop mode.
-	if install || opts.Stop {
-		for _, dn := range deployedNodes {
-			if err := dn.conn.Close(); err != nil {
-				zap.S().Debugw("close deploy conn", "node", dn.nodeID, "error", err)
-			}
-			zap.S().Debugw("disconnected node", "node_id", dn.nodeID)
-		}
-	}
-	zap.S().Infow("shutdown complete")
+	// Cleanup is handled by defer blocks.
 }
 
 // nodeBackoff tracks exponential backoff for indirect route dialing.
