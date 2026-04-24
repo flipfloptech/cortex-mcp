@@ -1055,7 +1055,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 
 		if err == nil {
 			if install && !force {
-				zap.S().Warnw("node already installed and running, use --force to overwrite", "node_id", remoteNodeID)
+				zap.S().Errorw("node already installed and running, use --force to overwrite", "node_id", remoteNodeID)
 				_ = conn.Close()
 				continue
 			}

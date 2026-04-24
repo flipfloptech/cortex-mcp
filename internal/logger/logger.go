@@ -44,8 +44,13 @@ func InitLogger(cfg Config) (*zap.Logger, error) {
 		level,
 	)
 
+	stacktraceLevel := zapcore.DPanicLevel
+	if level == zapcore.DebugLevel {
+		stacktraceLevel = zapcore.ErrorLevel
+	}
+
 	// Create logger with caller annotation and stacktraces for errors
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(stacktraceLevel))
 
 	// Set it as the global logger
 	zap.ReplaceGlobals(logger)
