@@ -132,6 +132,26 @@ Returns a highly aggregated map of CPU frequency profiles (P-states) and idle sl
 - **Virtualization / BIOS Lockout**: If the OS does not have visibility into P-states (no `cpu0/cpufreq`), safely degrades by setting `power_management_managed_by_os: false` and omitting frequency profiles.
 - **C-State Visibility**: If `cpuidle` is missing, drops the `c_state_limits` block entirely and flags `c_states_visible: false` to prevent misinterpretation.
 
+#### `get_cgroup_limits`
+*Category: `compute` · Runs on: Every Linux node*
+
+Provides a targeted readout of Linux control group (cgroup) isolation policies for a specific workload, enabling the LLM to detect artificial CPU throttling, forced NUMA pinning, and cgroup-level Out-Of-Memory (OOM) events.
+
+**Data Sources:**
+- **Targeted Mode**: Reads `/proc/[target_pid]/cgroup` to locate the unified hierarchy path, then reads limits from `/sys/fs/cgroup/...`.
+- **Global Mode**: Scans for common high-level workload manager parent slices (e.g., `slurm`, `docker`, `kubepods.slice`).
+- **Cgroup v2 Data**: Reads `cpu.max`, `cpu.stat`, `cpuset.cpus`, `cpuset.mems`, `memory.max`, and `memory.events`.
+
+**Mathematical Models / Output Structuring:**
+- **Logical Cores**: Translates `cpu.max` quota strings (`MAX PERIOD`) into a clean float `allowed_logical_cores` (e.g., `max / period`).
+- **Throttling & OOMs**: Extracts exact values for `throttled_time_ms` and `oom_kills_detected` to immediately identify resource starvation.
+- **Flat Arrays**: Presents `allowed_cpus` and `allowed_numa_nodes` as flat arrays for easy topology cross-referencing.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux or if `/sys/fs/cgroup` is missing.
+- **Cgroup v1 Fallback**: Strictly enforces v2 parsing. If `/sys/fs/cgroup/cgroup.controllers` is missing, the tool aborts parsing and gracefully returns a fallback payload with `"is_supported": false` and an explicit message, preventing LLM hallucinations.
+
+
 #### `get_uptime`
 *Category: `system` · Runs on: Every Linux node*
 
