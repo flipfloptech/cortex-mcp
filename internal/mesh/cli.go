@@ -50,6 +50,7 @@
 package mesh
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -65,6 +66,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/cortex-mesh/cortex-mesh/api"
 	"github.com/cortex-mesh/cortex-mesh/gateway"
@@ -129,6 +132,17 @@ func Execute() {
 			defer cancel()
 			lifecycle.SetLiveMode(true)
 			runFleetNode(ctx, nodeID, plugins, cfg, true)
+		},
+	}
+
+	bridgeCmd := &cobra.Command{
+		Use:   "bridge",
+		Short: "Run as a lightweight foreground bridge node (no diagnostic tools)",
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
+			defer cancel()
+			lifecycle.SetLiveMode(true)
+			runBridgeNode(ctx, nodeID, plugins, cfg)
 		},
 	}
 
@@ -272,7 +286,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(serveCmd, daemonCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
+	rootCmd.AddCommand(serveCmd, daemonCmd, bridgeCmd, uninstallCmd, reinstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -426,6 +440,13 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		}
 		isInstall := modeBuf[0] == 0x01
 
+		// Read stripped config bytes from stdin.
+		configBytes, err := readField(os.Stdin)
+		if err != nil {
+			zap.S().Errorw("read config payload", "error", err)
+			os.Exit(1)
+		}
+
 		// Read cert bundle from stdin (sent by gateway after receiving ready signal).
 		bundle, cfgMembrane, err := readCertBundle(os.Stdin)
 		if err != nil {
@@ -437,6 +458,10 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 		if isInstall {
 			if err := SaveIdentity(nodeID, bundle); err != nil {
 				zap.S().Errorw("save identity bundle", "error", err)
+				os.Exit(1)
+			}
+			if err := SaveConfig(configBytes); err != nil {
+				zap.S().Errorw("save config failed", "error", err)
 				os.Exit(1)
 			}
 
@@ -545,11 +570,106 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			// Give the mesh time to initialize before proactively probing seeds for version mismatches.
 			time.Sleep(3 * time.Second)
 			zap.S().Infow("fleet node fanning out proactive peer connections")
-			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false)
+			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false)
 		}()
 	}
 
 	zap.S().Infow("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
+	tools.ServeToolListener(ctx, lis, meshReg)
+}
+
+// runBridgeNode handles a lightweight foreground bridge node (no diagnostic tools).
+func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginRegistry, cfg *config.MeshConfig) {
+	zap.S().Infow("started cortex-mcp bridge node", "node_id", nodeID)
+
+	pki, _, err := loadOrGeneratePKI()
+	if err != nil {
+		zap.S().Fatalw("load or generate PKI failed", "error", err)
+	}
+	bridgeCert, err := pki.generateNodeCert(nodeID, false)
+	if err != nil {
+		zap.S().Fatalw("generate node cert failed", "error", err)
+	}
+
+	_, ok := bridgeCert.PrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		zap.S().Fatalw("bridge private key is not ed25519")
+	}
+
+	v, err := initVault(cfg)
+	if err != nil {
+		zap.S().Fatalw("init vault failed", "error", err)
+	}
+
+	reconnectPolicy := api.ReconnectPolicy{
+		Enabled:      true,
+		InitialDelay: 1 * time.Second,
+		MaxDelay:     30 * time.Second,
+		Timeout:      0,
+		MaxAttempts:  0,
+	}
+
+	var nodePtr *api.Node
+	dialer := createResilientDialer(cfg, v, &nodePtr)
+
+	node, err := api.NewNode(ctx, api.NodeConfig{
+		NodeID:             nodeID,
+		ProtocolVersion:    1,
+		ApplicationVersion: version.ApplicationVersion,
+		Vault:              v,
+		Dialer:             dialer,
+		KnownHosts:         cfg.KnownHosts(),
+		Reconnect:          reconnectPolicy,
+		Events: api.NodeEvents{
+			OnPeerJoined:  func(peerID string) { zap.S().Infow("bridge: peer joined", "peer", peerID) },
+			OnPeerLost:    func(peerID string) { zap.S().Infow("bridge: peer lost", "peer", peerID) },
+			OnIsolated:    func() { zap.S().Warnw("bridge: isolated — zero peers") },
+			OnReconnected: func(peerID string) { zap.S().Infow("bridge: reconnected!", "peer", peerID) },
+			OnOrphaned: func() {
+				zap.S().Warnw("bridge: orphaned — reconnect exhausted")
+			},
+		},
+	})
+	if err != nil {
+		zap.S().Fatalw("create bridge node failed", "error", err)
+	}
+	nodePtr = node
+	defer func() {
+		if err := node.Close(); err != nil {
+			zap.S().Debugw("close bridge node", "error", err)
+		}
+	}()
+
+	node.SetMembraneConfig(pki.membraneConfig(bridgeCert))
+
+	for _, p := range cfg.Proxies {
+		node.RegisterCapability(fmt.Sprintf("proxy:%s=%s", p.Pattern, p.URL))
+	}
+
+	meshReg := tools.NewRegistry(node)
+	registerNodeTools(meshReg, node)
+
+	node.StartGossipTicker(ctx, node.GossipIntervalDuration())
+
+	lis, err := node.GrpcListener()
+	if err != nil {
+		zap.S().Fatalw("grpc listener failed", "error", err)
+	}
+
+	listenAddr := fmt.Sprintf("0.0.0.0:%d", cfg.Node.MeshPort)
+	tcpLis, err := node.Listen(ctx, listenAddr)
+	if err != nil {
+		zap.S().Errorw("bridge listen failed", "addr", listenAddr, "error", err)
+	} else {
+		zap.S().Infow("bridge listening on TCP", "addr", tcpLis.Addr())
+	}
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false)
+	}()
+
+	zap.S().Infow("bridge node ready — serving lifecycle tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
 	tools.ServeToolListener(ctx, lis, meshReg)
 }
 
@@ -659,33 +779,35 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 		return
 	}
 
-	zap.S().Infow("deploying to mesh seed hosts")
-	deployedNodes := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install)
+	var deployedNodes []deployedNode
+	if install || opts.Stop {
+		zap.S().Infow("deploying to mesh seed hosts (foreground mode)")
+		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false)
+		if len(deployedNodes) == 0 {
+			zap.S().Warnw("no remote nodes successfully joined - check credentials")
+		}
 
-	if len(deployedNodes) == 0 {
-		zap.S().Warnw("no remote nodes successfully joined - check credentials")
-	}
+		if opts.Stop {
+			zap.S().Infow("stopping remote nodes")
 
-	if opts.Stop {
-		zap.S().Infow("stopping remote nodes")
-
-		agents, _ := bridge.DiscoverTool(ctx, "node_stop")
-		var nodeIDs []string
-		for _, a := range agents {
-			if opts.Target == "" || a.NodeID == opts.Target {
-				nodeIDs = append(nodeIDs, a.NodeID)
+			agents, _ := bridge.DiscoverTool(ctx, "node_stop")
+			var nodeIDs []string
+			for _, a := range agents {
+				if opts.Target == "" || a.NodeID == opts.Target {
+					nodeIDs = append(nodeIDs, a.NodeID)
+				}
 			}
-		}
 
-		res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_stop", nil)
-		if err != nil {
-			zap.S().Errorw("stop dispatch failed", "error", err)
-		} else {
-			zap.S().Infow("stop broadcast successful", "nodes", len(res))
+			res, err := tools.NewRemoteInvoker(bridge).FanOut(ctx, nodeIDs, "node_stop", nil)
+			if err != nil {
+				zap.S().Errorw("stop dispatch failed", "error", err)
+			} else {
+				zap.S().Infow("stop broadcast successful", "nodes", len(res))
+			}
+			cancel()
+			time.Sleep(500 * time.Millisecond)
+			return
 		}
-		cancel()
-		time.Sleep(500 * time.Millisecond)
-		return
 	}
 
 	// --- Phase 6: Start gossip ---
@@ -696,6 +818,10 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	zap.S().Infow("waiting for gossip convergence")
 	time.Sleep(gossipInterval + 1*time.Second)
 	zap.S().Infow("gossip converged", "peers", node.PeerCount())
+
+	// Launch background connection reconciler to maintain fleet connectivity
+	zap.S().Infow("launching background connection reconciler")
+	go runConnectionReconciler(ctx, node, pki, cfg, v, skipDeploy)
 
 	// --- Phase 10b: Serve HTTP if requested ---
 	if opts.ServeHTTP != "" {
@@ -727,13 +853,57 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	if err := node.Close(); err != nil {
 		zap.S().Debugw("close node", "error", err)
 	}
-	for _, dn := range deployedNodes {
-		if err := dn.conn.Close(); err != nil {
-			zap.S().Debugw("close deploy conn", "node", dn.nodeID, "error", err)
+	// We only have deployedNodes if we were in foreground install/stop mode.
+	if install || opts.Stop {
+		for _, dn := range deployedNodes {
+			if err := dn.conn.Close(); err != nil {
+				zap.S().Debugw("close deploy conn", "node", dn.nodeID, "error", err)
+			}
+			zap.S().Debugw("disconnected node", "node_id", dn.nodeID)
 		}
-		zap.S().Debugw("disconnected node", "node_id", dn.nodeID)
 	}
 	zap.S().Infow("shutdown complete")
+}
+
+// runConnectionReconciler periodically ensures connectivity to configured hosts via exponential backoff.
+func runConnectionReconciler(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy bool) {
+	zap.S().Infow("reconciler started: ensuring mesh connectivity")
+
+	// Trigger an initial, immediate reconciliation round.
+	deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true)
+
+	// Backoff configuration
+	baseInterval := 5 * time.Second
+	maxInterval := 60 * time.Second
+	currentInterval := baseInterval
+
+	timer := time.NewTimer(currentInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			zap.S().Infow("reconciler shutting down")
+			return
+		case <-timer.C:
+			zap.S().Debugw("reconciler round starting")
+			nodesConnected := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true)
+
+			// Exponential backoff logic: reset if we made a connection, back off if we didn't.
+			if len(nodesConnected) > 0 {
+				zap.S().Infow("reconciler successfully connected to nodes", "count", len(nodesConnected))
+				currentInterval = baseInterval
+			} else {
+				currentInterval *= 2
+				if currentInterval > maxInterval {
+					currentInterval = maxInterval
+				}
+			}
+
+			zap.S().Debugw("reconciler round complete", "next_interval", currentInterval)
+			timer.Reset(currentInterval)
+		}
+	}
 }
 
 // deployedNode tracks a deployed remote node.
@@ -768,7 +938,14 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install, reconcileMode bool) []deployedNode {
+	// Grab current topology snapshot to prevent dialing known hosts
+	topology := node.MeshTopology()
+	knownActive := make(map[string]bool)
+	for _, n := range topology.NodeDetails {
+		knownActive[n.NodeID] = true
+	}
+
 	var deployed []deployedNode
 	deployer := &transport.SelfDeployer{
 		RemotePath: fmt.Sprintf("/tmp/cortex-mcp-deploy-%d", time.Now().UnixNano()),
@@ -780,6 +957,11 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 	}
 
 	for remoteNodeID, hostCfg := range cfg.Hosts {
+		if reconcileMode && knownActive[remoteNodeID] {
+			zap.S().Debugw("node already active in topology, skipping dial", "node_id", remoteNodeID)
+			continue
+		}
+
 		if len(hostCfg.Addresses) == 0 {
 			zap.S().Warnw("no addresses configured for node", "node_id", remoteNodeID)
 			continue
@@ -878,6 +1060,10 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			zap.S().Debugw("not a gateway node, skipping fresh deployment", "node_id", remoteNodeID)
 			continue
 		}
+		if !install {
+			zap.S().Debugw("not an install operation, skipping fresh deployment", "node_id", remoteNodeID)
+			continue
+		}
 
 		zap.S().Infow("deploying to fresh remote node", "node_id", remoteNodeID, "addr", sshAddr)
 
@@ -908,6 +1094,22 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 		}
 		if _, err := stream.Write([]byte{modeByte}); err != nil {
 			zap.S().Errorw("send protocol mode failed", "node_id", remoteNodeID, "error", err)
+			dumpRemoteStderr(stream)
+			_ = stream.Close()
+			continue
+		}
+
+		// Strip credentials and serialize config
+		strippedCfg := cfg.Stripped()
+		var configBuf bytes.Buffer
+		if err := toml.NewEncoder(&configBuf).Encode(strippedCfg); err != nil {
+			zap.S().Errorw("serialize stripped config failed", "node_id", remoteNodeID, "error", err)
+			_ = stream.Close()
+			continue
+		}
+
+		if err := writeField(stream, configBuf.Bytes()); err != nil {
+			zap.S().Errorw("send config failed", "node_id", remoteNodeID, "error", err)
 			dumpRemoteStderr(stream)
 			_ = stream.Close()
 			continue
@@ -1046,6 +1248,12 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 	if exe, err := os.Executable(); err == nil {
 		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))
 	}
+	if os.Getuid() == 0 {
+		defaults = append(defaults, "/opt/cortex-mesh/etc/mesh.toml")
+	} else if home, err := os.UserHomeDir(); err == nil {
+		defaults = append(defaults, filepath.Join(home, ".cortex-mesh", "mesh.toml"))
+	}
+	defaults = append(defaults, "/opt/cortex-mesh/bin/mesh.toml")
 
 	for _, p := range defaults {
 		if _, err := os.Stat(p); err == nil {
