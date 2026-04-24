@@ -831,10 +831,6 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 			return
 		}
 
-		if install {
-			// Installation is complete, no need to wait for gossip or start background reconcilers.
-			return
-		}
 	}
 
 	// --- Phase 6: Start gossip ---
@@ -845,6 +841,11 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	zap.S().Infow("waiting for gossip convergence")
 	time.Sleep(gossipInterval + 1*time.Second)
 	zap.S().Infow("gossip converged", "peers", node.PeerCount())
+
+	if install {
+		zap.S().Infow("installation and health-check complete")
+		return
+	}
 
 	// Launch background connection reconciler to maintain fleet connectivity
 	zap.S().Infow("launching background connection reconciler")
