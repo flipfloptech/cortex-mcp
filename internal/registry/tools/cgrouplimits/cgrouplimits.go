@@ -257,16 +257,22 @@ func (t *CgroupLimitsTool) parseLimits(cgroupDir string) (ResourceLimits, error)
 	// CPU
 	cpuMaxPath := filepath.Join(cgroupDir, "cpu.max")
 	if data, err := os.ReadFile(cpuMaxPath); err == nil {
-		parts := strings.Fields(string(data))
-		if len(parts) >= 2 {
-			if parts[0] == "max" {
-				limits.CPU.IsUnlimited = true
-			} else {
-				max, _ := strconv.ParseFloat(parts[0], 64)
-				period, _ := strconv.ParseFloat(parts[1], 64)
+		val := strings.TrimSpace(string(data))
+		if strings.HasPrefix(val, "max") {
+			limits.CPU.IsUnlimited = true
+		} else {
+			fields := strings.Fields(val)
+			if len(fields) >= 2 {
+				max, _ := strconv.ParseFloat(fields[0], 64)
+				period, _ := strconv.ParseFloat(fields[1], 64)
 				if period > 0 {
 					limits.CPU.AllowedLogicalCores = max / period
+					limits.CPU.IsUnlimited = false
+				} else {
+					limits.CPU.IsUnlimited = true
 				}
+			} else {
+				limits.CPU.IsUnlimited = true
 			}
 		}
 	} else {

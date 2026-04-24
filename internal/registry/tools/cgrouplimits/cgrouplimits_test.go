@@ -221,6 +221,38 @@ func TestParseCPUList(t *testing.T) {
 	}
 }
 
+func TestParseLimits_SubCore(t *testing.T) {
+	t.Parallel()
+	cgroupDir, _ := setupMockCgroupFs(t, true, false, false)
+
+	slurmDir := filepath.Join(cgroupDir, "slurm", "job_123")
+	if err := os.MkdirAll(slurmDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// CPUQuota=50% -> max 50000, period 100000
+	if err := os.WriteFile(filepath.Join(slurmDir, "cpu.max"), []byte("50000 100000\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := &CgroupLimitsTool{
+		sysFsCgroupPath: cgroupDir,
+		procPath:        "/proc",
+	}
+
+	limits, err := tool.parseLimits(slurmDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if limits.CPU.IsUnlimited {
+		t.Error("expected IsUnlimited to be false for 50000 100000")
+	}
+	if limits.CPU.AllowedLogicalCores != 0.5 {
+		t.Errorf("expected 0.5 cores, got %v", limits.CPU.AllowedLogicalCores)
+	}
+}
+
 func BenchmarkCgroupLimitsTool_ExecuteTargeted(b *testing.B) {
 	cgroupDir, procDir := setupMockCgroupFs(&testing.T{}, true, true, true)
 	tool := &CgroupLimitsTool{
