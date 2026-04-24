@@ -391,3 +391,89 @@ func TestLoadCredentials_Empty(t *testing.T) {
 		t.Fatalf("LoadCredentials: %v", err)
 	}
 }
+
+func TestStripped(t *testing.T) {
+	t.Parallel()
+
+	cfg := &MeshConfig{
+		Node: NodeConfig{
+			ID:       "node-1",
+			MeshPort: 4443,
+			SSHPort:  22,
+		},
+		Hosts: map[string]Host{
+			"node-2": {Addresses: []string{"10.0.0.2"}, MeshPort: 4444},
+		},
+		Credentials: []CredentialEntry{
+			{Pattern: "*", Type: "ssh_password", Username: "root", Password: "pwd"},
+		},
+		Proxies: []ProxyEntry{
+			{Pattern: "*", URL: "http://proxy:8080"},
+		},
+		Groups: map[string][]string{
+			"all": {"node-1", "node-2"},
+		},
+	}
+
+	stripped := cfg.Stripped()
+
+	if len(stripped.Credentials) != 0 {
+		t.Fatalf("expected credentials to be stripped, got %d", len(stripped.Credentials))
+	}
+
+	if stripped.Node.ID != "node-1" {
+		t.Fatalf("expected Node ID node-1, got %s", stripped.Node.ID)
+	}
+
+	if len(stripped.Hosts) != 1 || stripped.Hosts["node-2"].MeshPort != 4444 {
+		t.Fatalf("expected Hosts to be copied")
+	}
+
+	if len(stripped.Proxies) != 1 || stripped.Proxies[0].URL != "http://proxy:8080" {
+		t.Fatalf("expected Proxies to be copied")
+	}
+
+	if len(stripped.Groups) != 1 || len(stripped.Groups["all"]) != 2 {
+		t.Fatalf("expected Groups to be copied")
+	}
+
+	// Verify deep copy
+	stripped.Hosts["node-2"].Addresses[0] = "10.0.0.3"
+	if cfg.Hosts["node-2"].Addresses[0] != "10.0.0.2" {
+		t.Fatalf("Hosts address slice was shallow copied")
+	}
+
+	stripped.Proxies[0].URL = "http://other:8080"
+	if cfg.Proxies[0].URL != "http://proxy:8080" {
+		t.Fatalf("Proxies slice was shallow copied")
+	}
+
+	stripped.Groups["all"][0] = "node-3"
+	if cfg.Groups["all"][0] != "node-1" {
+		t.Fatalf("Groups slice was shallow copied")
+	}
+}
+
+func BenchmarkStripped(b *testing.B) {
+	cfg := &MeshConfig{
+		Node: NodeConfig{
+			SSHPort: 22,
+		},
+		Hosts: map[string]Host{
+			"test": {Addresses: []string{"127.0.0.1"}},
+		},
+		Groups: map[string][]string{
+			"test": {"test"},
+		},
+		Proxies: []ProxyEntry{
+			{Pattern: "*", URL: "http://proxy"},
+		},
+		Credentials: []CredentialEntry{
+			{Pattern: "*", Username: "user", Password: "password"},
+		},
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = cfg.Stripped()
+	}
+}
