@@ -570,7 +570,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			// Give the mesh time to initialize before proactively probing seeds for version mismatches.
 			time.Sleep(3 * time.Second)
 			zap.S().Infow("fleet node fanning out proactive peer connections")
-			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false)
+			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false, nil)
 		}()
 	}
 
@@ -666,7 +666,7 @@ func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginR
 
 	go func() {
 		time.Sleep(1 * time.Second)
-		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false)
+		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false, nil)
 	}()
 
 	zap.S().Infow("bridge node ready — serving lifecycle tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
@@ -782,7 +782,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	var deployedNodes []deployedNode
 	if install || opts.Stop {
 		zap.S().Infow("deploying to mesh seed hosts (foreground mode)")
-		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false)
+		deployedNodes = deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, install, false, nil)
 		if len(deployedNodes) == 0 {
 			zap.S().Warnw("no remote nodes successfully joined - check credentials")
 		}
@@ -865,12 +865,20 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 	zap.S().Infow("shutdown complete")
 }
 
+// nodeBackoff tracks exponential backoff for indirect route dialing.
+type nodeBackoff struct {
+	nextAttempt time.Time
+	interval    time.Duration
+}
+
 // runConnectionReconciler periodically ensures connectivity to configured hosts via exponential backoff.
 func runConnectionReconciler(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy bool) {
 	zap.S().Infow("reconciler started: ensuring mesh connectivity")
 
+	indirectBackoffs := make(map[string]*nodeBackoff)
+
 	// Trigger an initial, immediate reconciliation round.
-	deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true)
+	deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs)
 
 	// Backoff configuration
 	baseInterval := 5 * time.Second
@@ -887,7 +895,7 @@ func runConnectionReconciler(ctx context.Context, node *api.Node, pki *ephemeral
 			return
 		case <-timer.C:
 			zap.S().Debugw("reconciler round starting")
-			nodesConnected := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true)
+			nodesConnected := deployAndConnect(ctx, node, pki, cfg, v, skipDeploy, false, false, true, indirectBackoffs)
 
 			// Exponential backoff logic: reset if we made a connection, back off if we didn't.
 			if len(nodesConnected) > 0 {
@@ -938,12 +946,17 @@ func initVault(cfg *config.MeshConfig) (*vault.Vault, error) {
 
 // deployAndConnect deploys the binary to each seed host and establishes
 // mesh connections via the membrane (mTLS) handshake.
-func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install, reconcileMode bool) []deployedNode {
+func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cfg *config.MeshConfig, v *vault.Vault, skipDeploy, daemon, install, reconcileMode bool, indirectBackoffs map[string]*nodeBackoff) []deployedNode {
 	// Grab current topology snapshot to prevent dialing known hosts
 	topology := node.MeshTopology()
-	knownActive := make(map[string]bool)
+	isDirect := make(map[string]bool)
+	isIndirect := make(map[string]bool)
 	for _, n := range topology.NodeDetails {
-		knownActive[n.NodeID] = true
+		if n.IsDirect {
+			isDirect[n.NodeID] = true
+		} else {
+			isIndirect[n.NodeID] = true
+		}
 	}
 
 	var deployed []deployedNode
@@ -957,9 +970,30 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 	}
 
 	for remoteNodeID, hostCfg := range cfg.Hosts {
-		if reconcileMode && knownActive[remoteNodeID] {
-			zap.S().Debugw("node already active in topology, skipping dial", "node_id", remoteNodeID)
-			continue
+		if reconcileMode {
+			if isDirect[remoteNodeID] {
+				zap.S().Debugw("node directly active in topology, skipping dial", "node_id", remoteNodeID)
+				continue
+			}
+			if isIndirect[remoteNodeID] && indirectBackoffs != nil {
+				backoff, ok := indirectBackoffs[remoteNodeID]
+				if !ok {
+					backoff = &nodeBackoff{
+						interval: 1 * time.Minute,
+					}
+					indirectBackoffs[remoteNodeID] = backoff
+				}
+				if time.Now().Before(backoff.nextAttempt) {
+					zap.S().Debugw("node indirectly active, backoff active, skipping dial", "node_id", remoteNodeID)
+					continue
+				}
+				// Dialing this round; increase backoff for next time if it fails
+				backoff.nextAttempt = time.Now().Add(backoff.interval)
+				backoff.interval *= 2
+				if backoff.interval > 1*time.Hour {
+					backoff.interval = 1 * time.Hour
+				}
+			}
 		}
 
 		if len(hostCfg.Addresses) == 0 {
@@ -1046,6 +1080,9 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			}
 
 			zap.S().Infow("connected to mesh peer", "node_id", remoteNodeID)
+			if indirectBackoffs != nil {
+				delete(indirectBackoffs, remoteNodeID) // reset backoff on success
+			}
 			deployed = append(deployed, deployedNode{
 				nodeID: remoteNodeID,
 				conn:   conn,
