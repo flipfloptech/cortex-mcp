@@ -209,3 +209,46 @@ func expandTilde(path string) string {
 	}
 	return path
 }
+
+// Stripped returns a deep copy of the MeshConfig with all credentials removed.
+// This is used when deploying the configuration to fleet nodes to ensure
+// no authentication material is leaked.
+func (mc *MeshConfig) Stripped() *MeshConfig {
+	stripped := &MeshConfig{
+		Node: mc.Node,
+	}
+
+	if mc.Hosts != nil {
+		stripped.Hosts = make(map[string]Host, len(mc.Hosts))
+		for k, v := range mc.Hosts {
+			h := Host{
+				MeshPort: v.MeshPort,
+				SSHPort:  v.SSHPort,
+			}
+			if v.Addresses != nil {
+				h.Addresses = make([]string, len(v.Addresses))
+				copy(h.Addresses, v.Addresses)
+			}
+			stripped.Hosts[k] = h
+		}
+	}
+
+	if mc.Proxies != nil {
+		stripped.Proxies = make([]ProxyEntry, len(mc.Proxies))
+		copy(stripped.Proxies, mc.Proxies)
+	}
+
+	if mc.Groups != nil {
+		stripped.Groups = make(map[string][]string, len(mc.Groups))
+		for k, v := range mc.Groups {
+			if v != nil {
+				g := make([]string, len(v))
+				copy(g, v)
+				stripped.Groups[k] = g
+			}
+		}
+	}
+
+	// Explicitly leave Credentials nil.
+	return stripped
+}

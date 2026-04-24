@@ -99,3 +99,34 @@ func LoadIdentity() (string, *membrane.Config, error) {
 
 	return ident.NodeID, config, nil
 }
+
+// ConfigPath returns the absolute path to the node's saved configuration file.
+func ConfigPath() (string, error) {
+	if os.Getuid() == 0 {
+		return "/opt/cortex-mesh/etc/mesh.toml", nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get home dir: %w", err)
+	}
+	return filepath.Join(home, ".cortex-mesh", "mesh.toml"), nil
+}
+
+// SaveConfig writes the TOML configuration to disk securely.
+func SaveConfig(data []byte) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	// 0600 because it might be sensitive, though credentials should be stripped
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+
+	return nil
+}
