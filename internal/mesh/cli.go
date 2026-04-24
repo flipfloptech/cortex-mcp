@@ -1034,20 +1034,26 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			meshAddr = fmt.Sprintf("%s:%d", hostStr, meshPort)
 		}
 
-		// Look up credentials from the vault.
+		// Look up credentials from the vault. Optional if we are not installing/deploying.
+		var deployCred transport.DeployCredential
 		cred, ok := v.Match(sshAddr)
 		if !ok {
 			cred, ok = v.Match(hostStr)
 		}
 		if !ok {
-			zap.S().Warnw("no matching credentials in vault", "node_id", remoteNodeID, "addr", sshAddr)
-			continue
-		}
-
-		deployCred, err := toDeployCredential(cred)
-		if err != nil {
-			zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", sshAddr, "error", err)
-			continue
+			if install {
+				zap.S().Warnw("no matching credentials in vault for install", "node_id", remoteNodeID, "addr", sshAddr)
+				continue
+			} else {
+				zap.S().Debugw("no matching credentials in vault, skipping ssh tunnel for dialing", "node_id", remoteNodeID, "addr", sshAddr)
+			}
+		} else {
+			var err error
+			deployCred, err = toDeployCredential(cred)
+			if err != nil {
+				zap.S().Errorw("invalid credentials", "node_id", remoteNodeID, "addr", sshAddr, "error", err)
+				continue
+			}
 		}
 
 		dialer := createResilientDialer(cfg, v, &node)
