@@ -589,10 +589,10 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 
 	if isDaemon {
 		go func() {
-			// Give the mesh time to initialize before proactively probing seeds for version mismatches.
+			// Give the mesh time to initialize before proactively probing seeds
 			time.Sleep(3 * time.Second)
 			zap.S().Infow("fleet node fanning out proactive peer connections")
-			_ = deployAndConnect(ctx, node, nil, cfg, v, true, false, false, false, nil, false, false)
+			runConnectionReconciler(ctx, node, nil, cfg, v, true)
 		}()
 	}
 
