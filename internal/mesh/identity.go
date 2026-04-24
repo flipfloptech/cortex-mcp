@@ -105,11 +105,10 @@ func ConfigPath() (string, error) {
 	if os.Getuid() == 0 {
 		return "/opt/cortex-mesh/etc/mesh.toml", nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("get home dir: %w", err)
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".cortex-mesh", "mesh.toml"), nil
 	}
-	return filepath.Join(home, ".cortex-mesh", "mesh.toml"), nil
+	return "/opt/cortex-mesh/bin/mesh.toml", nil
 }
 
 // SaveConfig writes the TOML configuration to disk securely.

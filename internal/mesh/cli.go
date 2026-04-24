@@ -1244,24 +1244,32 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 
 	defaults := []string{
 		"mesh.toml",
+		"/opt/cortex-mesh/etc/mesh.toml",
+		"/opt/cortex-mesh/bin/mesh.toml",
 	}
 	if exe, err := os.Executable(); err == nil {
 		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))
 	}
-	if os.Getuid() == 0 {
-		defaults = append(defaults, "/opt/cortex-mesh/etc/mesh.toml")
-	} else if home, err := os.UserHomeDir(); err == nil {
+	if home, err := os.UserHomeDir(); err == nil {
 		defaults = append(defaults, filepath.Join(home, ".cortex-mesh", "mesh.toml"))
 	}
-	defaults = append(defaults, "/opt/cortex-mesh/bin/mesh.toml")
 
+	var unique []string
+	seen := make(map[string]bool)
 	for _, p := range defaults {
+		if !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+
+	for _, p := range unique {
 		if _, err := os.Stat(p); err == nil {
 			return config.Load(p)
 		}
 	}
 
-	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", defaults)
+	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", unique)
 }
 
 // uninstallFleet SSHes to each node and removes the cortex-mesh
