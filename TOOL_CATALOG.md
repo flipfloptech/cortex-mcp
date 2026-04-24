@@ -270,6 +270,24 @@ A highly structured, math-free alternative to the `free` command, giving the LLM
 - `IsSupported()` returns `false` if the host OS is not Linux or if `/proc/meminfo` is missing.
 - Older kernels (pre-3.14) do not expose `MemAvailable`. The tool degrades gracefully by calculating legacy math (Free + Buffers + Cached) and flags the payload with `"estimation_mode": "legacy"`. Otherwise, `"estimation_mode": "standard"`.
 
+#### `get_numa_stats`
+*Category: `memory` · Runs on: Every Linux node*
+
+Provides instant visibility into memory locality efficiency by translating cumulative NUMA allocation counters into actionable hit/miss ratios. This helps detect thread-pinning violations or kernel numad failures.
+
+**Data Sources:**
+- Reads `/sys/devices/system/node/node*/numastat` for NUMA allocation metrics (`numa_hit`, `numa_miss`, `numa_foreign`, `local_node`, `other_node`).
+
+**Mathematical Models / Formatting:**
+- **Node Miss Ratio:** Calculates `(numa_miss / (numa_hit + numa_miss)) * 100` per NUMA node as a float rounded to two decimal places.
+- **System Miss Ratio:** Aggregates hits and misses across all nodes to provide a single `system_miss_ratio_pct`.
+- Utilizes 64-bit unsigned integers natively to prevent counter overflow on high-throughput nodes.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux or if `/sys/devices/system/node` is missing.
+- **UMA Fallback:** If the system only has `node0` (Uniform Memory Access), cross-node misses are physically impossible. The tool safely degrades by setting `"is_numa": false`, ratios to `0.0`, and returns the available hit counters without failing.
+
+
 ---
 
 ### Mesh Infrastructure Tools
