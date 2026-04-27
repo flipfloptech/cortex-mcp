@@ -411,32 +411,7 @@ func registerNodeTools(registry *tools.Registry, node *api.Node) {
 func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRegistry, cfg *config.MeshConfig, isDaemon bool) {
 	zap.S().Infow("deployed fleet node — bootstrapping", "node_id", nodeID, "daemon", isDaemon)
 
-	lockName := "@cortex-mcp-lock"
-	lockCloser, err := lifecycle.AcquireLock(ctx, lockName)
-	if err != nil {
-		zap.S().Warnw("lock acquisition failed, attempting to kill legacy process", "error", err)
-		if killErr := lifecycle.KillLockedProcess(ctx, lockName); killErr != nil {
-			zap.S().Errorw("failed to kill legacy process", "error", killErr)
-			os.Exit(1)
-		}
-		// Give the kernel a moment to release the abstract socket
-		time.Sleep(500 * time.Millisecond)
-
-		lockCloser, err = lifecycle.AcquireLock(ctx, lockName)
-		if err != nil {
-			zap.S().Errorw("failed to acquire lock after kill", "error", err)
-			os.Exit(1)
-		}
-	}
-	defer func() {
-		_ = lockCloser.Close()
-	}()
-
-	if isDaemon {
-		// Ignore SIGHUP so we survive SSH terminal detachment.
-		signal.Ignore(syscall.SIGHUP)
-	}
-
+	var isInstall bool
 	var membraneCfg *membrane.Config
 
 	if isDaemon {
@@ -462,7 +437,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			zap.S().Errorw("read deploy mode", "error", err)
 			os.Exit(1)
 		}
-		isInstall := modeBuf[0] == 0x01
+		isInstall = modeBuf[0] == 0x01
 
 		// Read stripped config bytes from stdin.
 		configBytes, err := readField(os.Stdin)
@@ -500,6 +475,32 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			// Exit cleanly, dropping the SSH stream! The systemd service will start the daemon.
 			os.Exit(0)
 		}
+	}
+
+	lockName := "@cortex-mcp-lock"
+	lockCloser, err := lifecycle.AcquireLock(ctx, lockName)
+	if err != nil {
+		zap.S().Warnw("lock acquisition failed, attempting to kill legacy process", "error", err)
+		if killErr := lifecycle.KillLockedProcess(ctx, lockName); killErr != nil {
+			zap.S().Errorw("failed to kill legacy process", "error", killErr)
+			os.Exit(1)
+		}
+		// Give the kernel a moment to release the abstract socket
+		time.Sleep(500 * time.Millisecond)
+
+		lockCloser, err = lifecycle.AcquireLock(ctx, lockName)
+		if err != nil {
+			zap.S().Errorw("failed to acquire lock after kill", "error", err)
+			os.Exit(1)
+		}
+	}
+	defer func() {
+		_ = lockCloser.Close()
+	}()
+
+	if isDaemon {
+		// Ignore SIGHUP so we survive SSH terminal detachment.
+		signal.Ignore(syscall.SIGHUP)
 	}
 
 	reconnectPolicy := api.ReconnectPolicy{
