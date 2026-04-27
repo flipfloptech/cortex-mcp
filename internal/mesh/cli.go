@@ -586,6 +586,10 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			zap.S().Errorw("daemon listen failed", "addr", listenAddr, "error", err)
 		} else {
 			zap.S().Infow("daemon listening on TCP", "addr", tcpLis.Addr())
+			go func() {
+				<-ctx.Done()
+				_ = tcpLis.Close()
+			}()
 		}
 	}
 
@@ -597,6 +601,11 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			runConnectionReconciler(ctx, node, nil, cfg, v, true)
 		}()
 	}
+
+	go func() {
+		<-ctx.Done()
+		_ = node.Close()
+	}()
 
 	zap.S().Infow("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
 	ServeMultiplexedListener(ctx, lis, meshReg)
@@ -686,11 +695,20 @@ func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginR
 		zap.S().Errorw("bridge listen failed", "addr", listenAddr, "error", err)
 	} else {
 		zap.S().Infow("bridge listening on TCP", "addr", tcpLis.Addr())
+		go func() {
+			<-ctx.Done()
+			_ = tcpLis.Close()
+		}()
 	}
 
 	go func() {
 		time.Sleep(1 * time.Second)
 		_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false, nil, false, false)
+	}()
+
+	go func() {
+		<-ctx.Done()
+		_ = node.Close()
 	}()
 
 	zap.S().Infow("bridge node ready — serving lifecycle tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
