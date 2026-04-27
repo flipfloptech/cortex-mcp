@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/transport"
 	"github.com/flipfloptech/cortex-mcp/internal/config"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/transport"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )

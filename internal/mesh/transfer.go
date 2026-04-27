@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 	"go.uber.org/zap"
 )
 

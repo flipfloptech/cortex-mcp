@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/api"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/api"
 	"go.uber.org/zap"
 )
 

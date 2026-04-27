@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 )
 
 func TestServeMultiplexedListener_ToolRouting(t *testing.T) {

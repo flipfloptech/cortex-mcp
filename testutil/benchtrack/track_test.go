@@ -9,12 +9,12 @@ func TestParseBenchmarkOutput(t *testing.T) {
 	input := `
 goos: linux
 goarch: amd64
-pkg: github.com/cortex-mesh/cortex-mesh/routing
+pkg: github.com/flipfloptech/cortex-mcp/pkg/mesh/routing
 cpu: AMD Ryzen 9 5950X 16-Core Processor
 BenchmarkBufPool_GetPut-32        	10000000	       125.4 ns/op	      24 B/op	       1 allocs/op
 BenchmarkBufPool_GetPut_Contended-32    10000000	       234.5 ns/op	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/cortex-mesh/cortex-mesh/routing	3.141s
+ok  	github.com/flipfloptech/cortex-mcp/pkg/mesh/routing	3.141s
 `
 	results, err := ParseBenchmarkOutput(bytes.NewReader([]byte(input)))
 	if err != nil {

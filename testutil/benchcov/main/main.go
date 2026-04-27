@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cortex-mesh/cortex-mesh/testutil/benchcov"
+	"github.com/flipfloptech/cortex-mcp/testutil/benchcov"
 )
 
 func main() {

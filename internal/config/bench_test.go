@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cortex-mesh/cortex-mesh/vault"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/vault"
 )
 
 func BenchmarkLoad(b *testing.B) {

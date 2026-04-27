@@ -2,26 +2,25 @@ module github.com/flipfloptech/cortex-mcp
 
 go 1.26.2
 
-replace github.com/cortex-mesh/cortex-mesh => ../cortex-mesh
-
 require (
+	filippo.io/edwards25519 v1.2.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/cortex-mesh/cortex-mesh v0.0.0-00010101000000-000000000000
+	github.com/google/uuid v1.6.0
+	github.com/hashicorp/yamux v0.1.2
+	github.com/klauspost/compress v1.18.5
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/pkg/sftp v1.13.10
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.27.1
 	go.uber.org/zap/exp v0.3.0
 	golang.org/x/crypto v0.50.0
+	google.golang.org/grpc v1.80.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
-	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
@@ -33,6 +32,4 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
-	google.golang.org/grpc v1.80.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )

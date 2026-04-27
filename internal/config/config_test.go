@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cortex-mesh/cortex-mesh/vault"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/vault"
 )
 
 func TestLoad_FullConfig(t *testing.T) {

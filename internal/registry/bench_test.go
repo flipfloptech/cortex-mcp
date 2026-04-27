@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	ctools "github.com/cortex-mesh/cortex-mesh/tools"
+	ctools "github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 )
 
 // Dummy tool for testing

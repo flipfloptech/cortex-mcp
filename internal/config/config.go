@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cortex-mesh/cortex-mesh/vault"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/vault"
 )
 
 // MeshConfig is the top-level configuration parsed from mesh.toml.

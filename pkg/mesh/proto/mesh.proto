@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package cortexmesh;
+option go_package = "github.com/flipfloptech/cortex-mcp/pkg/mesh/proto";
+// --- Control Plane Frames (Stream 0) ---
+
+// ControlFrame is the top-level envelope for all control plane messages.
+// Each frame carries exactly one payload via oneof.
+message ControlFrame {
+    oneof payload {
+        GossipFrame    gossip             = 1;
+        WhoHasFrame    who_has            = 2;
+        IHaveFrame     i_have             = 3;
+        CredentialRequestFrame  cred_request  = 4;
+        CredentialGrantFrame    cred_grant    = 5;
+        RelayOpenFrame          relay_open    = 6;
+        RelayAcceptFrame        relay_accept  = 7;
+        BootstrapFrame          bootstrap     = 8;
+    }
+}
+
+// GossipFrame carries impedance cost-vectors and capability data for
+// gradient routing. Sent periodically to all direct peers.
+//
+// Capabilities propagate transitively through gossip, just like routes:
+// if B learns C's capabilities from C, B includes them in its gossip to A.
+// This enables full mesh-wide capability convergence without broadcast.
+message GossipFrame {
+    // node_id of the node emitting this gossip.
+    string from_node = 1;
+
+    // Cost vector: map of reachable node-id → total impedance cost.
+    map<string, double> routes = 2;
+
+    // Current impedance of the sending node.
+    // Used by the receiver as the "last mile" cost when computing
+    // total route costs: totalCost = route.Cost + from_impedance.
+    double from_impedance = 3;
+
+    // Capabilities of the sending node itself.
+    // Always included — this is the cheapest path to learn a direct
+    // peer's capabilities (no extra round trip, no broadcast).
+    repeated string from_capabilities = 4;
+
+    // Capabilities of other nodes the sender has learned about
+    // (transitively via gossip from its own peers).
+    // Capped to the same budget-derived horizon as routes.
+    map<string, NodeCapabilities> node_capabilities = 5;
+}
+
+// NodeCapabilities carries a node's capability list.
+// Used inside GossipFrame.node_capabilities for transitive propagation.
+message NodeCapabilities {
+    repeated string capabilities = 1;
+}
+
+// WhoHasFrame is a broadcast discovery request.
+// Forwarded to all peers except the origin (flood-fill).
+//
+// Flood termination (P1-2): max_hops bounds the number of times this
+// frame may be relayed. The originator stamps it based on expected
+// mesh diameter (grows as log(N), not N). Each forwarder decrements
+// max_hops; when a receiver sees max_hops == 0 it processes locally
+// but does not forward. Loop termination becomes a correctness
+// guarantee independent of any seen-set size.
+message WhoHasFrame {
+    // Unique request ID for deduplication (UUID v4).
+    string uuid = 1;
+
+    // The capability being searched for (e.g., "tool:lustre_health").
+    string capability = 2;
+
+    // Node that originated this request.
+    string origin_node = 3;
+
+    // Remaining hop budget. Originator sets to expected mesh
+    // diameter; each forwarder decrements before relaying; zero
+    // means "do not forward further."
+    uint32 max_hops = 4;
+}
+
+// IHaveFrame is a unicast response to a WhoHas request.
+// Routed back toward the origin node via gradient routing.
+message IHaveFrame {
+    // UUID matching the original WhoHas request.
+    string uuid = 1;
+
+    // Node that has the requested capability.
+    string node_id = 2;
+
+    // Current impedance of the responding node.
+    double impedance = 3;
+
+    // Node that originated the WhoHas query.
+    // Used for gradient routing of the response back to the origin.
+    string origin_node = 4;
+}
+
+// CredentialRequestFrame requests SSH/TLS credentials for a host.
+// Point-to-point ONLY — never broadcast or forwarded.
+//
+// Replay protection (P0-3): every request carries a per-request nonce
+// and a requester-supplied timestamp. The granter binds the sealed
+// grant to the nonce (see SealGrantWithNonce) and rejects requests
+// outside a clock-skew window so captured-and-replayed request frames
+// cannot be reused past credential rotation.
+message CredentialRequestFrame {
+    // Host pattern or hostname needing credentials.
+    string host_pattern = 1;
+
+    // Ed25519 public key of the requester (for NaCl box sealing).
+    bytes requester_pub_key = 2;
+
+    // Per-request nonce (32 bytes from crypto/rand). The granter
+    // embeds this in the sealed payload so the requester can verify
+    // the grant was issued for this specific request. Required.
+    bytes nonce = 3;
+
+    // UnixNano timestamp when the requester built this frame. The
+    // granter rejects requests outside a configurable clock-skew
+    // window (default ±2 minutes). Required.
+    int64 requested_at = 4;
+}
+
+// CredentialGrantFrame delivers sealed credentials to the requester.
+// Point-to-point ONLY — never broadcast or forwarded.
+message CredentialGrantFrame {
+    // NaCl box sealed to the requester's public key.
+    // Contains ephemeral pub (32) + nonce (24) + encrypted Credential JSON.
+    bytes sealed_credential = 1;
+}
+
+// --- Data Plane Relay (Multi-Hop Circuit Stitching) ---
+
+// RelayOpenFrame requests the next-hop peer to open a circuit
+// to the target node and stitch streams together.
+message RelayOpenFrame {
+    // Target node to relay to.
+    string target_node_id = 1;
+
+    // Unique circuit ID for matching the accept response.
+    string circuit_id = 2;
+}
+
+// RelayAcceptFrame confirms that the relay circuit is established.
+message RelayAcceptFrame {
+    // Circuit ID matching the RelayOpenFrame.
+    string circuit_id = 1;
+
+    // True if the relay was successfully established.
+    bool success = 2;
+
+    // Error message if success is false.
+    string error = 3;
+}
+
+// BootstrapFrame carries topology knowledge to a newly joined peer.
+// Sent once during peer initialization (in initPeerControlPlane).
+// Contains a chunk of the sender's resolver cache. Large caches are
+// split into multiple frames to stay under MaxFrameSize (256KB).
+message BootstrapFrame {
+    // Map of hostname → host entry, representing known hosts.
+    map<string, HostEntry> hosts = 1;
+
+    // Pagination: zero-based sequence number for this chunk.
+    uint32 sequence = 2;
+
+    // Pagination: total number of chunks being sent.
+    uint32 total = 3;
+
+    // The wire-level protocol version of the sender.
+    uint32 protocol_version = 4;
+
+    // The application version (git short commit) of the sender.
+    bytes application_version = 5;
+}
+
+// HostEntry describes a single host's addresses and transport type.
+message HostEntry {
+    // Known network addresses (e.g., "10.0.1.1:443").
+    repeated string addresses = 1;
+
+    // Transport type used to reach this host ("ssh", "https", or "").
+    string transport = 2;
+
+    // HTTP CONNECT proxy URL for reaching this host (e.g., "http://proxy.corp:8080").
+    // Empty means direct connectivity (no proxy needed).
+    string proxy_url = 3;
+}
+
+// --- Connection Pairing (Dual-Connection Mode) ---
+
+// PairFrame is exchanged immediately after mTLS handshake to correlate
+// a control connection and data connection from the same peer session.
+//
+// Protocol:
+//  1. Initiator sends PairFrame{token, role="control"} on conn_1
+//  2. Initiator sends PairFrame{token, role="data"} on conn_2
+//  3. Listener validates: same PeerID (mTLS) + same token + distinct roles
+//
+// Security: token is 32 bytes from crypto/rand, single-use, transmitted
+// over mTLS (never plaintext). Prevents rogue connection injection,
+// replay attacks, and connection confusion.
+message PairFrame {
+    // 32-byte random correlation token (crypto/rand).
+    // Must match between control and data connections.
+    bytes token = 1;
+
+    // Connection role: "control" or "data".
+    string role = 2;
+}
+
+// --- Tool Protocol (gRPC over Mesh Circuits) ---
+
+// ToolService is the gRPC service for tool invocation.
+service ToolService {
+    // Invoke a tool on the target node.
+    rpc Invoke(ToolRequest) returns (ToolResponse);
+
+    // List tools available on the target node.
+    rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+}
+
+// ToolRequest is sent to invoke a tool on a remote node.
+message ToolRequest {
+    // Tool name (e.g., "lustre_health").
+    string name = 1;
+
+    // Tool arguments as JSON bytes.
+    bytes args_json = 2;
+}
+
+// ToolResponse carries the result of a tool invocation.
+message ToolResponse {
+    // True if the tool returned an error result.
+    bool is_error = 1;
+
+    // Result content as JSON bytes.
+    bytes content_json = 2;
+}
+
+// ListToolsRequest asks a node to enumerate its local tools.
+message ListToolsRequest {
+    // Optional category filter.
+    string category = 1;
+}
+
+// ListToolsResponse enumerates available tools.
+message ListToolsResponse {
+    repeated ToolInfo tools = 1;
+}
+
+// ToolInfo describes a single available tool.
+message ToolInfo {
+    string name = 1;
+    string description = 2;
+    string category = 3;
+}

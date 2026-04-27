@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/flipfloptech/cortex-mcp/internal/registry/tools/lifecycle"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 )
 
 type benchTracker struct{}

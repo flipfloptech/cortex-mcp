@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cortex-mesh/cortex-mesh/api"
-	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/api"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 )
 
 // mockTopologyProvider implements TopologyProvider for testing.

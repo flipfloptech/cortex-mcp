@@ -19,7 +19,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/membrane"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/membrane"
 )
 
 // ephemeralPKI holds the site CA and is used to generate node certificates.

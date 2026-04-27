@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/cortex-mesh/cortex-mesh/tools"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 )
 
 // BridgeToMesh registers all supported tools from the PluginRegistry

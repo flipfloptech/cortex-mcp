@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cortex-mesh/cortex-mesh/gateway"
-	"github.com/cortex-mesh/cortex-mesh/tools"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/gateway"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )

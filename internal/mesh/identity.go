@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cortex-mesh/cortex-mesh/membrane"
+	"github.com/flipfloptech/cortex-mcp/pkg/mesh/membrane"
 )
 
 // NodeIdentity represents the serialized identity of a persistent mesh node.
