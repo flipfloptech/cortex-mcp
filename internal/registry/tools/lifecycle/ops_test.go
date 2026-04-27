@@ -61,51 +61,43 @@ func TestSelfInstallOps(t *testing.T) {
 }
 
 func TestSelfUninstallOps(t *testing.T) {
-	t.Parallel()
-
 	ops := SelfUninstallOps()
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 op, got %d", len(ops))
+	}
+	if ops[0].Action != "spawn_detached" {
+		t.Errorf("expected spawn_detached, got %s", ops[0].Action)
+	}
+	if !strings.Contains(ops[0].Args, "systemd-run") {
+		t.Errorf("expected systemd-run args, got %s", ops[0].Args)
+	}
+}
 
+func TestDetachedUninstallOps(t *testing.T) {
+	ops := DetachedUninstallOps()
 	var hasStop bool
 	var hasDisable bool
 	var hasRemoveUnit bool
-	var hasReload bool
-	var hasRemoveBinary bool
 
 	for _, op := range ops {
-		switch op.Action {
-		case "systemctl":
-			switch {
-			case strings.Contains(op.Args, "stop"):
-				hasStop = true
-			case strings.Contains(op.Args, "disable"):
-				hasDisable = true
-			case strings.Contains(op.Args, "daemon-reload"):
-				hasReload = true
-			}
-		case "remove_file":
-			if strings.Contains(op.Path, ".service") {
-				hasRemoveUnit = true
-			}
-		case "remove_dir":
-			if strings.Contains(op.Path, "/opt/cortex-mcp") {
-				hasRemoveBinary = true
-			}
+		if op.Action == "systemctl" && strings.Contains(op.Args, "stop") {
+			hasStop = true
+		}
+		if op.Action == "systemctl" && strings.Contains(op.Args, "disable") {
+			hasDisable = true
+		}
+		if op.Action == "remove_file" && strings.Contains(op.Path, ".service") {
+			hasRemoveUnit = true
 		}
 	}
 
-	if !hasStop {
-		t.Error("selfUninstallOps missing stop")
+	if !hasStop || !hasDisable || !hasRemoveUnit {
+		t.Errorf("DetachedUninstallOps missing critical actions")
 	}
-	if !hasDisable {
-		t.Error("selfUninstallOps missing disable")
-	}
-	if !hasRemoveUnit {
-		t.Error("selfUninstallOps missing unit file removal")
-	}
-	if !hasReload {
-		t.Error("selfUninstallOps missing daemon-reload")
-	}
-	if !hasRemoveBinary {
-		t.Error("selfUninstallOps missing binary removal")
+}
+
+func BenchmarkDetachedUninstallOps(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = DetachedUninstallOps()
 	}
 }

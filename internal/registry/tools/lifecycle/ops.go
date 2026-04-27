@@ -45,7 +45,21 @@ func SelfInstallOps() []LifecycleOp {
 
 // SelfUninstallOps returns the sequence of operations to fully remove
 // the cortex-mcp systemd service, unit file, and binary.
+// Because the daemon cannot delete its own systemd service and reliably survive,
+// it uses systemd-run to escape the cgroup and execute a detached background
+// cleanup process using the same binary, which then performs the teardown.
 func SelfUninstallOps() []LifecycleOp {
+	execPath, err := os.Executable()
+	if err != nil {
+		execPath = "/opt/cortex-mcp/bin/cortex-mcp" // Fallback if os.Executable fails
+	}
+	return []LifecycleOp{
+		{Action: "spawn_detached", Args: fmt.Sprintf("systemd-run --unit=cortex-mcp-cleanup %s local-op uninstall", execPath)},
+	}
+}
+
+// DetachedUninstallOps are the actual teardown instructions executed by the background process.
+func DetachedUninstallOps() []LifecycleOp {
 	ops := []LifecycleOp{
 		{Action: "systemctl", Args: fmt.Sprintf("stop %s", ServiceName)},
 		{Action: "systemctl", Args: fmt.Sprintf("disable %s", ServiceName)},
@@ -86,6 +100,16 @@ func ExecuteOps(ops []LifecycleOp) error {
 // ExecuteOp runs a single lifecycle operation.
 func ExecuteOp(op LifecycleOp) error {
 	switch op.Action {
+	case "spawn_detached":
+		zap.S().Infow("lifecycle", "action", "spawn_detached", "args", op.Args)
+		cmd := exec.Command(splitArgs(op.Args)[0], splitArgs(op.Args)[1:]...)
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("spawn_detached: %w", err)
+		}
+		return nil
+
 	case "systemctl":
 		zap.S().Infow("lifecycle", "action", "systemctl", "args", op.Args)
 		//nolint:gosec // Args are constructed internally, not from user input.

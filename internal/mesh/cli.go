@@ -201,7 +201,7 @@ func Execute() {
 			case "install":
 				ops = lifecycle.SelfInstallOps()
 			case "uninstall":
-				ops = lifecycle.SelfUninstallOps()
+				ops = lifecycle.DetachedUninstallOps()
 			default:
 				fmt.Fprintf(os.Stderr, "unknown local-op action: %s\n", action)
 				os.Exit(1)
