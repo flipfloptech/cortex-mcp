@@ -45,3 +45,7 @@ func TestPromptConfirmation(t *testing.T) {
 func BenchmarkPromptConfirmation(b *testing.B) {
 	b.Skip("Interactive function")
 }
+
+func BenchmarkCheckAndUpgradePeer(b *testing.B) {
+	b.Skip("Skip benchmark for background routine")
+}

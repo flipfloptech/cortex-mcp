@@ -62,6 +62,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -597,7 +598,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 	}
 
 	zap.S().Infow("fleet node ready — serving tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
-	tools.ServeToolListener(ctx, lis, meshReg)
+	ServeMultiplexedListener(ctx, lis, meshReg)
 }
 
 // runBridgeNode handles a lightweight foreground bridge node (no diagnostic tools).
@@ -692,7 +693,7 @@ func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginR
 	}()
 
 	zap.S().Infow("bridge node ready — serving lifecycle tools", "node_id", nodeID, "tools", len(meshReg.ListLocal()))
-	tools.ServeToolListener(ctx, lis, meshReg)
+	ServeMultiplexedListener(ctx, lis, meshReg)
 }
 
 // runGateway handles the gateway (bootstrap) node lifecycle.
@@ -1117,27 +1118,9 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 		}
 
 		if err == nil {
-			// Found an existing active path! (TCP, Proxy, or SSH Tunnel)
-			var versionMismatch bool
-			if !skipDeploy {
-				remoteVersion, verErr := getRemoteApplicationVersion(ctx, sshAddr, deployCred, lifecycle.InstallRemotePath(""))
-				if verErr != nil || !strings.Contains(remoteVersion, version.ApplicationVersion) {
-					versionMismatch = true
-					if verErr != nil {
-						zap.S().Debugw("failed to get remote version, assuming mismatch", "error", verErr)
-					} else {
-						zap.S().Infow("version mismatch detected", "remote", remoteVersion, "local", version.ApplicationVersion)
-					}
-				}
-			}
-
-			if versionMismatch || (install && force && !regenerateKeys) {
+			if install && force && !regenerateKeys {
 				_ = conn.Close()
-				if versionMismatch {
-					zap.S().Infow("upgrading remote node", "node_id", remoteNodeID, "addr", sshAddr)
-				} else {
-					zap.S().Infow("forcing reinstall of remote node (preserving keys)", "node_id", remoteNodeID, "addr", sshAddr)
-				}
+				zap.S().Infow("forcing reinstall of remote node (preserving keys)", "node_id", remoteNodeID, "addr", sshAddr)
 				remotePath := lifecycle.InstallRemotePath("")
 				if err := upgradeRemoteNode(ctx, sshAddr, deployCred, remotePath, cfg); err != nil {
 					zap.S().Errorw("upgrade failed", "node_id", remoteNodeID, "error", err)
@@ -1167,6 +1150,10 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 				nodeID: remoteNodeID,
 				conn:   conn,
 			})
+
+			if !skipDeploy {
+				go checkAndUpgradePeer(ctx, node, remoteNodeID)
+			}
 			continue
 		}
 
@@ -1714,5 +1701,88 @@ func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api
 		}
 
 		return nil, fmt.Errorf("all dialing methods failed for %s: %s", target.Hostname, strings.Join(errs, ", "))
+	}
+}
+
+func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID string) {
+	// Give the yamux session a moment to settle
+	time.Sleep(500 * time.Millisecond)
+
+	// 1. Dial the remote node over the mesh
+	stream, err := node.GrpcDialer(ctx, remoteNodeID)
+	if err != nil {
+		zap.S().Debugw("viral upgrade: failed to dial peer", "node_id", remoteNodeID, "error", err)
+		return
+	}
+	defer func() { _ = stream.Close() }()
+
+	// 2. Invoke get_system_info
+	res, err := tools.DialInvoke(ctx, stream, "get_system_info", nil)
+	if err != nil {
+		zap.S().Debugw("viral upgrade: failed to invoke system_info", "node_id", remoteNodeID, "error", err)
+		return
+	}
+
+	if res.IsError {
+		zap.S().Debugw("viral upgrade: system_info returned error", "node_id", remoteNodeID, "error", string(res.Content))
+		return
+	}
+
+	// 3. Parse version
+	var infoData struct {
+		ApplicationVersion string `json:"application_version"`
+	}
+	if err := json.Unmarshal(res.Content, &infoData); err != nil {
+		return
+	}
+
+	localVer, errL := strconv.ParseInt(version.ApplicationVersion, 10, 64)
+	remoteVer, errR := strconv.ParseInt(infoData.ApplicationVersion, 10, 64)
+
+	// If either version is not a valid timestamp (e.g. dev build), ignore
+	if errL != nil || errR != nil {
+		return
+	}
+
+	if localVer <= remoteVer {
+		// Peer is up to date or newer
+		return
+	}
+
+	zap.S().Infow("viral upgrade initiated", "node_id", remoteNodeID, "local_version", localVer, "remote_version", remoteVer)
+
+	// 4. Stream binary
+	binStream, err := node.GrpcDialer(ctx, remoteNodeID)
+	if err != nil {
+		zap.S().Errorw("viral upgrade: failed to dial for binary upload", "node_id", remoteNodeID, "error", err)
+		return
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		zap.S().Errorw("viral upgrade: failed to get executable path", "error", err)
+		_ = binStream.Close()
+		return
+	}
+
+	if err := DialUploadBinary(ctx, binStream, exePath); err != nil {
+		zap.S().Errorw("viral upgrade: binary upload failed", "node_id", remoteNodeID, "error", err)
+		return
+	}
+
+	// 5. Invoke node_upgrade
+	upgradeStream, err := node.GrpcDialer(ctx, remoteNodeID)
+	if err != nil {
+		zap.S().Errorw("viral upgrade: failed to dial for upgrade invocation", "node_id", remoteNodeID, "error", err)
+		return
+	}
+	defer func() { _ = upgradeStream.Close() }()
+
+	args := []byte(fmt.Sprintf(`{"path":"%s"}`, DefaultUpdatePath))
+	upgRes, err := tools.DialInvoke(ctx, upgradeStream, "node_upgrade", args)
+	if err != nil || upgRes.IsError {
+		zap.S().Errorw("viral upgrade: node_upgrade invocation failed", "node_id", remoteNodeID, "error", err, "res", string(upgRes.Content))
+	} else {
+		zap.S().Infow("viral upgrade: remote node scheduled for restart", "node_id", remoteNodeID)
 	}
 }

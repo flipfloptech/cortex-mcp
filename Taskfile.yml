@@ -6,6 +6,8 @@ vars:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   GIT_COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_TIMESTAMP:
+    sh: date +%s
 
 tasks:
   default:
@@ -21,7 +23,7 @@ tasks:
   build:debug:
     desc: Build the cortex-mcp binary for debugging (disables optimizations)
     cmds:
-      - CGO_ENABLED=0 go build -gcflags="all=-N -l" -ldflags "-X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+      - CGO_ENABLED=0 go build -gcflags="all=-N -l" -ldflags "-X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.BUILD_TIMESTAMP}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
 
   build:prod:
     desc: Build a size-optimized, UPX-compressed production binary
@@ -33,7 +35,7 @@ tasks:
         msg: |
           upx is not installed. Please install it (e.g. mise install upx) to compress production builds.
     cmds:
-      - CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.GIT_COMMIT}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
+      - CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/flipfloptech/cortex-mcp/internal/version.ApplicationVersion={{.BUILD_TIMESTAMP}}" -o {{.BINARY_NAME}} ./cmd/cortex-mcp/...
       - "{{.UPX}} --best --lzma {{.BINARY_NAME}}"
 
   test:
