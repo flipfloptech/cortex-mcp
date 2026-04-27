@@ -62,6 +62,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1381,22 +1382,32 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", unique)
 }
 
-// uninstallFleet SSHes to each node and removes the cortex-mcp
-// systemd service, unit file, and binary. If target is non-empty,
-// only the specified node is uninstalled.
+// uninstallFleet uses a two-phase process to safely dismantle the mesh:
+//  1. Mesh Uninstall (Furthest-First): Joins the mesh, queries the topology, and signals
+//     the highest-impedance nodes to uninstall themselves over the mesh.
+//  2. SSH Fallback: Uses the transport.SelfDeployer to SSH and uninstall any nodes
+//     that were unreachable or failed the mesh uninstallation.
 func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
 	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mcp from fleet ---\n")
 
-	// Build vault for SSH credentials.
-	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	// Phase 1: Mesh-aware Uninstallation (Furthest First)
+	fmt.Fprintf(os.Stderr, "--- Phase 1: Mesh Uninstall (Furthest First) ---\n")
+
+	pki, _, err := loadOrGeneratePKI()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ generate key: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  ✗ failed to load PKI: %v\n", err)
 		return
 	}
 
-	v, err := vault.New(privKey)
+	bridgeCert, err := pki.generateNodeCert("uninstall-cli", false)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ vault: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  ✗ failed to generate cert: %v\n", err)
+		return
+	}
+
+	v, err := initVault(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ failed to init vault: %v\n", err)
 		return
 	}
 
@@ -1404,10 +1415,81 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 		zap.S().Warnw("some credentials failed to load", "error", err)
 	}
 
+	reconnectPolicy := api.ReconnectPolicy{
+		Enabled:      true,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     1 * time.Second,
+	}
+	var nodePtr *api.Node
+	dialer := createResilientDialer(cfg, v, &nodePtr)
+
+	node, err := api.NewNode(ctx, api.NodeConfig{
+		NodeID:             "uninstall-cli",
+		ProtocolVersion:    1,
+		ApplicationVersion: version.ApplicationVersion,
+		Vault:              v,
+		Dialer:             dialer,
+		KnownHosts:         cfg.KnownHosts(),
+		Reconnect:          reconnectPolicy,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ✗ failed to create ephemeral mesh node: %v\n", err)
+		return
+	}
+	nodePtr = node
+	node.SetMembraneConfig(pki.membraneConfig(bridgeCert))
+	node.StartGossipTicker(ctx, node.GossipIntervalDuration())
+
+	fmt.Fprintf(os.Stderr, "  waiting 4s for mesh topology discovery...\n")
+	time.Sleep(4 * time.Second)
+
+	snapshot := node.MeshTopology()
+	entries := snapshot.NodeDetails
+
+	// Sort by Impedance DESCENDING (furthest first)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Impedance > entries[j].Impedance
+	})
+
+	meshUninstalled := make(map[string]bool)
+	bridge := tools.NewNeuronBridge(node)
+	invoker := tools.NewRemoteInvoker(bridge)
+
+	for _, entry := range entries {
+		if entry.NodeID == "uninstall-cli" {
+			continue
+		}
+		if target != "" && entry.NodeID != target {
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "  → %s (mesh distance: %.1f): uninstalling via mesh...", entry.NodeID, entry.Impedance)
+
+		// Invoke the node_uninstall tool over the mesh
+		_, invokeErr := invoker.Invoke(ctx, entry.NodeID, "node_uninstall", nil)
+		if invokeErr != nil {
+			fmt.Fprintf(os.Stderr, " ✗ Invoke: %v\n", invokeErr)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, " ✓ requested\n")
+		meshUninstalled[entry.NodeID] = true
+
+		// Brief pause to allow the node to cleanly process the shutdown
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	_ = node.Close()
+
+	// Phase 2: SSH Fallback
+	fmt.Fprintf(os.Stderr, "--- Phase 2: SSH Fallback Cleanup ---\n")
+
 	for remoteNodeID, hostCfg := range cfg.Hosts {
-		// Skip nodes that don't match the target filter.
 		if target != "" && remoteNodeID != target {
 			continue
+		}
+		if meshUninstalled[remoteNodeID] {
+			continue // Successfully uninstalled via mesh
 		}
 		if len(hostCfg.Addresses) == 0 {
 			continue
@@ -1443,9 +1525,8 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling...", remoteNodeID, sshAddr)
+		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling via SSH...", remoteNodeID, sshAddr)
 
-		// Use SelfDeployer to deploy the binary to a unique /tmp path and run local-op uninstall
 		deployer := &transport.SelfDeployer{
 			RemotePath:  fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
 			ExecArgs:    []string{"local-op", "uninstall"},
@@ -1457,7 +1538,6 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 			continue
 		}
 
-		// stream contains stdout/stderr, we should read it until EOF to let it finish
 		_, _ = io.Copy(os.Stderr, stream)
 		_ = stream.Close()
 		fmt.Fprintf(os.Stderr, " ✓ removed\n")
