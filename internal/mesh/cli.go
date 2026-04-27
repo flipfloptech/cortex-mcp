@@ -1265,7 +1265,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 			// Dial the newly spawned daemon using the resilient dialer (with retries for boot-up time)
 			var conn net.Conn
 			var dialErr error
-			for i := 0; i < 5; i++ {
+			for i := 0; i < 30; i++ {
 				conn, dialErr = dialer(ctx, nucleus.DialTarget{Hostname: remoteNodeID, Address: meshAddr})
 				if dialErr == nil {
 					break
