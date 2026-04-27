@@ -1407,11 +1407,6 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 //  2. SSH Fallback: Uses the transport.SelfDeployer to SSH and uninstall any nodes
 //     that were unreachable or failed the mesh uninstallation.
 func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
-	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mcp from fleet ---\n")
-
-	// Phase 1: Mesh-aware Uninstallation (Furthest First)
-	fmt.Fprintf(os.Stderr, "--- Phase 1: Mesh Uninstall (Furthest First) ---\n")
-
 	pki, _, err := loadOrGeneratePKI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ✗ failed to load PKI: %v\n", err)
@@ -1459,8 +1454,9 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 	node.SetMembraneConfig(pki.membraneConfig(bridgeCert))
 	node.StartGossipTicker(ctx, node.GossipIntervalDuration())
 
-	fmt.Fprintf(os.Stderr, "  waiting 4s for mesh topology discovery...\n")
-	time.Sleep(4 * time.Second)
+	// Connect to known hosts so we join the mesh and discover topology
+	_ = deployAndConnect(ctx, node, pki, cfg, v, true, false, false, false, nil, false, false)
+	time.Sleep(2 * time.Second)
 
 	snapshot := node.MeshTopology()
 	entries := snapshot.NodeDetails
@@ -1481,8 +1477,11 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 		if target != "" && entry.NodeID != target {
 			continue
 		}
+		if _, ok := cfg.Hosts[entry.NodeID]; !ok {
+			continue // Only uninstall nodes that belong to the fleet
+		}
 
-		fmt.Fprintf(os.Stderr, "  → %s (mesh distance: %.1f): uninstalling via mesh...", entry.NodeID, entry.Impedance)
+		fmt.Fprintf(os.Stderr, "  → %s: uninstalling via mesh...", entry.NodeID)
 
 		// Invoke the node_uninstall tool over the mesh
 		_, invokeErr := invoker.Invoke(ctx, entry.NodeID, "node_uninstall", nil)
@@ -1491,7 +1490,7 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, " ✓ requested\n")
+		fmt.Fprintf(os.Stderr, " ✓ removed\n")
 		meshUninstalled[entry.NodeID] = true
 
 		// Brief pause to allow the node to cleanly process the shutdown
@@ -1501,8 +1500,6 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 	_ = node.Close()
 
 	// Phase 2: SSH Fallback
-	fmt.Fprintf(os.Stderr, "--- Phase 2: SSH Fallback Cleanup ---\n")
-
 	for remoteNodeID, hostCfg := range cfg.Hosts {
 		if target != "" && remoteNodeID != target {
 			continue
@@ -1547,7 +1544,8 @@ func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) 
 		fmt.Fprintf(os.Stderr, "  → %s (%s): uninstalling via SSH...", remoteNodeID, sshAddr)
 
 		deployer := &transport.SelfDeployer{
-			RemotePath:  fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
+			RemotePath: fmt.Sprintf("/tmp/cortex-mcp-uninstall-%d", time.Now().UnixNano()),
+
 			ExecArgs:    []string{"local-op", "uninstall"},
 			NoWaitReady: true,
 		}
