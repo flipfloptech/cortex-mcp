@@ -8,7 +8,7 @@ description: Component design standards and API contracts for the cortex-mcp app
 ## Design Principles
 
 - **Separation of Concerns**: Keep Model Context Protocol handling (`internal/mcp`), Mesh orchestration (`internal/mesh`), and Tool logic (`internal/registry`) entirely decoupled.
-- **Library Utilization**: You are a consumer of `cortex-mesh`. Rely on the library for all transports, multiplexing, and routing. Do not reimplement `Neuron` or `Membrane` logic.
+- **Library Utilization**: You are a consumer of `cortex-mcp`. Rely on the library for all transports, multiplexing, and routing. Do not reimplement `Neuron` or `Membrane` logic.
 - **Fail Fast**: If configuration is invalid, fail on startup. If a required dependency is missing, fail clearly.
 
 ## Application Architecture
@@ -17,16 +17,16 @@ description: Component design standards and API contracts for the cortex-mcp app
 
 1. Initiated by the user or an LLM client.
 2. Loads configuration and creates the root mesh identity (Site CA).
-3. Instantiates `cortex-mesh/gateway` and `cortex-mesh/tools.NewNeuronBridge`.
+3. Instantiates `cortex-mcp/gateway` and `cortex-mcp/tools.NewNeuronBridge`.
 4. Deploys fleet nodes via SSH (`transport.SelfDeployer`).
-5. Handles the MCP stdio protocol loop to serve LLM requests, translating them into `cortex-mesh` Meta-Tool invocations.
+5. Handles the MCP stdio protocol loop to serve LLM requests, translating them into `cortex-mcp` Meta-Tool invocations.
 
 ### The Fleet Node / Daemon Mode
 
 1. Initiated by SSH deployer from the Gateway.
 2. Performs the initial readiness handshake over stdin/stdout.
 3. Upgrades the stream to mTLS and yamux.
-4. If instructed to "install", copies itself to `/opt/cortex-mesh/bin/`, installs a systemd unit, and transitions to a persistent daemon.
+4. If instructed to "install", copies itself to `/opt/cortex-mcp/bin/`, installs a systemd unit, and transitions to a persistent daemon.
 5. In daemon mode, listens via HTTPS or SSH transports, registering its local capability subset into the mesh.
 
 ## Tool Registry Contract (`internal/registry`)
@@ -54,7 +54,7 @@ package registry
 import (
     "context"
     "encoding/json"
-    "github.com/cortex-mesh/cortex-mesh/tools"
+    "github.com/cortex-mcp/cortex-mcp/tools"
 )
 
 // RegisterSystemTools adds base system utilities to the registry.

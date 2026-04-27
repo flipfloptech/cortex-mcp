@@ -55,7 +55,7 @@ Add the following to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "cortex-mesh": {
+    "cortex-mcp": {
       "type": "streamablehttp",
       "url": "http://127.0.0.1:8080/mcp"
     }
@@ -67,7 +67,7 @@ Add the following to your `claude_desktop_config.json`:
 
 In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new server:
 - **Type**: `streamablehttp`
-- **Name**: `cortex-mesh`
+- **Name**: `cortex-mcp`
 - **URL**: `http://127.0.0.1:8080/mcp`
 
 ## CLI Reference
@@ -76,8 +76,8 @@ In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new ser
 
 - `import-exa <in.toml> [out.toml]`: Convert Exascaler topology definitions into native `mesh.toml` configuration.
 - `install`: Deploy the static binary and install the systemd daemon on all remote hosts defined in the configuration.
-- `start`: Start the `cortex-mesh` systemd service on all remote hosts.
-- `stop`: Stop the `cortex-mesh` systemd service on all remote hosts.
+- `start`: Start the `cortex-mcp` systemd service on all remote hosts.
+- `stop`: Stop the `cortex-mcp` systemd service on all remote hosts.
 - `uninstall`: Remove the systemd service and binary from all remote hosts.
 - `mcp`: Launch the gateway in MCP server mode over Streamable HTTP (used by LLMs).
 

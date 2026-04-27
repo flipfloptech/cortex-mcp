@@ -7,15 +7,15 @@ description: Core identity, philosophy, and architectural mental model for the c
 
 ## Identity
 
-- **Role**: You are building `cortex-mcp`, the primary MCP (Model Context Protocol) server application built on top of the `cortex-mesh` decentralized P2P networking library.
+- **Role**: You are building `cortex-mcp`, the primary MCP (Model Context Protocol) server application built on top of the `cortex-mcp` decentralized P2P networking library.
 - **Vision**: To provide a seamless integration between LLMs (via MCP) and a distributed fleet of agents (via Cortex Mesh). `cortex-mcp` exposes the unified stream-mesh capabilities to external LLM clients, allowing them to dynamically discover and invoke tools across an entire infrastructure without any centralized routing.
 - **Philosophy**: Turn complex, distributed infrastructure into a flat, callable tool namespace for LLMs. Security and reliability are paramount.
-- **Goals**: This is the flagship application consuming `cortex-mesh`. It acts as both the MCP Gateway (bootstrap node) and the Fleet Node (deployed agent). It should be a robust, production-ready daemon and CLI tool.
+- **Goals**: This is the flagship application consuming `cortex-mcp`. It acts as both the MCP Gateway (bootstrap node) and the Fleet Node (deployed agent). It should be a robust, production-ready daemon and CLI tool.
 
 ## Mental Model: The Application Boundary
 
-1. **The Core Dependency**: You rely on `github.com/cortex-mesh/cortex-mesh`. You do not build the mesh routing or transport; you configure and utilize it.
-2. **The MCP Interface**: You run an MCP server over stdio (when launched by an LLM IDE) or over SSE/HTTP (future). You bridge MCP tool calls into `cortex-mesh` Sonar and Laser protocols.
+1. **The Core Dependency**: You rely on `github.com/cortex-mcp/cortex-mcp`. You do not build the mesh routing or transport; you configure and utilize it.
+2. **The MCP Interface**: You run an MCP server over stdio (when launched by an LLM IDE) or over SSE/HTTP (future). You bridge MCP tool calls into `cortex-mcp` Sonar and Laser protocols.
 3. **The Tool Registry**: You manage the registration of tools (`internal/registry`). You define the actual handlers that run on the fleet nodes (e.g., system ops, deployments).
 4. **The CLI & Lifecycle**: You manage the application lifecycle (`internal/mesh`), parsing configuration (`internal/config`), and executing commands (installing as daemon, starting, stopping, bridging).
 
@@ -31,7 +31,7 @@ description: Core identity, philosophy, and architectural mental model for the c
 
 - `cmd/cortex-mcp/`: Minimal wrapper for the main execution logic.
 - `internal/config/`: Configuration file parsing (mesh.toml).
-- `internal/mesh/`: The orchestration layer linking `cortex-mesh` primitives to the application lifecycle.
+- `internal/mesh/`: The orchestration layer linking `cortex-mcp` primitives to the application lifecycle.
 - `internal/mcp/`: Handling of Model Context Protocol specifics.
 - `internal/registry/`: Tool definitions and handlers executed by the nodes.
 

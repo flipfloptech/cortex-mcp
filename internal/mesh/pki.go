@@ -47,8 +47,8 @@ func newEphemeralPKI() (*ephemeralPKI, error) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-site"},
-			CommonName:   "cortex-mesh-ephemeral-ca",
+			Organization: []string{"cortex-mcp-site"},
+			CommonName:   "cortex-mcp-ephemeral-ca",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(10*365*24*time.Hour - 1*time.Hour),
@@ -88,7 +88,7 @@ func (p *ephemeralPKI) generateNodeCert(nodeID string, isServer bool) (tls.Certi
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-node"},
+			Organization: []string{"cortex-mcp-node"},
 			CommonName:   nodeID,
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),
@@ -130,7 +130,7 @@ func (p *ephemeralPKI) generateNodeBundle(nodeID string) (*certBundle, error) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-node"},
+			Organization: []string{"cortex-mcp-node"},
 			CommonName:   nodeID,
 		},
 		NotBefore: time.Now().Add(-1 * time.Hour),

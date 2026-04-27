@@ -34,7 +34,7 @@ func testCA(t testing.TB) (*x509.Certificate, *ecdsa.PrivateKey, *x509.CertPool)
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-test-ca"},
+			Organization: []string{"cortex-mcp-test-ca"},
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -77,7 +77,7 @@ func testCert(t testing.TB, ca *x509.Certificate, caKey *ecdsa.PrivateKey, isSer
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-test"},
+			Organization: []string{"cortex-mcp-test"},
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),
 		NotAfter:    time.Now().Add(24 * time.Hour),

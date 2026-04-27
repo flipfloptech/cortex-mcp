@@ -21,7 +21,7 @@ func caPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
-	return filepath.Join(home, ".cortex-mesh", "gateway_ca.json"), nil
+	return filepath.Join(home, ".cortex-mcp", "gateway_ca.json"), nil
 }
 
 // loadOrGeneratePKI attempts to load the gateway's site CA from disk.

@@ -25,7 +25,7 @@ func SetLiveMode(live bool) {
 // shell commands — this is the key abstraction over raw SSH exec.
 type LifecycleOp struct {
 	Action  string `json:"action"`            // "systemctl", "write_file", "remove_file", "copy_binary", "copy_file"
-	Args    string `json:"args,omitempty"`    // e.g. "daemon-reload", "restart cortex-mesh"
+	Args    string `json:"args,omitempty"`    // e.g. "daemon-reload", "restart cortex-mcp"
 	Path    string `json:"path,omitempty"`    // file path for write/remove/copy
 	Src     string `json:"src,omitempty"`     // source path for copy_file
 	Content string `json:"content,omitempty"` // file content for write_file
@@ -44,7 +44,7 @@ func SelfInstallOps() []LifecycleOp {
 }
 
 // SelfUninstallOps returns the sequence of operations to fully remove
-// the cortex-mesh systemd service, unit file, and binary.
+// the cortex-mcp systemd service, unit file, and binary.
 func SelfUninstallOps() []LifecycleOp {
 	ops := []LifecycleOp{
 		{Action: "systemctl", Args: fmt.Sprintf("stop %s", ServiceName)},
@@ -53,10 +53,10 @@ func SelfUninstallOps() []LifecycleOp {
 		{Action: "systemctl", Args: "daemon-reload"},
 		// Kill any lingering legacy processes via abstract socket lock
 		{Action: "kill_abstract_socket", Path: "@cortex-mcp-lock"},
-		{Action: "remove_dir", Path: "/opt/cortex-mesh"},
+		{Action: "remove_dir", Path: "/opt/cortex-mcp"},
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		ops = append(ops, LifecycleOp{Action: "remove_dir", Path: home + "/.cortex-mesh"})
+		ops = append(ops, LifecycleOp{Action: "remove_dir", Path: home + "/.cortex-mcp"})
 	}
 	return ops
 }

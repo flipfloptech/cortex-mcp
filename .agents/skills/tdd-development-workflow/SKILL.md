@@ -1,6 +1,6 @@
 ---
 name: tdd-development-workflow
-description: Test-Driven Development workflow for cortex-mesh. Tests are written first to define correct behavior, then code is written to satisfy them. Every logical unit of work is committed. Edge cases are not optional.
+description: Test-Driven Development workflow for cortex-mcp. Tests are written first to define correct behavior, then code is written to satisfy them. Every logical unit of work is committed. Edge cases are not optional.
 ---
 
 # TDD Development Workflow

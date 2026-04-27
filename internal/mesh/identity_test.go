@@ -27,7 +27,7 @@ func TestIdentityPersistence(t *testing.T) {
 
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "cortex-mesh-ephemeral-ca"},
+		Subject:               pkix.Name{CommonName: "cortex-mcp-ephemeral-ca"},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Hour),
 		IsCA:                  true,
@@ -79,7 +79,7 @@ func TestIdentityPersistence(t *testing.T) {
 	}
 
 	// Verify permissions
-	path := filepath.Join(tmpHome, ".cortex-mesh", "identity.json")
+	path := filepath.Join(tmpHome, ".cortex-mcp", "identity.json")
 	stat, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("expected file at %s: %v", path, err)

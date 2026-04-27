@@ -75,7 +75,7 @@ func (mc *MultiplexedConn) Close() error {
 	return firstErr
 }
 
-// MeshConfig returns a yamux configuration tuned for the cortex-mesh
+// MeshConfig returns a yamux configuration tuned for the cortex-mcp
 // control plane. This replaces yamux.DefaultConfig() with settings that
 // mitigate head-of-line (HOL) blocking between Stream 0 (control) and
 // data streams (Stream 1+).

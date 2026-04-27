@@ -329,8 +329,8 @@ These tools have `Hidden: true` — they do **not** appear in `get_tool_list` an
 Converts an ephemeral node (running from `/tmp`) into persistent infrastructure.
 
 **Operations:**
-1. Copies the running binary to `/opt/cortex-mesh/bin/cortex-mcp`
-2. Writes a systemd unit file (`cortex-mesh.service`)
+1. Copies the running binary to `/opt/cortex-mcp/bin/cortex-mcp`
+2. Writes a systemd unit file (`cortex-mcp.service`)
 3. Runs `systemctl daemon-reload`, `enable`, and `start`
 
 #### `node_uninstall`
@@ -345,12 +345,12 @@ Removes the node — handles both persistent (systemd) and ephemeral (`/tmp`) no
 #### `node_restart`
 *Category: `lifecycle` · Hidden: ✅*
 
-Restarts the local cortex-mesh systemd service (`systemctl restart cortex-mesh`).
+Restarts the local cortex-mcp systemd service (`systemctl restart cortex-mcp`).
 
 #### `node_stop`
 *Category: `lifecycle` · Hidden: ✅*
 
-Gracefully stops the cortex-mesh systemd service without uninstalling (`systemctl stop cortex-mesh`).
+Gracefully stops the cortex-mcp systemd service without uninstalling (`systemctl stop cortex-mcp`).
 
 #### `node_upgrade`
 *Category: `lifecycle` · Hidden: ✅*
@@ -361,7 +361,7 @@ Upgrades the node binary and restarts the service.
 - `path` (string, required): Path to the new binary on the local filesystem.
 
 **Operations:**
-1. Copies the new binary from the specified path over `/opt/cortex-mesh/bin/cortex-mcp`
+1. Copies the new binary from the specified path over `/opt/cortex-mcp/bin/cortex-mcp`
 2. Runs `systemctl daemon-reload` and `restart`
 
 #### `node_deploy`

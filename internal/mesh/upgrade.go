@@ -34,7 +34,7 @@ const (
 	upgradeWaitAfterRestart = 3 * time.Second
 )
 
-// getRemoteApplicationVersion connects via SSH and retrieves the cortex-mesh version
+// getRemoteApplicationVersion connects via SSH and retrieves the cortex-mcp version
 func getRemoteApplicationVersion(ctx context.Context, targetAddr string, cred transport.DeployCredential, remotePath string) (string, error) {
 	client, err := dialSSH(ctx, targetAddr, cred)
 	if err != nil {
@@ -68,7 +68,7 @@ func upgradeRestartCommand(remotePath string) string {
 // Flow:
 //  1. SSH to targetHost using cred
 //  2. SFTP the local binary to remotePath (overwrites existing)
-//  3. SFTP the local mesh.toml to /opt/cortex-mesh/etc/mesh.toml
+//  3. SFTP the local mesh.toml to /opt/cortex-mcp/etc/mesh.toml
 //  4. Exec the binary with the install subcommand to re-register and restart
 //  5. Close SSH connection
 func upgradeRemoteNode(ctx context.Context, targetHost string, cred transport.DeployCredential, remotePath string, cfg *config.MeshConfig) error {
@@ -131,7 +131,7 @@ func uploadBinaryViaSFTP(client *ssh.Client, binary io.Reader, remotePath string
 	}()
 
 	// Ensure parent directory exists.
-	if err := sftpClient.MkdirAll(remotePath[:len(remotePath)-len("/cortex-mesh")]); err != nil {
+	if err := sftpClient.MkdirAll(remotePath[:len(remotePath)-len("/cortex-mcp")]); err != nil {
 		zap.S().Debugw("upgrade: mkdir (may already exist)", "error", err)
 	}
 

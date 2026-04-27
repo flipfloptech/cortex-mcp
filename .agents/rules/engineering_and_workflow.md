@@ -7,7 +7,7 @@ description: Coding standards, security protocols, and development workflows for
 
 ## Directives
 
-- **Application Mindset**: This is the consumer application for `cortex-mesh`. Your focus is on clean CLI UX, solid daemon orchestration, and seamless MCP integration.
+- **Application Mindset**: This is the consumer application for `cortex-mcp`. Your focus is on clean CLI UX, solid daemon orchestration, and seamless MCP integration.
 - **Test-Driven Development**: Tests are written FIRST. Code is written to make tests pass. No exceptions.
 - **No Shortcuts**: Never bypass linters, tests, or quality gates via configuration suppression.
 
@@ -27,7 +27,7 @@ cortex-mcp/
 │   └── cortex-mcp/   # Minimal main() wrapper calling into internal
 ├── internal/
 │   ├── config/       # TOML configuration loading and validation
-│   ├── mesh/         # Application lifecycle and `cortex-mesh` initialization
+│   ├── mesh/         # Application lifecycle and `cortex-mcp` initialization
 │   ├── mcp/          # Model Context Protocol server implementation
 │   └── registry/     # Actual tools and handlers deployed across the fleet
 ```

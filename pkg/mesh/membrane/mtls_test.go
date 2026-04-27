@@ -30,8 +30,8 @@ func testEd25519CA(t testing.TB) (*x509.Certificate, ed25519.PrivateKey, *x509.C
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-site"},
-			CommonName:   "cortex-mesh-site-ca",
+			Organization: []string{"cortex-mcp-site"},
+			CommonName:   "cortex-mcp-site-ca",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -89,7 +89,7 @@ func testNodeCertWithOptions(
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-node"},
+			Organization: []string{"cortex-mcp-node"},
 			CommonName:   nodeID,
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),

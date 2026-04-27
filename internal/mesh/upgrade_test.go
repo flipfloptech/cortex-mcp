@@ -11,8 +11,8 @@ import (
 func TestUpgradeRestartCommand_Systemd(t *testing.T) {
 	t.Parallel()
 
-	cmd := upgradeRestartCommand("/opt/cortex-mesh/bin/cortex-mesh")
-	expected := "sudo /opt/cortex-mesh/bin/cortex-mesh local-op install"
+	cmd := upgradeRestartCommand("/opt/cortex-mcp/bin/cortex-mcp")
+	expected := "sudo /opt/cortex-mcp/bin/cortex-mcp local-op install"
 	if cmd != expected {
 		t.Errorf("expected %q, got %q", expected, cmd)
 	}

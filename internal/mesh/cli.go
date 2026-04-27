@@ -1353,14 +1353,14 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 
 	defaults := []string{
 		"mesh.toml",
-		"/opt/cortex-mesh/etc/mesh.toml",
-		"/opt/cortex-mesh/bin/mesh.toml",
+		"/opt/cortex-mcp/etc/mesh.toml",
+		"/opt/cortex-mcp/bin/mesh.toml",
 	}
 	if exe, err := os.Executable(); err == nil {
 		defaults = append(defaults, filepath.Join(filepath.Dir(exe), "mesh.toml"))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		defaults = append(defaults, filepath.Join(home, ".cortex-mesh", "mesh.toml"))
+		defaults = append(defaults, filepath.Join(home, ".cortex-mcp", "mesh.toml"))
 	}
 
 	var unique []string
@@ -1381,11 +1381,11 @@ func loadConfig(path string) (*config.MeshConfig, error) {
 	return nil, fmt.Errorf("mesh.toml not found (tried: %v)", unique)
 }
 
-// uninstallFleet SSHes to each node and removes the cortex-mesh
+// uninstallFleet SSHes to each node and removes the cortex-mcp
 // systemd service, unit file, and binary. If target is non-empty,
 // only the specified node is uninstalled.
 func uninstallFleet(ctx context.Context, cfg *config.MeshConfig, target string) {
-	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mesh from fleet ---\n")
+	fmt.Fprintf(os.Stderr, "--- Uninstalling cortex-mcp from fleet ---\n")
 
 	// Build vault for SSH credentials.
 	_, privKey, err := ed25519.GenerateKey(rand.Reader)
@@ -1605,7 +1605,7 @@ func buildNodeDeployHandler(node *api.Node) tools.ToolHandler {
 	}
 }
 
-// createResilientDialer creates a custom Dialer for cortex-mesh that implements
+// createResilientDialer creates a custom Dialer for cortex-mcp that implements
 // the TCP -> Proxy -> SSH Tunnel fallback chain.
 func createResilientDialer(cfg *config.MeshConfig, v *vault.Vault, nodePtr **api.Node) func(ctx context.Context, target nucleus.DialTarget) (net.Conn, error) {
 	return func(ctx context.Context, target nucleus.DialTarget) (net.Conn, error) {

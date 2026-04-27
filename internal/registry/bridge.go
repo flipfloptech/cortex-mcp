@@ -9,7 +9,7 @@ import (
 )
 
 // BridgeToMesh registers all supported tools from the PluginRegistry
-// into a cortex-mesh tools.Registry. This bridges our plugin system
+// into a cortex-mcp tools.Registry. This bridges our plugin system
 // into the mesh's tool discovery and invocation infrastructure.
 //
 // Each tool is wrapped in a handler that:
@@ -20,7 +20,7 @@ func (pr *PluginRegistry) BridgeToMesh(meshReg *tools.Registry) {
 	for _, t := range pr.Supported() {
 		tool := t // capture for closure
 
-		// Convert our ToolParam to cortex-mesh's tools.ToolParam.
+		// Convert our ToolParam to cortex-mcp's tools.ToolParam.
 		var meshParams []tools.ToolParam
 		for _, p := range tool.Parameters() {
 			meshParams = append(meshParams, tools.ToolParam{

@@ -199,7 +199,7 @@ func deriveAEAD(privateKey ed25519.PrivateKey) (cipher.AEAD, error) {
 	seed := privateKey.Seed()
 
 	// HKDF: extract + expand.
-	salt := []byte("cortex-mesh-vault-v1")
+	salt := []byte("cortex-mcp-vault-v1")
 	info := []byte("aes-256-gcm")
 	hkdfReader := hkdf.New(sha256.New, seed, salt, info)
 

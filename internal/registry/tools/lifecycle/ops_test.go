@@ -24,7 +24,7 @@ func TestSelfInstallOps(t *testing.T) {
 	for _, op := range ops {
 		switch op.Action {
 		case "write_file":
-			if strings.Contains(op.Path, "cortex-mesh.service") {
+			if strings.Contains(op.Path, "cortex-mcp.service") {
 				hasWriteUnit = true
 				if !strings.Contains(op.Content, "ExecStart=") {
 					t.Error("service unit missing ExecStart")
@@ -87,7 +87,7 @@ func TestSelfUninstallOps(t *testing.T) {
 				hasRemoveUnit = true
 			}
 		case "remove_dir":
-			if strings.Contains(op.Path, "/opt/cortex-mesh") {
+			if strings.Contains(op.Path, "/opt/cortex-mcp") {
 				hasRemoveBinary = true
 			}
 		}

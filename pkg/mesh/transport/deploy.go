@@ -56,7 +56,7 @@ const ProtocolVersion uint16 = 1
 // DeployReadyMagic is the 4-byte handshake sequence that a deployed node writes
 // to stdout to signal it is ready to receive data from the deployer.
 //
-// Format: [0x43 0x4D High(Proto) Low(Proto)] = "CM" (cortex-mesh) + 2-byte version
+// Format: [0x43 0x4D High(Proto) Low(Proto)] = "CM" (cortex-mcp) + 2-byte version
 //
 // Why 4 bytes instead of 1:
 //   - "CM" prefix won't collide with shell errors or Go runtime panics (ASCII text)
@@ -153,7 +153,7 @@ type SelfDeployer struct {
 	BinaryPath string
 
 	// RemotePath is the destination path on the remote host.
-	// If empty, defaults to "/tmp/cortex-mesh-node".
+	// If empty, defaults to "/tmp/cortex-mcp-node".
 	RemotePath string
 
 	// SkipUpload bypasses the SFTP binary upload phase when true.
@@ -215,7 +215,7 @@ func (d *SelfDeployer) Deploy(ctx context.Context, targetHost string, cred Deplo
 	// Resolve remote path.
 	remotePath := d.RemotePath
 	if remotePath == "" {
-		remotePath = "/tmp/cortex-mesh-node"
+		remotePath = "/tmp/cortex-mcp-node"
 	}
 
 	// Build auth methods from the credential.

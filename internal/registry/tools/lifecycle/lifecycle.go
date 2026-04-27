@@ -48,7 +48,7 @@ func NewInstallTool() *InstallTool {
 		baseLifecycleTool: baseLifecycleTool{
 			name:        "node_install",
 			description: "Install this node as a persistent systemd service",
-			longDesc:    "Copies the binary to /opt/cortex-mesh/bin/, writes a systemd unit, and enables/starts the service. Converts an ephemeral node into persistent infrastructure.",
+			longDesc:    "Copies the binary to /opt/cortex-mcp/bin/, writes a systemd unit, and enables/starts the service. Converts an ephemeral node into persistent infrastructure.",
 		},
 	}
 }
@@ -145,8 +145,8 @@ func NewRestartTool() *RestartTool {
 	return &RestartTool{
 		baseLifecycleTool: baseLifecycleTool{
 			name:        "node_restart",
-			description: "Restart the local cortex-mesh systemd service",
-			longDesc:    "Runs systemctl restart cortex-mesh. Use after binary upgrades or configuration changes.",
+			description: "Restart the local cortex-mcp systemd service",
+			longDesc:    "Runs systemctl restart cortex-mcp. Use after binary upgrades or configuration changes.",
 		},
 	}
 }
@@ -182,7 +182,7 @@ func NewStopTool() *StopTool {
 	return &StopTool{
 		baseLifecycleTool: baseLifecycleTool{
 			name:        "node_stop",
-			description: "Stop the cortex-mesh systemd service without uninstalling",
+			description: "Stop the cortex-mcp systemd service without uninstalling",
 			longDesc:    "Gracefully stops the service. The node remains installed and can be restarted. Use for maintenance windows.",
 		},
 	}
@@ -227,7 +227,7 @@ func NewUpgradeTool() *UpgradeTool {
 
 func (t *UpgradeTool) Parameters() []registry.ToolParam {
 	return []registry.ToolParam{
-		{Name: "path", Type: "string", Description: "Path to the new binary (e.g., /tmp/cortex-mesh-new)", Required: true},
+		{Name: "path", Type: "string", Description: "Path to the new binary (e.g., /tmp/cortex-mcp-new)", Required: true},
 	}
 }
 

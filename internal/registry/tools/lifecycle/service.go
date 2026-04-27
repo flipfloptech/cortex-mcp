@@ -4,17 +4,17 @@ import "fmt"
 
 const (
 	// defaultInstallPath is where the binary goes on persistent installs.
-	defaultInstallPath = "/opt/cortex-mesh/bin/cortex-mcp"
+	defaultInstallPath = "/opt/cortex-mcp/bin/cortex-mcp"
 
 	// ServiceName is the systemd service unit name.
-	ServiceName = "cortex-mesh"
+	ServiceName = "cortex-mcp"
 
 	// serviceUnitDir is the standard systemd unit directory.
 	serviceUnitDir = "/etc/systemd/system"
 )
 
 // InstallRemotePath returns the remote binary path for persistent installs.
-// If custom is empty, returns the default /opt/cortex-mesh/bin/cortex-mesh.
+// If custom is empty, returns the default /opt/cortex-mcp/bin/cortex-mcp.
 func InstallRemotePath(custom string) string {
 	if custom != "" {
 		return custom

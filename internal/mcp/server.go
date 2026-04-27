@@ -14,7 +14,7 @@ import (
 )
 
 // Dispatcher represents the capability to invoke mesh meta-tools.
-// In production, this is the cortex-mesh Gateway.
+// In production, this is the cortex-mcp Gateway.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, toolName string, args json.RawMessage) (*tools.ToolResult, error)
 }

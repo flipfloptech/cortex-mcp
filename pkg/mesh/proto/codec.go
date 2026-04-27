@@ -1,4 +1,4 @@
-// Package proto provides protobuf-based wire format for the cortex-mesh
+// Package proto provides protobuf-based wire format for the cortex-mcp
 // control plane and tool protocol.
 //
 // This file provides convenience functions for marshaling/unmarshaling

@@ -24,14 +24,14 @@ func identityPath() (string, error) {
 	// For system-wide installations (installer or daemon running as root),
 	// we store the identity in the system installation directory.
 	if os.Getuid() == 0 {
-		return "/opt/cortex-mesh/etc/identity.json", nil
+		return "/opt/cortex-mcp/etc/identity.json", nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
-	return filepath.Join(home, ".cortex-mesh", "identity.json"), nil
+	return filepath.Join(home, ".cortex-mcp", "identity.json"), nil
 }
 
 // SaveIdentity writes the node identity and certificate bundle to disk securely.
@@ -103,12 +103,12 @@ func LoadIdentity() (string, *membrane.Config, error) {
 // ConfigPath returns the absolute path to the node's saved configuration file.
 func ConfigPath() (string, error) {
 	if os.Getuid() == 0 {
-		return "/opt/cortex-mesh/etc/mesh.toml", nil
+		return "/opt/cortex-mcp/etc/mesh.toml", nil
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".cortex-mesh", "mesh.toml"), nil
+		return filepath.Join(home, ".cortex-mcp", "mesh.toml"), nil
 	}
-	return "/opt/cortex-mesh/bin/mesh.toml", nil
+	return "/opt/cortex-mcp/bin/mesh.toml", nil
 }
 
 // SaveConfig writes the TOML configuration to disk securely.

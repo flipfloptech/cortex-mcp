@@ -1,4 +1,4 @@
-// Package testutil provides test helpers shared across cortex-mesh packages.
+// Package testutil provides test helpers shared across cortex-mcp packages.
 // This package is ONLY for use in test code — it imports testing.T.
 package testutil
 
@@ -86,8 +86,8 @@ func generateCA(t testing.TB) (*x509.Certificate, ed25519.PrivateKey) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-site"},
-			CommonName:   "cortex-mesh-site-ca",
+			Organization: []string{"cortex-mcp-site"},
+			CommonName:   "cortex-mcp-site-ca",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -125,7 +125,7 @@ func generateNodeCert(t testing.TB, ca *x509.Certificate, caKey ed25519.PrivateK
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-node"},
+			Organization: []string{"cortex-mcp-node"},
 			CommonName:   nodeID,
 		},
 		NotBefore:   time.Now().Add(-1 * time.Hour),
@@ -170,7 +170,7 @@ func generateDualNodeCert(t testing.TB, ca *x509.Certificate, caKey ed25519.Priv
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization: []string{"cortex-mesh-node"},
+			Organization: []string{"cortex-mcp-node"},
 			CommonName:   nodeID,
 		},
 		NotBefore: time.Now().Add(-1 * time.Hour),
