@@ -10,6 +10,10 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	pb "github.com/flipfloptech/cortex-mcp/pkg/mesh/proto"
+	"github.com/flipfloptech/cortex-mcp/testutil"
+	"github.com/hashicorp/yamux"
 )
 
 func BenchmarkNewPeerConnWithWriter(b *testing.B) {
@@ -25,7 +29,57 @@ func BenchmarkSendControlRaw(b *testing.B) {
 }
 
 func BenchmarkControlWriteLoop(b *testing.B) {
-	b.Skip("Networking: involves live network I/O, goroutines, or blocking channels")
+	c1, c2 := testutil.BufferedPipe(1 << 20)
+	defer func() { _ = c1.Close() }()
+	defer func() { _ = c2.Close() }()
+
+	cfg := yamux.DefaultConfig()
+	cfg.LogOutput = io.Discard
+
+	serverSession, err := yamux.Server(c1, cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = serverSession.Close() }()
+
+	clientSession, err := yamux.Client(c2, cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = clientSession.Close() }()
+
+	controlStream, err := clientSession.Open()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	pc := newPeerConnWithWriter("test-peer", controlStream, clientSession, nil)
+
+	go func() {
+		buf := make([]byte, 4096)
+		serverControl, err := serverSession.Accept()
+		if err != nil {
+			return
+		}
+		for {
+			_, err := serverControl.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	frame := &pb.ControlFrame{
+		Payload: &pb.ControlFrame_Bootstrap{
+			Bootstrap: &pb.BootstrapFrame{Total: 1},
+		},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		pc.sendControl(frame)
+	}
 }
 
 func BenchmarkStopWriter(b *testing.B) {
@@ -221,7 +275,60 @@ func BenchmarkPeerCount(b *testing.B) {
 }
 
 func BenchmarkAcceptDataStreams(b *testing.B) {
-	b.Skip("Networking: involves live network I/O, goroutines, or blocking channels")
+	c1, c2 := testutil.BufferedPipe(1 << 20)
+	defer func() { _ = c1.Close() }()
+	defer func() { _ = c2.Close() }()
+
+	cfg := yamux.DefaultConfig()
+	cfg.LogOutput = io.Discard
+
+	serverSession, err := yamux.Server(c1, cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = serverSession.Close() }()
+
+	clientSession, err := yamux.Client(c2, cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = clientSession.Close() }()
+
+	pc := &peerConn{
+		nodeID:  "test-peer",
+		session: serverSession,
+	}
+
+	n := newTestNode("test-node")
+	n.grpcLis = newMeshListener()
+
+	// Consume grpcLis
+	go func() {
+		for {
+			conn, err := n.grpcLis.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				buf := make([]byte, 1)
+				_, _ = c.Read(buf)
+				_ = c.Close()
+			}(conn)
+		}
+	}()
+
+	go n.acceptDataStreams(pc)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		stream, err := clientSession.Open()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _ = stream.Write([]byte{'P'})
+		_ = stream.Close()
+	}
 }
 
 func BenchmarkUpgradeAndHold(b *testing.B) {
