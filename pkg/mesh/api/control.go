@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net"
+	"sync"
 	"time"
 
 	"crypto/ed25519"
@@ -283,6 +284,25 @@ func (n *Node) Sonar(ctx context.Context, capability string) ([]tools.AgentInfo,
 	return results, nil
 }
 
+var gossipControlFramePool = sync.Pool{
+	New: func() interface{} {
+		return &pb.ControlFrame{
+			Payload: &pb.ControlFrame_Gossip{
+				Gossip: &pb.GossipFrame{
+					Routes:           make(map[string]float64),
+					NodeCapabilities: make(map[string]*pb.NodeCapabilities),
+				},
+			},
+		}
+	},
+}
+
+var nodeCapsPool = sync.Pool{
+	New: func() interface{} {
+		return &pb.NodeCapabilities{}
+	},
+}
+
 // sendGossipToAll emits a gossip vector (routes + capabilities) to all
 // connected peers. Called by the gossip ticker at GossipInterval.
 //
@@ -311,33 +331,35 @@ func (n *Node) sendGossipToAll() {
 
 	gossip := n.gradient.GenerateGossip(n.manifest.Impedance(), input)
 
+	frame := gossipControlFramePool.Get().(*pb.ControlFrame)
+	defer gossipControlFramePool.Put(frame)
+
+	gossipMsg := frame.Payload.(*pb.ControlFrame_Gossip).Gossip
+
+	// Clean pooled maps
+	clear(gossipMsg.Routes)
+	for k, v := range gossipMsg.NodeCapabilities {
+		v.Capabilities = nil
+		nodeCapsPool.Put(v)
+		delete(gossipMsg.NodeCapabilities, k)
+	}
+
+	gossipMsg.FromNode = gossip.FromNodeID
+	gossipMsg.FromImpedance = gossip.FromImpedance
+	gossipMsg.FromCapabilities = gossip.FromCapabilities
+
 	// Convert routing.GossipVector to protobuf.
-	routes := make(map[string]float64, len(gossip.Routes))
 	for _, r := range gossip.Routes {
-		routes[r.TargetID] = r.Cost
+		gossipMsg.Routes[r.TargetID] = r.Cost
 	}
 
 	// Convert node capabilities to protobuf format.
-	var nodeCaps map[string]*pb.NodeCapabilities
 	if len(gossip.NodeCapabilities) > 0 {
-		nodeCaps = make(map[string]*pb.NodeCapabilities, len(gossip.NodeCapabilities))
 		for nodeID, caps := range gossip.NodeCapabilities {
-			nodeCaps[nodeID] = &pb.NodeCapabilities{
-				Capabilities: caps,
-			}
+			nodeCap := nodeCapsPool.Get().(*pb.NodeCapabilities)
+			nodeCap.Capabilities = caps
+			gossipMsg.NodeCapabilities[nodeID] = nodeCap
 		}
-	}
-
-	frame := &pb.ControlFrame{
-		Payload: &pb.ControlFrame_Gossip{
-			Gossip: &pb.GossipFrame{
-				FromNode:         gossip.FromNodeID,
-				Routes:           routes,
-				FromImpedance:    gossip.FromImpedance,
-				FromCapabilities: gossip.FromCapabilities,
-				NodeCapabilities: nodeCaps,
-			},
-		},
 	}
 
 	// Marshal once.

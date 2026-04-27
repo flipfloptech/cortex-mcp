@@ -137,16 +137,65 @@ func (ci *CapabilityIndex) Update(nodeID string, impedance float64, caps []strin
 	ci.mu.Lock()
 	defer ci.mu.Unlock()
 
-	// Remove old capabilities for this node (if any).
+	limits := ci.effectiveLimits()
+
+	// 1. Fast-path: Check if capabilities are identical to avoid map allocations.
+	var validCapsCount int
+	for _, c := range caps {
+		if validCapsCount >= limits.MaxCapabilitiesPerNode {
+			break
+		}
+		if len(c) > limits.MaxCapabilityLength {
+			continue
+		}
+		validCapsCount++
+	}
+
+	existing, ok := ci.byNode[nodeID]
+	if ok && len(existing) == validCapsCount {
+		identical := true
+		idx := 0
+		for _, c := range caps {
+			if idx >= limits.MaxCapabilitiesPerNode {
+				break
+			}
+			if len(c) > limits.MaxCapabilityLength {
+				continue
+			}
+			if existing[idx] != c {
+				identical = false
+				break
+			}
+			idx++
+		}
+
+		if identical {
+			// Capabilities haven't changed. Just update impedance and refresh TTL.
+			ci.impedances[nodeID] = impedance
+			ci.lastSeen[nodeID] = time.Now()
+
+			for _, c := range existing {
+				if nodes, ok := ci.byCap[c]; ok {
+					nodes[nodeID] = impedance
+				}
+				ns := capNamespace(c)
+				if nsBucket, ok := ci.byNs[ns]; ok {
+					if nsNodes, ok := nsBucket[c]; ok {
+						nsNodes[nodeID] = impedance
+					}
+				}
+			}
+			return
+		}
+	}
+
+	// 2. Slow-path: Capabilities changed. Purge and rebuild.
 	ci.purgeNodeLocked(nodeID)
 
-	// Store impedance and refresh lastSeen.
 	ci.impedances[nodeID] = impedance
 	ci.lastSeen[nodeID] = time.Now()
 
-	// Apply ingest limits.
-	limits := ci.effectiveLimits()
-	capsCopy := make([]string, 0, min(len(caps), limits.MaxCapabilitiesPerNode))
+	capsCopy := make([]string, 0, validCapsCount)
 	for _, c := range caps {
 		if len(capsCopy) >= limits.MaxCapabilitiesPerNode {
 			break

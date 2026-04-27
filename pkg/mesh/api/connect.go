@@ -401,18 +401,18 @@ func (n *Node) acceptDataStreams(pc *peerConn) {
 		}
 
 		go func(s net.Conn) {
-			// Inspect the first byte to differentiate gRPC vs Relay
-			magic := make([]byte, 1)
+			pc := &prefixConn{Conn: s}
+			pc.prefix = pc.magic[:]
 
 			// Protect against slowloris attacks on stream creation
 			_ = s.SetReadDeadline(time.Now().Add(5 * time.Second))
-			if _, err := io.ReadFull(s, magic); err != nil {
+			if _, err := io.ReadFull(s, pc.prefix); err != nil {
 				_ = s.Close()
 				return
 			}
 			_ = s.SetReadDeadline(time.Time{}) // reset deadline
 
-			if magic[0] == MagicRelay {
+			if pc.prefix[0] == MagicRelay {
 				// Read the 36-byte circuit_id
 				circuitIDBytes := make([]byte, UUIDLength)
 				_ = s.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -445,8 +445,7 @@ func (n *Node) acceptDataStreams(pc *peerConn) {
 				// It's a gRPC stream (HTTP/2 preface starts with 'P' = 0x50).
 				// Prepend the magic byte back and deliver to listener.
 				if n.grpcLis != nil {
-					wrapped := newPrefixConn(magic, s)
-					n.grpcLis.Deliver(wrapped)
+					n.grpcLis.Deliver(pc)
 				} else {
 					if err := s.Close(); err != nil {
 						slog.Debug("api: close undelivered stream", "error", err)
@@ -479,15 +478,9 @@ func upgradeAndHold(ctx context.Context, conn net.Conn, cfg *membrane.Config) er
 
 // prefixConn wraps a net.Conn and prepends a byte slice to its Read method.
 type prefixConn struct {
+	magic  [1]byte
 	prefix []byte
 	net.Conn
-}
-
-func newPrefixConn(prefix []byte, conn net.Conn) *prefixConn {
-	return &prefixConn{
-		prefix: prefix,
-		Conn:   conn,
-	}
 }
 
 func (p *prefixConn) Read(b []byte) (int, error) {

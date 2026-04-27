@@ -208,29 +208,29 @@ func (pc *peerConn) stopWriter() {
 // independently. Use broadcastAllRaw for broadcasts that benefit from
 // marshal-once semantics.
 func broadcastAllPeers(pm *peerManager, frame *pb.ControlFrame) (sent, dropped int) {
-	for _, pc := range pm.All() {
+	pm.ForEach(func(pc *peerConn) {
 		if pc.sendControl(frame) {
 			sent++
 		} else {
 			dropped++
 		}
-	}
+	})
 	return
 }
 
 // broadcastExceptPeer sends a structured control frame to all peers
 // except the excluded one, via their async write queues.
 func broadcastExceptPeer(pm *peerManager, excludeNodeID string, frame *pb.ControlFrame) (sent, dropped int) {
-	for _, pc := range pm.All() {
+	pm.ForEach(func(pc *peerConn) {
 		if pc.nodeID == excludeNodeID {
-			continue
+			return
 		}
 		if pc.sendControl(frame) {
 			sent++
 		} else {
 			dropped++
 		}
-	}
+	})
 	return
 }
 
@@ -241,12 +241,12 @@ func broadcastExceptPeer(pm *peerManager, excludeNodeID string, frame *pb.Contro
 // Use this for periodic broadcasts (gossip) where the same payload
 // goes to every peer. Saves (N-1) protobuf marshals per broadcast.
 func broadcastAllRaw(pm *peerManager, data []byte) (sent, dropped int) {
-	for _, pc := range pm.All() {
+	pm.ForEach(func(pc *peerConn) {
 		if pc.sendControlRaw(data) {
 			sent++
 		} else {
 			dropped++
 		}
-	}
+	})
 	return
 }

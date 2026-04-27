@@ -205,6 +205,18 @@ func (pm *peerManager) All() []*peerConn {
 	return result
 }
 
+// ForEach iterates over all peers while holding the read lock.
+// The provided function is called for each peer.
+// Do not perform blocking operations or call back into the peerManager
+// from within the closure to avoid deadlocks.
+func (pm *peerManager) ForEach(fn func(*peerConn)) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	for _, pc := range pm.peers {
+		fn(pc)
+	}
+}
+
 func (pm *peerManager) Count() int {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
