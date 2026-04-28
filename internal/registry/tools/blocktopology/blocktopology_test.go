@@ -78,3 +78,77 @@ func TestBlockTopologyTool_Execute(t *testing.T) {
 		t.Error("PhysicalDevices is nil, want non-nil slice")
 	}
 }
+
+func BenchmarkExecute(b *testing.B) {
+	tool := New()
+	supported, reason := tool.IsSupported()
+	if !supported {
+		b.Skipf("tool not supported: %s", reason)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = tool.Execute(context.Background(), nil)
+	}
+}
+
+func BenchmarkNew(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = New()
+	}
+}
+
+func BenchmarkName(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Name()
+	}
+}
+
+func BenchmarkDescription(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Description()
+	}
+}
+
+func BenchmarkHelp(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Help()
+	}
+}
+
+func BenchmarkCategory(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Category()
+	}
+}
+
+func BenchmarkParameters(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Parameters()
+	}
+}
+
+func BenchmarkHidden(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tool.Hidden()
+	}
+}
+
+func BenchmarkIsSupported(b *testing.B) {
+	tool := New()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = tool.IsSupported()
+	}
+}

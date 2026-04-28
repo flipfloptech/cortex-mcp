@@ -71,19 +71,6 @@ func setupVirtualDevices(t *testing.T, sysfs string) {
 	mkdirAll(t, filepath.Join(sysfs, "class/block/dm-0/slaves/nvme0n1p1"))
 }
 
-func setupMDDevice(t *testing.T, sysfs string) {
-	t.Helper()
-	dev := filepath.Join(sysfs, "class/block/md0")
-	mkdirAll(t, dev)
-	writeFile(t, filepath.Join(dev, "dev"), "9:0\n")
-	writeFile(t, filepath.Join(dev, "size"), "976773168\n")
-	writeFile(t, filepath.Join(dev, "md/level"), "raid1\n")
-	mkdirAll(t, filepath.Join(dev, "slaves/sda1"))
-	mkdirAll(t, filepath.Join(dev, "slaves/sdb1"))
-}
-
-// --- Core Function Tests ---
-
 func TestReadMajorMinor(t *testing.T) {
 	t.Parallel()
 	sysfs := t.TempDir()
@@ -128,9 +115,9 @@ func TestSizeCalculation(t *testing.T) {
 func TestDetectTransport(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name      string
-		devName   string
-		want      string
+		name    string
+		devName string
+		want    string
 	}{
 		{"nvme_device", "nvme0n1", "pcie"},
 		{"nvme_partition", "nvme0n1p1", "pcie"},

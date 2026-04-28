@@ -295,7 +295,7 @@ func parseMountInfo(procBase string) map[string]MountEntry {
 	if err != nil {
 		return make(map[string]MountEntry)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	mounts := make(map[string]MountEntry)
 	scanner := bufio.NewScanner(f)
@@ -339,7 +339,7 @@ func parseSwaps(procBase string) []SwapDevice {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var swaps []SwapDevice
 	scanner := bufio.NewScanner(f)
