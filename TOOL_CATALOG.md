@@ -287,6 +287,23 @@ Provides instant visibility into memory locality efficiency by translating cumul
 - `IsSupported()` returns `false` if the host OS is not Linux or if `/sys/devices/system/node` is missing.
 - **UMA Fallback:** If the system only has `node0` (Uniform Memory Access), cross-node misses are physically impossible. The tool safely degrades by setting `"is_numa": false`, ratios to `0.0`, and returns the available hit counters without failing.
 
+#### `get_slab_info`
+*Category: `memory` · Runs on: Every Linux node*
+
+Provides a precise map of kernel object cache allocations by calculating the true memory footprint of each slab. Returns only the top consumers to help diagnose metadata exhaustion, dentry storms, or driver memory leaks.
+
+**Data Sources:**
+- Reads `/proc/slabinfo`. Requires Root privileges.
+
+**Mathematical Models / Formatting:**
+- **True Footprint:** Calculates `(num_objs * objsize)` and standardizes to Megabytes.
+- **Fragmentation:** Calculates `((num_objs - active_objs) / num_objs) * 100` as a percentage.
+- **Truncation:** Sorts by total size descending and returns only the top 15 consumers for O(1) token scaling.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the host OS is not Linux or if `/proc/slabinfo` does not exist.
+- **Permission Denied Fallback:** If the process lacks root privileges (EACCES), the tool gracefully degrades by returning an `error` status with a summary explaining the authorization requirement and omitting the data payload.
+
 
 ---
 
