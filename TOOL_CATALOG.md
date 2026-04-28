@@ -270,6 +270,25 @@ A highly structured, math-free alternative to the `free` command, giving the LLM
 - `IsSupported()` returns `false` if the host OS is not Linux or if `/proc/meminfo` is missing.
 - Older kernels (pre-3.14) do not expose `MemAvailable`. The tool degrades gracefully by calculating legacy math (Free + Buffers + Cached) and flags the payload with `"estimation_mode": "legacy"`. Otherwise, `"estimation_mode": "standard"`.
 
+#### `get_hugepage_info`
+*Category: `memory` · Runs on: Every Linux node*
+
+Provides a comprehensive audit of memory paging efficiency by identifying the allocation status of static HugePages and the current operational mode of Transparent HugePages (THP) to diagnose memory allocation stalls.
+
+**Data Sources:**
+- **Static HugePages**: `/proc/meminfo`
+- **Transparent HugePages (THP) Settings**: `/sys/kernel/mm/transparent_hugepage/enabled`, `/sys/kernel/mm/transparent_hugepage/defrag`
+- **THP Performance Impact**: `/proc/vmstat`
+
+**Mathematical Models:**
+- **Capacity**: Translates page counts into Human-readable bytes via (`HugePages_Total` * `Hugepagesize`).
+- **Utilization Ratio**: Calculates `usage_pct` (`((Total - Free) / Total) * 100.0`). Prevents divide-by-zero panics by returning `0.0` when total pages are zero.
+- **Stalling Risk**: Analyzes `thp_enabled_mode` and `thp_defrag_policy` against `thp_fault_fallback` events to determine if synchronous background defragmentation is inducing IO latency (e.g., buffer overflows on NICs).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/meminfo` is missing or inaccessible.
+- **Missing THP Fallback**: If the kernel lacks THP support (`/sys/kernel/mm/transparent_hugepage` missing), degrades gracefully by omitting the `thp_stats` block entirely and reporting `thp_enabled_mode` as `unsupported`, while still returning accurate static hugepage telemetry.
+
 #### `get_numa_stats`
 *Category: `memory` · Runs on: Every Linux node*
 
