@@ -372,6 +372,26 @@ Constructs a hierarchical map of the storage stack, tracing physical block devic
 - **Unreadable `/proc/self/mountinfo`:** `mount_point` fields are empty strings.
 - **Unreadable `/proc/swaps`:** `swap_devices` returns `[]`.
 
+#### `get_disk_io_stats`
+*Category: `storage` · Runs on: Every Linux node*
+
+Provides high-resolution I/O performance metrics by parsing kernel block-layer counters, translating raw sector counts into MB/s and IOPS to identify storage bottlenecks. Uses an internal 500ms sleep to calculate instantaneous rate metrics.
+
+**Data Sources:**
+- **I/O Counters**: `/proc/diskstats` (sectors read/written, operations completed, time spent doing I/O, and current queue depth).
+- **Queue Limits**: `/sys/block/<dev>/queue/nr_requests` to provide context for queue depth saturation.
+
+**Mathematical Models / Formatting:**
+- **Device Filtering**: Excludes virtual devices that clutter the payload (e.g., `loop`, `ram`, `zram`, `nbd`), but includes `dm-` (LVM/Multipath) devices to show virtual layer latency.
+- **Delta Calculation**: Takes a 500ms synchronous delta of cumulative kernel counters to provide instantaneous rates (`read_mbs`, `write_mbs`, `read_iops`, `write_iops`).
+- **Utilization & Latency**: Calculates average I/O latency in milliseconds and device utilization percentage (clamped to 100%).
+- **Aggregation**: Truncates the output to devices exceeding a tunable latency threshold (default 20.0ms), but calculates a global `system_summary` representing total combined throughput and the peak latency across all devices.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/diskstats` is missing or inaccessible.
+- If `/sys/block/<dev>/queue/nr_requests` is missing (common for NVMe namespaces or certain DM devices), safely omits `queue_depth_max` via JSON `omitempty` rather than failing the parse.
+- Context cancellation during the 500ms measurement window causes an immediate return, ensuring tool responsiveness under timeout conditions.
+
 
 ---
 
