@@ -1826,20 +1826,21 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 	}
 
 	// 3. Parse version
-	var infoData struct {
-		ApplicationVersion string `json:"application_version"`
+	var envelope struct {
+		Data struct {
+			ApplicationVersion string `json:"application_version"`
+		} `json:"data"`
 	}
-	if err := json.Unmarshal(res.Content, &infoData); err != nil {
-		zap.S().Debugw("auto upgrade: failed to unmarshal system_info", "node_id", remoteNodeID, "error", err)
+	if err := json.Unmarshal(res.Content, &envelope); err != nil {
+		zap.S().Errorw("auto upgrade: failed to unmarshal system_info", "node_id", remoteNodeID, "error", err)
 		return
 	}
 
 	localVer, errL := strconv.ParseInt(version.ApplicationVersion, 10, 64)
-	remoteVer, errR := strconv.ParseInt(infoData.ApplicationVersion, 10, 64)
+	remoteVer, errR := strconv.ParseInt(envelope.Data.ApplicationVersion, 10, 64)
 
-	// If either version is not a valid timestamp (e.g. dev build), ignore
 	if errL != nil || errR != nil {
-		zap.S().Debugw("auto upgrade: skipping, unparseable version (dev build?)", "node_id", remoteNodeID, "local_version", version.ApplicationVersion, "remote_version", infoData.ApplicationVersion)
+		zap.S().Errorw("auto upgrade: failed to parse version", "node_id", remoteNodeID, "local_version", version.ApplicationVersion, "remote_version", envelope.Data.ApplicationVersion, "err_local", errL, "err_remote", errR)
 		return
 	}
 
