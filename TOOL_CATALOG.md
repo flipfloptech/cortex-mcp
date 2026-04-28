@@ -324,6 +324,24 @@ Provides a precise map of kernel object cache allocations by calculating the tru
 - **Permission Denied Fallback:** If the process lacks root privileges (EACCES), the tool gracefully degrades by returning an `error` status with a summary explaining the authorization requirement and omitting the data payload.
 
 
+#### `get_numa_edac_errors`
+*Category: `hardware` · Runs on: Every Linux node*
+
+Extracts Error Detection and Correction (EDAC) statistics from physical RAM, mapping memory controllers to specific DIMMs to identify failing hardware before uncorrectable memory corruption causes a system crash.
+
+**Data Sources:**
+- Controller Stats: `/sys/devices/system/edac/mc/mc*/ce_count` and `ue_count`.
+- DIMM Stats: Recursive extraction from `/sys/devices/system/edac/mc/mc*/dimm*` (or `rank*`/`csrow*` driver variations).
+- Context Uptime: `/proc/uptime`.
+
+**Mathematical Models / Formatting:**
+- Evaluates system health as `warning` on correctable errors and `critical` on uncorrectable errors.
+- Simplifies output by omitting `failing_dimms` sub-arrays on completely healthy (zero error) controllers, saving LLM token payload weight.
+
+**Degradation Profile:**
+- `IsSupported()` returns `true` (standard on Linux), but dynamically sets status to `degraded` with a warning message if the EDAC driver (`amd64_edac`, `sb_edac`) is missing or virtualization disables hardware ECC access.
+
+
 ---
 
 ### Mesh Infrastructure Tools
