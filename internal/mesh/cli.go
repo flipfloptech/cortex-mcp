@@ -539,7 +539,7 @@ func runFleetNode(ctx context.Context, nodeID string, plugins *registry.PluginRe
 			OnPeerJoined:  func(peerID string) { zap.S().Infow("fleet: peer joined", "peer", peerID) },
 			OnPeerLost:    func(peerID string) { zap.S().Infow("fleet: peer lost", "peer", peerID) },
 			OnIsolated:    func() { zap.S().Warnw("fleet: isolated — zero peers") },
-			OnReconnected: func(peerID string) { zap.S().Infow("fleet: reconnected!", "peer", peerID) },
+			OnReconnected: func(peerID string) { zap.S().Debugw("fleet: reconnected!", "peer", peerID) },
 			OnOrphaned: func() {
 				zap.S().Warnw("fleet: orphaned — reconnect exhausted")
 			},
@@ -658,7 +658,7 @@ func runBridgeNode(ctx context.Context, nodeID string, plugins *registry.PluginR
 			OnPeerJoined:  func(peerID string) { zap.S().Infow("bridge: peer joined", "peer", peerID) },
 			OnPeerLost:    func(peerID string) { zap.S().Infow("bridge: peer lost", "peer", peerID) },
 			OnIsolated:    func() { zap.S().Warnw("bridge: isolated — zero peers") },
-			OnReconnected: func(peerID string) { zap.S().Infow("bridge: reconnected!", "peer", peerID) },
+			OnReconnected: func(peerID string) { zap.S().Debugw("bridge: reconnected!", "peer", peerID) },
 			OnOrphaned: func() {
 				zap.S().Warnw("bridge: orphaned — reconnect exhausted")
 			},
@@ -767,7 +767,7 @@ func runGateway(ctx context.Context, cancel context.CancelFunc, nodeID string, c
 				zap.S().Warnw("mesh isolated", "peers", 0)
 			},
 			OnReconnected: func(peerID string) {
-				zap.S().Infow("mesh reconnected", "peer_id", peerID)
+				zap.S().Debugw("mesh reconnected", "peer_id", peerID)
 			},
 			OnOrphaned: func() {
 				zap.S().Warnw("mesh orphaned", "action", "keep-alive")
@@ -1162,7 +1162,7 @@ func deployAndConnect(ctx context.Context, node *api.Node, pki *ephemeralPKI, cf
 				continue
 			}
 
-			zap.S().Infow("connected to mesh peer", "node_id", remoteNodeID)
+			zap.S().Debugw("connected to mesh peer", "node_id", remoteNodeID)
 			if indirectBackoffs != nil {
 				delete(indirectBackoffs, remoteNodeID) // reset backoff on success
 			}
