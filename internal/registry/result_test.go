@@ -12,13 +12,13 @@ func TestNewResult_PopulatesFields(t *testing.T) {
 	t.Parallel()
 
 	data := map[string]int{"cpus": 64}
-	result := registry.NewResult("get_system_info", "oss1", registry.StatusOK, "64 CPUs detected", data)
+	result := registry.NewResult("get_system_info", registry.StatusOK, "64 CPUs detected", data)
 
 	if result.ToolName != "get_system_info" {
 		t.Errorf("ToolName = %q, want %q", result.ToolName, "get_system_info")
 	}
-	if result.NodeID != "oss1" {
-		t.Errorf("NodeID = %q, want %q", result.NodeID, "oss1")
+	if result.NodeID != "" {
+		t.Errorf("NodeID = %q, want %q", result.NodeID, "")
 	}
 	if result.Status != registry.StatusOK {
 		t.Errorf("Status = %q, want %q", result.Status, registry.StatusOK)
@@ -44,7 +44,7 @@ func TestNewResult_PopulatesFields(t *testing.T) {
 func TestNewErrorResult_SetsErrorStatus(t *testing.T) {
 	t.Parallel()
 
-	result := registry.NewErrorResult("broken_tool", "node1", "connection refused")
+	result := registry.NewErrorResult("broken_tool", "connection refused")
 
 	if result.Status != registry.StatusError {
 		t.Errorf("Status = %q, want %q", result.Status, registry.StatusError)
@@ -92,7 +92,7 @@ func TestResultStatus_Constants(t *testing.T) {
 func TestToolResult_JSONRoundtrip(t *testing.T) {
 	t.Parallel()
 
-	original := registry.NewResult("test_tool", "node-1", registry.StatusWarning, "disk at 90%", map[string]float64{"usage": 0.9})
+	original := registry.NewResult("test_tool", registry.StatusWarning, "disk at 90%", map[string]float64{"usage": 0.9})
 	original.Metadata.ExecutionTimeMs = 42
 	original.Metadata.FilteringMethod = "deterministic"
 

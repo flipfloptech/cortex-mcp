@@ -3,7 +3,6 @@ package cputopology
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"time"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
@@ -59,7 +58,6 @@ func (t *CPUTopologyTool) IsSupported() (bool, string) {
 
 func (t *CPUTopologyTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	// 5-second context timeout to prevent hanging on unresponsive virtual filesystems
 	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -67,12 +65,11 @@ func (t *CPUTopologyTool) Execute(ctx context.Context, _ json.RawMessage) (*regi
 
 	topo, err := cpu.GetTopology(ctxTimeout, "/sys")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		"CPU Topology",
 		topo,

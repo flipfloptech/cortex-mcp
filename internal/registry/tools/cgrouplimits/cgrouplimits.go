@@ -122,13 +122,8 @@ func (t *CgroupLimitsTool) isV2() bool {
 
 func (t *CgroupLimitsTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
-
 	if !t.isV2() {
-		return t.executeFallbackV1(hostname, start), nil
+		return t.executeFallbackV1(start), nil
 	}
 
 	var req struct {
@@ -136,18 +131,18 @@ func (t *CgroupLimitsTool) Execute(ctx context.Context, args json.RawMessage) (*
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &req); err != nil {
-			return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("invalid arguments: %v", err)), nil
+			return registry.NewErrorResult(t.Name(), fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 	}
 
 	if req.TargetPID != nil {
-		return t.executeTargetedMode(hostname, start, *req.TargetPID)
+		return t.executeTargetedMode(start, *req.TargetPID)
 	}
 
-	return t.executeGlobalMode(hostname, start)
+	return t.executeGlobalMode(start)
 }
 
-func (t *CgroupLimitsTool) executeFallbackV1(hostname string, start time.Time) *registry.ToolResult {
+func (t *CgroupLimitsTool) executeFallbackV1(start time.Time) *registry.ToolResult {
 	out := CgroupLimitsResult{
 		SystemSummary: SystemSummary{
 			CgroupVersion: "v1",
@@ -158,7 +153,6 @@ func (t *CgroupLimitsTool) executeFallbackV1(hostname string, start time.Time) *
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		"cgroup v1 detected (unsupported)",
 		out,
@@ -167,11 +161,11 @@ func (t *CgroupLimitsTool) executeFallbackV1(hostname string, start time.Time) *
 	return result
 }
 
-func (t *CgroupLimitsTool) executeTargetedMode(hostname string, start time.Time, pid int) (*registry.ToolResult, error) {
+func (t *CgroupLimitsTool) executeTargetedMode(start time.Time, pid int) (*registry.ToolResult, error) {
 	cgroupFile := filepath.Join(t.procPath, strconv.Itoa(pid), "cgroup")
 	data, err := os.ReadFile(cgroupFile)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to read %s: %v", cgroupFile, err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to read %s: %v", cgroupFile, err)), nil
 	}
 
 	cgroupPath := ""
@@ -186,13 +180,13 @@ func (t *CgroupLimitsTool) executeTargetedMode(hostname string, start time.Time,
 	}
 
 	if cgroupPath == "" {
-		return registry.NewErrorResult(t.Name(), hostname, "could not find unified cgroup path (0::) in proc file"), nil
+		return registry.NewErrorResult(t.Name(), "could not find unified cgroup path (0::) in proc file"), nil
 	}
 
 	fullPath := filepath.Join(t.sysFsCgroupPath, cgroupPath)
 	limits, err := t.getEffectiveLimits(fullPath)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to parse limits: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to parse limits: %v", err)), nil
 	}
 
 	out := CgroupLimitsResult{
@@ -206,7 +200,6 @@ func (t *CgroupLimitsTool) executeTargetedMode(hostname string, start time.Time,
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		fmt.Sprintf("Analyzed targeted cgroup limits for PID %d", pid),
 		out,
@@ -215,7 +208,7 @@ func (t *CgroupLimitsTool) executeTargetedMode(hostname string, start time.Time,
 	return result, nil
 }
 
-func (t *CgroupLimitsTool) executeGlobalMode(hostname string, start time.Time) (*registry.ToolResult, error) {
+func (t *CgroupLimitsTool) executeGlobalMode(start time.Time) (*registry.ToolResult, error) {
 	managers := []string{"slurm", "kubepods.slice", "docker", "system.slice/docker.service"}
 
 	out := CgroupLimitsResult{
@@ -242,7 +235,6 @@ func (t *CgroupLimitsTool) executeGlobalMode(hostname string, start time.Time) (
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		msg,
 		out,

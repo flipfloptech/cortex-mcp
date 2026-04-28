@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/flipfloptech/cortex-mcp/internal/sys/process"
@@ -80,43 +79,28 @@ func (t *ProcessTreeTool) Execute(ctx context.Context, args json.RawMessage) (*r
 		TargetPID int `json:"target_pid"`
 	}
 
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
-
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &params); err != nil {
 			return registry.NewErrorResult(
-				t.Name(),
-				hostname,
-				fmt.Sprintf("Failed to parse arguments: %v", err),
+				t.Name(), fmt.Sprintf("Failed to parse arguments: %v", err),
 			), nil
 		}
 	}
 
 	if params.TargetPID <= 0 {
 		return registry.NewErrorResult(
-			t.Name(),
-			hostname,
-			"target_pid must be a positive integer",
-		), nil
+			t.Name(), "target_pid is required and must be > 0"), nil
 	}
 
 	tree, err := process.GetTree(ctx, params.TargetPID)
 	if err != nil {
 		return registry.NewErrorResult(
-			t.Name(),
-			hostname,
-			err.Error(),
+			t.Name(), err.Error(),
 		), nil
 	}
 
 	return registry.NewResult(
-		t.Name(),
-		hostname,
-		registry.StatusOK,
-		fmt.Sprintf("Successfully generated process tree for PID %d", params.TargetPID),
+		t.Name(), registry.StatusOK, fmt.Sprintf("Successfully generated process tree for PID %d", params.TargetPID),
 		tree,
 	), nil
 }

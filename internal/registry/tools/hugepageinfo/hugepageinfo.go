@@ -70,14 +70,9 @@ func (t *Tool) IsSupported() (bool, string) {
 
 // Execute performs the diagnostic logic and returns the structured result.
 func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "localhost"
-	}
-
 	info, err := memory.GetHugePageInfo()
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 
 	summary := "HugePage diagnostic telemetry captured"
@@ -85,5 +80,5 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 		summary = "THP Stalling Risk Detected"
 	}
 
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, summary, info), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, summary, info), nil
 }

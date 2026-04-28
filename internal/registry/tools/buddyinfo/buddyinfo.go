@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"github.com/flipfloptech/cortex-mcp/internal/sys/memory"
@@ -48,18 +47,14 @@ func (t *tool) IsSupported() (bool, string) {
 }
 
 func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
 
 	res, err := memory.GetBuddyInfo(ctx)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to get buddy info: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to get buddy info: %v", err)), nil
 	}
 
 	summary := fmt.Sprintf("Fragmentation Score: %d (Total Free: %d MB)", res.SystemSummary.FragmentationScore, res.SystemSummary.TotalFreeMB)
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, summary, res), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, summary, res), nil
 }
 
 func init() {

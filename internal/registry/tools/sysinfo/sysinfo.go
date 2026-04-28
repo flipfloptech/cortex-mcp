@@ -183,9 +183,8 @@ func (t *SystemInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname, // nodeID is the hostname for local execution
 		registry.StatusOK,
-		hostname+" — "+distro+" ("+kernel+")",
+		distro+" ("+kernel+")",
 		data,
 	)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()

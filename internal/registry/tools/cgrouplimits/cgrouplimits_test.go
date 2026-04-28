@@ -354,7 +354,7 @@ func BenchmarkExecuteTargetedMode(b *testing.B) {
 	tool := &CgroupLimitsTool{sysFsCgroupPath: cgroupDir, procPath: procDir}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = tool.executeTargetedMode("host", time.Now(), 14502)
+		_, _ = tool.executeTargetedMode(time.Now(), 14502)
 	}
 }
 
@@ -388,7 +388,7 @@ func BenchmarkExecuteGlobalMode(b *testing.B) {
 	tool := &CgroupLimitsTool{sysFsCgroupPath: cgroupDir, procPath: procDir}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = tool.executeGlobalMode("host", time.Now())
+		_, _ = tool.executeGlobalMode(time.Now())
 	}
 }
 
@@ -451,7 +451,7 @@ func BenchmarkExecuteFallbackV1(b *testing.B) {
 	tool := &CgroupLimitsTool{sysFsCgroupPath: cgroupDir, procPath: procDir}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = tool.executeFallbackV1("host", time.Now())
+		_ = tool.executeFallbackV1(time.Now())
 	}
 }
 
