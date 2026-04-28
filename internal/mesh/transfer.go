@@ -120,6 +120,9 @@ func DialUploadBinary(ctx context.Context, conn net.Conn, path string) error {
 	// If it's a Yamux stream, Close() signals EOF.
 	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
 		_ = cw.CloseWrite()
+	} else {
+		// Yamux streams implement Close() as a half-close (sends FIN).
+		_ = conn.Close()
 	}
 
 	// 4. Wait for success signal

@@ -1808,7 +1808,7 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 	// 1. Dial the remote node over the mesh
 	stream, err := node.GrpcDialer(ctx, remoteNodeID)
 	if err != nil {
-		zap.S().Debugw("viral upgrade: failed to dial peer", "node_id", remoteNodeID, "error", err)
+		zap.S().Debugw("auto upgrade: failed to dial peer", "node_id", remoteNodeID, "error", err)
 		return
 	}
 	defer func() { _ = stream.Close() }()
@@ -1816,12 +1816,12 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 	// 2. Invoke get_system_info
 	res, err := tools.DialInvoke(ctx, stream, "get_system_info", nil)
 	if err != nil {
-		zap.S().Debugw("viral upgrade: failed to invoke system_info", "node_id", remoteNodeID, "error", err)
+		zap.S().Debugw("auto upgrade: failed to invoke system_info", "node_id", remoteNodeID, "error", err)
 		return
 	}
 
 	if res.IsError {
-		zap.S().Debugw("viral upgrade: system_info returned error", "node_id", remoteNodeID, "error", string(res.Content))
+		zap.S().Debugw("auto upgrade: system_info returned error", "node_id", remoteNodeID, "error", string(res.Content))
 		return
 	}
 
@@ -1830,6 +1830,7 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 		ApplicationVersion string `json:"application_version"`
 	}
 	if err := json.Unmarshal(res.Content, &infoData); err != nil {
+		zap.S().Debugw("auto upgrade: failed to unmarshal system_info", "node_id", remoteNodeID, "error", err)
 		return
 	}
 
@@ -1838,39 +1839,41 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 
 	// If either version is not a valid timestamp (e.g. dev build), ignore
 	if errL != nil || errR != nil {
+		zap.S().Debugw("auto upgrade: skipping, unparseable version (dev build?)", "node_id", remoteNodeID, "local_version", version.ApplicationVersion, "remote_version", infoData.ApplicationVersion)
 		return
 	}
 
 	if localVer <= remoteVer {
 		// Peer is up to date or newer
+		zap.S().Debugw("auto upgrade: skipping, peer is up to date", "node_id", remoteNodeID, "local_version", localVer, "remote_version", remoteVer)
 		return
 	}
 
-	zap.S().Infow("viral upgrade initiated", "node_id", remoteNodeID, "local_version", localVer, "remote_version", remoteVer)
+	zap.S().Infow("auto upgrade initiated", "node_id", remoteNodeID, "local_version", localVer, "remote_version", remoteVer)
 
 	// 4. Stream binary
 	binStream, err := node.GrpcDialer(ctx, remoteNodeID)
 	if err != nil {
-		zap.S().Errorw("viral upgrade: failed to dial for binary upload", "node_id", remoteNodeID, "error", err)
+		zap.S().Errorw("auto upgrade: failed to dial for binary upload", "node_id", remoteNodeID, "error", err)
 		return
 	}
 
 	exePath, err := os.Executable()
 	if err != nil {
-		zap.S().Errorw("viral upgrade: failed to get executable path", "error", err)
+		zap.S().Errorw("auto upgrade: failed to get executable path", "error", err)
 		_ = binStream.Close()
 		return
 	}
 
 	if err := DialUploadBinary(ctx, binStream, exePath); err != nil {
-		zap.S().Errorw("viral upgrade: binary upload failed", "node_id", remoteNodeID, "error", err)
+		zap.S().Errorw("auto upgrade: binary upload failed", "node_id", remoteNodeID, "error", err)
 		return
 	}
 
 	// 5. Invoke node_upgrade
 	upgradeStream, err := node.GrpcDialer(ctx, remoteNodeID)
 	if err != nil {
-		zap.S().Errorw("viral upgrade: failed to dial for upgrade invocation", "node_id", remoteNodeID, "error", err)
+		zap.S().Errorw("auto upgrade: failed to dial for upgrade invocation", "node_id", remoteNodeID, "error", err)
 		return
 	}
 	defer func() { _ = upgradeStream.Close() }()
@@ -1878,8 +1881,8 @@ func checkAndUpgradePeer(ctx context.Context, node *api.Node, remoteNodeID strin
 	args := []byte(fmt.Sprintf(`{"path":"%s"}`, DefaultUpdatePath))
 	upgRes, err := tools.DialInvoke(ctx, upgradeStream, "node_upgrade", args)
 	if err != nil || upgRes.IsError {
-		zap.S().Errorw("viral upgrade: node_upgrade invocation failed", "node_id", remoteNodeID, "error", err, "res", string(upgRes.Content))
+		zap.S().Errorw("auto upgrade: node_upgrade invocation failed", "node_id", remoteNodeID, "error", err, "res", string(upgRes.Content))
 	} else {
-		zap.S().Infow("viral upgrade: remote node scheduled for restart", "node_id", remoteNodeID)
+		zap.S().Infow("auto upgrade: remote node scheduled for restart", "node_id", remoteNodeID)
 	}
 }
