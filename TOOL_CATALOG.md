@@ -344,6 +344,37 @@ Extracts Error Detection and Correction (EDAC) statistics from physical RAM, map
 
 ---
 
+### Storage Tools
+
+#### `get_block_topology`
+*Category: `storage` · Runs on: Every Linux node*
+
+Constructs a hierarchical map of the storage stack, tracing physical block devices through virtual layers (MDADM, LVM, Device Mapper) to their final mount points and swap areas. Enables the LLM to diagnose whether a Lustre block timeout is a single NVMe failure or an entire Volume Group degradation.
+
+**Data Sources:**
+- Physical Devices & Partitions: `/sys/class/block/*/` (device existence, `dev`, `size`, `device/model`).
+- Device Relationships: `/sys/class/block/*/holders/` and `/sys/class/block/*/slaves/` directories.
+- RAID Status: `/proc/mdstat` for MDADM array states.
+- Mount Points: `/proc/self/mountinfo` (uses `major:minor` numbers for precise device-to-mount mapping).
+- Swap Areas: `/proc/swaps`.
+
+**Stitching Strategy:**
+- Uses `major:minor` device numbers as the primary key to link block devices to mount points.
+- Follows `holders`/`slaves` directories to trace `physical→partition→DM/MD→mount` relationships without invoking `lsblk`.
+
+**Mathematical Models / Formatting:**
+- **Size (GiB):** Calculated as `(sectors * 512) / (1024³)`, rounded to 1 decimal place. Uses binary GiB to align with standard Linux tools (`df -h`, `lsblk`).
+- **Transport Detection:** Best-effort heuristic: NVMe device names → `pcie`; symlink path inspection for `virtio`, `usb`, `sata`, `sas`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/sys/class/block/` is missing (non-Linux or container without sysfs).
+- **Missing `/proc/mdstat`:** `md_arrays` returns `[]` (no software RAID is a valid state).
+- **Unreadable `/proc/self/mountinfo`:** `mount_point` fields are empty strings.
+- **Unreadable `/proc/swaps`:** `swap_devices` returns `[]`.
+
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
