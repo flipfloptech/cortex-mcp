@@ -88,29 +88,25 @@ type UptimeData struct {
 // Execute performs the tool's operation.
 func (t *UptimeTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
 
 	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to read /proc/uptime: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to read /proc/uptime: %v", err)), nil
 	}
 
 	parts := strings.Fields(string(data))
 	if len(parts) < 2 {
-		return registry.NewErrorResult(t.Name(), hostname, "invalid format in /proc/uptime"), nil
+		return registry.NewErrorResult(t.Name(), "invalid format in /proc/uptime"), nil
 	}
 
 	uptimeSecs, err := strconv.ParseFloat(parts[0], 64)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to parse uptime: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to parse uptime: %v", err)), nil
 	}
 
 	idleSecs, err := strconv.ParseFloat(parts[1], 64)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to parse idle time: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to parse idle time: %v", err)), nil
 	}
 
 	numCPUs := float64(runtime.NumCPU())
@@ -132,7 +128,6 @@ func (t *UptimeTool) Execute(ctx context.Context, args json.RawMessage) (*regist
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		summary,
 		out,

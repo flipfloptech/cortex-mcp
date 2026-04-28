@@ -104,12 +104,11 @@ type memoryInfoData struct {
 // Execute gathers the memory info and returns a standardized ToolResult.
 func (t *MemoryInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	f, err := os.Open(meminfoPath)
 	if err != nil {
 		// Encapsulate error cleanly into ToolResult without halting MCP.
-		result := registry.NewErrorResult(t.Name(), hostname, "failed to open "+meminfoPath+": "+err.Error())
+		result := registry.NewErrorResult(t.Name(), "failed to open "+meminfoPath+": "+err.Error())
 		result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 		return result, nil
 	}
@@ -117,16 +116,13 @@ func (t *MemoryInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registr
 
 	data, err := ParseMemInfo(f)
 	if err != nil {
-		result := registry.NewErrorResult(t.Name(), hostname, "failed to parse meminfo: "+err.Error())
+		result := registry.NewErrorResult(t.Name(), "failed to parse meminfo: "+err.Error())
 		result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 		return result, nil
 	}
 
 	result := registry.NewResult(
-		t.Name(),
-		hostname,
-		registry.StatusOK,
-		"Memory usage: "+strconv.FormatInt(data.TrueUsedMB, 10)+"MB / "+strconv.FormatInt(data.TotalMB, 10)+"MB",
+		t.Name(), registry.StatusOK, "Memory usage: "+strconv.FormatInt(data.TrueUsedMB, 10)+"MB / "+strconv.FormatInt(data.TotalMB, 10)+"MB",
 		data,
 	)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()

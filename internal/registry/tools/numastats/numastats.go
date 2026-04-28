@@ -96,20 +96,16 @@ type NumaStatsData struct {
 
 func (t *NumaStatsTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	data, err := GetNumaStats()
 	if err != nil {
-		result := registry.NewErrorResult(t.Name(), hostname, "failed to get NUMA stats: "+err.Error())
+		result := registry.NewErrorResult(t.Name(), "failed to get NUMA stats: "+err.Error())
 		result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 		return result, nil
 	}
 
 	result := registry.NewResult(
-		t.Name(),
-		hostname,
-		registry.StatusOK,
-		fmt.Sprintf("NUMA Miss Ratio: %.2f%% across %d nodes", data.SystemSummary.SystemMissRatioPct, data.SystemSummary.TotalNumaNodes),
+		t.Name(), registry.StatusOK, fmt.Sprintf("NUMA Miss Ratio: %.2f%% across %d nodes", data.SystemSummary.SystemMissRatioPct, data.SystemSummary.TotalNumaNodes),
 		data,
 	)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()

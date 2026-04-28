@@ -64,7 +64,7 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 	info, err := hardware.GetEDACErrorsInfo()
 	if err != nil {
 		// Encapsulate execution errors instead of blowing up the MCP stream
-		return registry.NewErrorResult(t.Name(), "localhost", err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 
 	// 2. Set Status based on the hardware health logic
@@ -83,7 +83,7 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 	// 3. Serialize Data
 	dataBytes, err := json.Marshal(info)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), "localhost", "failed to marshal response: "+err.Error()), nil
+		return registry.NewErrorResult(t.Name(), "failed to marshal response: "+err.Error()), nil
 	}
 	var data map[string]interface{}
 	_ = json.Unmarshal(dataBytes, &data)
@@ -99,5 +99,5 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 		summary = "System RAM has uncorrectable ECC errors. High risk of crash."
 	}
 
-	return registry.NewResult(t.Name(), "localhost", status, summary, data), nil
+	return registry.NewResult(t.Name(), status, summary, data), nil
 }

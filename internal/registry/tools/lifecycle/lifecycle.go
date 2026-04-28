@@ -55,10 +55,9 @@ func NewInstallTool() *InstallTool {
 
 func (t *InstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	if _, err := os.Executable(); err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("resolve executable: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("resolve executable: %v", err)), nil
 	}
 
 	ops := SelfInstallOps()
@@ -78,7 +77,7 @@ func (t *InstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 		resp["status"] = "dry_run"
 	}
 
-	result := registry.NewResult(t.Name(), hostname, registry.StatusOK, "scheduled install operations", resp)
+	result := registry.NewResult(t.Name(), registry.StatusOK, "scheduled install operations", resp)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
 }
@@ -98,11 +97,10 @@ func NewUninstallTool() *UninstallTool {
 
 func (t *UninstallTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	binaryPath, err := os.Executable()
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("resolve executable: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("resolve executable: %v", err)), nil
 	}
 
 	var ops []LifecycleOp
@@ -133,7 +131,7 @@ func (t *UninstallTool) Execute(ctx context.Context, _ json.RawMessage) (*regist
 		resp["status"] = "dry_run"
 	}
 
-	result := registry.NewResult(t.Name(), hostname, registry.StatusOK, "scheduled uninstall operations", resp)
+	result := registry.NewResult(t.Name(), registry.StatusOK, "scheduled uninstall operations", resp)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
 }
@@ -153,7 +151,6 @@ func NewRestartTool() *RestartTool {
 
 func (t *RestartTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	cmd := fmt.Sprintf("restart %s", ServiceName)
 	resp := map[string]string{
@@ -170,7 +167,7 @@ func (t *RestartTool) Execute(ctx context.Context, _ json.RawMessage) (*registry
 		resp["status"] = "dry_run"
 	}
 
-	result := registry.NewResult(t.Name(), hostname, registry.StatusOK, "scheduled restart operation", resp)
+	result := registry.NewResult(t.Name(), registry.StatusOK, "scheduled restart operation", resp)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
 }
@@ -190,7 +187,6 @@ func NewStopTool() *StopTool {
 
 func (t *StopTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	cmd := fmt.Sprintf("stop %s", ServiceName)
 	resp := map[string]string{
@@ -207,7 +203,7 @@ func (t *StopTool) Execute(ctx context.Context, _ json.RawMessage) (*registry.To
 		resp["status"] = "dry_run"
 	}
 
-	result := registry.NewResult(t.Name(), hostname, registry.StatusOK, "scheduled stop operation", resp)
+	result := registry.NewResult(t.Name(), registry.StatusOK, "scheduled stop operation", resp)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
 }
@@ -233,19 +229,18 @@ func (t *UpgradeTool) Parameters() []registry.ToolParam {
 
 func (t *UpgradeTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	var params struct {
 		Path string `json:"path"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &params); err != nil {
-			return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("parse args: %v", err)), nil
+			return registry.NewErrorResult(t.Name(), fmt.Sprintf("parse args: %v", err)), nil
 		}
 	}
 
 	if params.Path == "" {
-		return registry.NewErrorResult(t.Name(), hostname, "path is required: provide the path to the new binary"), nil
+		return registry.NewErrorResult(t.Name(), "path is required: provide the path to the new binary"), nil
 	}
 
 	ops := nodeUpgradeOps(params.Path)
@@ -265,7 +260,7 @@ func (t *UpgradeTool) Execute(ctx context.Context, args json.RawMessage) (*regis
 		resp["status"] = "dry_run"
 	}
 
-	result := registry.NewResult(t.Name(), hostname, registry.StatusOK, "scheduled upgrade operations", resp)
+	result := registry.NewResult(t.Name(), registry.StatusOK, "scheduled upgrade operations", resp)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 	return result, nil
 }

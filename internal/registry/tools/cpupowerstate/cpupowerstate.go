@@ -111,7 +111,6 @@ type groupData struct {
 
 // Execute gathers P-state and C-state data and returns a standardized result.
 func (t *CpuPowerStateTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
 
 	data := CpuPowerStateData{
 		FrequencyProfiles: make(map[string]FrequencyProfile),
@@ -122,7 +121,7 @@ func (t *CpuPowerStateTool) Execute(_ context.Context, _ json.RawMessage) (*regi
 	if _, err := os.Stat(cpu0Freq); err != nil {
 		data.SystemSummary.PowerManagementManagedByOS = false
 		data.SystemSummary.CStatesVisible = false
-		return registry.NewResult(t.Name(), hostname, registry.StatusOK, "Power management managed by BIOS/Hypervisor", data), nil
+		return registry.NewResult(t.Name(), registry.StatusOK, "Power management managed by BIOS/Hypervisor", data), nil
 	}
 	data.SystemSummary.PowerManagementManagedByOS = true
 
@@ -249,7 +248,7 @@ func (t *CpuPowerStateTool) Execute(_ context.Context, _ json.RawMessage) (*regi
 		}
 	}
 
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, "CPU Power State Data", data), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, "CPU Power State Data", data), nil
 }
 
 func readKHz(path string) (int, error) {

@@ -30,7 +30,7 @@ func TestWithCache_HitAndMiss(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockTool{
-		result: NewResult("mock_tool", "node1", StatusOK, "test summary", map[string]string{"foo": "bar"}),
+		result: NewResult("mock_tool", StatusOK, "test summary", map[string]string{"foo": "bar"}),
 	}
 
 	// 50ms TTL for testing expiration.
@@ -107,7 +107,7 @@ func TestWithCache_OnlyCachesSuccess(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockTool{
-		result: NewResult("mock_tool", "node1", StatusError, "failed", nil),
+		result: NewResult("mock_tool", StatusError, "failed", nil),
 	}
 
 	cached := WithCache(1*time.Minute, mock)
@@ -142,7 +142,7 @@ func TestWithCache_OnlyCachesSuccess(t *testing.T) {
 
 func BenchmarkWithCache_Hit(b *testing.B) {
 	mock := &mockTool{
-		result: NewResult("mock_tool", "node1", StatusOK, "test", map[string]string{"foo": "bar"}),
+		result: NewResult("mock_tool", StatusOK, "test", map[string]string{"foo": "bar"}),
 	}
 	cached := WithCache(1*time.Minute, mock)
 	ctx := context.Background()
@@ -161,7 +161,7 @@ func BenchmarkWithCache_Hit(b *testing.B) {
 
 func BenchmarkWithCache_Miss(b *testing.B) {
 	mock := &mockTool{
-		result: NewResult("mock_tool", "node1", StatusOK, "test", map[string]string{"foo": "bar"}),
+		result: NewResult("mock_tool", StatusOK, "test", map[string]string{"foo": "bar"}),
 	}
 	cached := WithCache(1*time.Minute, mock)
 	ctx := context.Background()

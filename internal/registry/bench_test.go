@@ -22,7 +22,7 @@ func (t benchTool) Parameters() []ToolParam     { return nil }
 func (t benchTool) Hidden() bool                { return false }
 func (t benchTool) IsSupported() (bool, string) { return t.supported, "" }
 func (t benchTool) Execute(ctx context.Context, args json.RawMessage) (*ToolResult, error) {
-	return NewResult("tool", "node", StatusOK, "summary", nil), nil
+	return NewResult("tool", StatusOK, "summary", nil), nil
 }
 
 type dummyTracker struct{}
@@ -206,13 +206,13 @@ func BenchmarkListSubdirs(b *testing.B) {
 func BenchmarkNewResult(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewResult("tool", "node", StatusOK, "test data", nil)
+		_ = NewResult("tool", StatusOK, "test data", nil)
 	}
 }
 
 func BenchmarkNewErrorResult(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewErrorResult("tool", "node", "error message")
+		_ = NewErrorResult("tool", "error message")
 	}
 }

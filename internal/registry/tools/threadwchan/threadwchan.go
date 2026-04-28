@@ -55,15 +55,11 @@ func (t *tool) IsSupported() (bool, string) {
 }
 
 func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
 
 	var argsMap map[string]interface{}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &argsMap); err != nil {
-			return registry.NewErrorResult(t.Name(), hostname, "failed to parse arguments: "+err.Error()), nil
+			return registry.NewErrorResult(t.Name(), "failed to parse arguments: "+err.Error()), nil
 		}
 	}
 
@@ -77,11 +73,11 @@ func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 
 	res, err := process.GetThreadWchan(ctx, targetPid)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to get thread wchan data: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to get thread wchan data: %v", err)), nil
 	}
 
 	summary := fmt.Sprintf("Scanned %d threads (%d blocked)", res.SystemSummary.TotalThreads, res.SystemSummary.BlockedThreads)
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, summary, res), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, summary, res), nil
 }
 
 func init() {

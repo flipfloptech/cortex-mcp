@@ -101,11 +101,10 @@ type irqRecord struct {
 
 // Execute gathers IRQ affinity data and returns a standardized result.
 func (t *IrqAffinityTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
 
 	file, err := os.Open(procInterrupts)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 	defer func() { _ = file.Close() }()
 
@@ -113,12 +112,12 @@ func (t *IrqAffinityTool) Execute(_ context.Context, _ json.RawMessage) (*regist
 
 	// Parse first line to count CPUs
 	if !scanner.Scan() {
-		return registry.NewErrorResult(t.Name(), hostname, "empty /proc/interrupts"), nil
+		return registry.NewErrorResult(t.Name(), "empty /proc/interrupts"), nil
 	}
 	headerFields := strings.Fields(scanner.Text())
 	numCpus := len(headerFields)
 	if numCpus == 0 {
-		return registry.NewErrorResult(t.Name(), hostname, "failed to parse CPUs from header"), nil
+		return registry.NewErrorResult(t.Name(), "failed to parse CPUs from header"), nil
 	}
 
 	cpuTotals := make([]int, numCpus)
@@ -201,7 +200,7 @@ func (t *IrqAffinityTool) Execute(_ context.Context, _ json.RawMessage) (*regist
 	}
 
 	if err := scanner.Err(); err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 
 	// Sort IRQs by total volume descending and take Top 20
@@ -245,5 +244,5 @@ func (t *IrqAffinityTool) Execute(_ context.Context, _ json.RawMessage) (*regist
 		TopIrqSources: topIrqSources,
 	}
 
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, "IRQ Affinity Data", data), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, "IRQ Affinity Data", data), nil
 }

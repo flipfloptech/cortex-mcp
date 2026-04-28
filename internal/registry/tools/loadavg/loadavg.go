@@ -82,26 +82,21 @@ func (t *LoadAvgTool) IsSupported() (bool, string) {
 // Execute performs the tool's operation.
 func (t *LoadAvgTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
 
 	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to read /proc/loadavg: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to read /proc/loadavg: %v", err)), nil
 	}
 
 	out, err := parseLoadAvg(data)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to parse loadavg: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to parse loadavg: %v", err)), nil
 	}
 
 	summary := fmt.Sprintf("Load: %.2f %.2f %.2f (Entities: %d/%d)", out.Load1, out.Load5, out.Load15, out.RunnableEntities, out.TotalEntities)
 
 	result := registry.NewResult(
 		t.Name(),
-		hostname,
 		registry.StatusOK,
 		summary,
 		out,

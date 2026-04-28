@@ -32,7 +32,7 @@ func (t *mockTool) Execute(ctx context.Context, args json.RawMessage) (*registry
 	if t.execFn != nil {
 		return t.execFn(ctx, args)
 	}
-	return registry.NewResult(t.name, "test-node", registry.StatusOK, "mock result", nil), nil
+	return registry.NewResult(t.name, registry.StatusOK, "mock result", nil), nil
 }
 
 // TestToolInterface_ContractCompliance verifies that a Tool implementation
@@ -118,7 +118,7 @@ func TestToolInterface_ExecuteRespectsContext(t *testing.T) {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			default:
-				return registry.NewResult("slow_tool", "test-node", registry.StatusOK, "done", nil), nil
+				return registry.NewResult("slow_tool", registry.StatusOK, "done", nil), nil
 			}
 		},
 	}
@@ -146,9 +146,9 @@ func TestToolInterface_ExecuteWithArguments(t *testing.T) {
 				Pattern string `json:"pattern"`
 			}
 			if err := json.Unmarshal(args, &params); err != nil {
-				return registry.NewErrorResult("grep_tool", "test-node", err.Error()), nil
+				return registry.NewErrorResult("grep_tool", err.Error()), nil
 			}
-			return registry.NewResult("grep_tool", "test-node", registry.StatusOK, "found: "+params.Pattern, nil), nil
+			return registry.NewResult("grep_tool", registry.StatusOK, "found: "+params.Pattern, nil), nil
 		},
 	}
 

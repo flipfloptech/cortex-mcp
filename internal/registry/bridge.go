@@ -47,10 +47,8 @@ func (pr *PluginRegistry) BridgeToMesh(meshReg *tools.Registry) {
 				return tools.NewErrorResult(err.Error()), nil
 			}
 
-			// Populate nodeID if not set by the tool.
-			if result.NodeID == "" {
-				result.NodeID = pr.nodeID
-			}
+			// Forcefully populate nodeID with the true mesh identity.
+			result.NodeID = pr.nodeID
 			result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 
 			// Marshal the full ToolResult envelope as the mesh result content.

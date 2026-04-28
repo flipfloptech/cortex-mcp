@@ -56,11 +56,10 @@ type ResultMetadata struct {
 }
 
 // NewResult creates a ToolResult with standard metadata populated.
-func NewResult(toolName, nodeID string, status ResultStatus, summary string, data interface{}) *ToolResult {
+func NewResult(toolName string, status ResultStatus, summary string, data interface{}) *ToolResult {
 	raw, _ := json.Marshal(data)
 	return &ToolResult{
 		ToolName: toolName,
-		NodeID:   nodeID,
 		Status:   status,
 		Summary:  summary,
 		Data:     raw,
@@ -71,6 +70,6 @@ func NewResult(toolName, nodeID string, status ResultStatus, summary string, dat
 }
 
 // NewErrorResult creates a ToolResult representing a tool-level error.
-func NewErrorResult(toolName, nodeID, message string) *ToolResult {
-	return NewResult(toolName, nodeID, StatusError, message, map[string]string{"error": message})
+func NewErrorResult(toolName, message string) *ToolResult {
+	return NewResult(toolName, StatusError, message, map[string]string{"error": message})
 }

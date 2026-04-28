@@ -88,14 +88,12 @@ type SlabInfoData struct {
 
 func (t *SlabInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
-	hostname, _ := os.Hostname()
 
 	f, err := os.Open(slabInfoPath)
 	if err != nil {
 		if os.IsPermission(err) {
 			result := registry.NewResult(
 				t.Name(),
-				hostname,
 				registry.StatusError,
 				"Unauthorized: Root privileges required to read /proc/slabinfo",
 				nil,
@@ -103,7 +101,7 @@ func (t *SlabInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.
 			result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 			return result, nil
 		}
-		result := registry.NewErrorResult(t.Name(), hostname, "failed to open "+slabInfoPath+": "+err.Error())
+		result := registry.NewErrorResult(t.Name(), "failed to open "+slabInfoPath+": "+err.Error())
 		result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 		return result, nil
 	}
@@ -111,16 +109,13 @@ func (t *SlabInfoTool) Execute(_ context.Context, _ json.RawMessage) (*registry.
 
 	data, err := ParseSlabInfo(f)
 	if err != nil {
-		result := registry.NewErrorResult(t.Name(), hostname, "failed to parse slabinfo: "+err.Error())
+		result := registry.NewErrorResult(t.Name(), "failed to parse slabinfo: "+err.Error())
 		result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()
 		return result, nil
 	}
 
 	result := registry.NewResult(
-		t.Name(),
-		hostname,
-		registry.StatusOK,
-		"Analyzed "+strconv.Itoa(data.SystemSummary.TotalSlabCachesDetected)+" slab caches",
+		t.Name(), registry.StatusOK, "Analyzed "+strconv.Itoa(data.SystemSummary.TotalSlabCachesDetected)+" slab caches",
 		data,
 	)
 	result.Metadata.ExecutionTimeMs = time.Since(start).Milliseconds()

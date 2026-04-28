@@ -118,15 +118,11 @@ func parseRegexOpt(argsMap map[string]interface{}, key string) (*regexp.Regexp, 
 }
 
 func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
 
 	var argsMap map[string]interface{}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &argsMap); err != nil {
-			return registry.NewErrorResult(t.Name(), hostname, "failed to parse arguments: "+err.Error()), nil
+			return registry.NewErrorResult(t.Name(), "failed to parse arguments: "+err.Error()), nil
 		}
 	}
 
@@ -157,28 +153,28 @@ func (t *tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 	var err error
 	opts.UserRegex, err = parseRegexOpt(argsMap, "user_regex")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 	opts.NameRegex, err = parseRegexOpt(argsMap, "name_regex")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 	opts.StateRegex, err = parseRegexOpt(argsMap, "state_regex")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 	opts.CmdlineRegex, err = parseRegexOpt(argsMap, "cmdline_regex")
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, err.Error()), nil
+		return registry.NewErrorResult(t.Name(), err.Error()), nil
 	}
 
 	processes, err := process.GetList(ctx, opts)
 	if err != nil {
-		return registry.NewErrorResult(t.Name(), hostname, fmt.Sprintf("failed to get process list: %v", err)), nil
+		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to get process list: %v", err)), nil
 	}
 
 	summary := fmt.Sprintf("Retrieved %d processes", len(processes))
-	return registry.NewResult(t.Name(), hostname, registry.StatusOK, summary, processes), nil
+	return registry.NewResult(t.Name(), registry.StatusOK, summary, processes), nil
 }
 
 func init() {
