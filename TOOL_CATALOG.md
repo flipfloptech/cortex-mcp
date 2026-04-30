@@ -393,6 +393,25 @@ Provides high-resolution I/O performance metrics by parsing kernel block-layer c
 - Context cancellation during the 500ms measurement window causes an immediate return, ensuring tool responsiveness under timeout conditions.
 
 
+#### `get_mount_usage`
+*Category: `storage` · Runs on: Every Linux node*
+
+Provides instantaneous capacity and inode exhaustion metrics for all active, physical, and network filesystems. Utilizes the statfs syscall with strict timeout protection to prevent the agent from hanging on dead network mounts.
+
+**Data Sources:**
+- **Mount Identification**: Parses `/proc/self/mountinfo` instead of `/etc/mtab` to bypass namespace spoofing and guarantee kernel ground truth.
+- **Capacity & Inodes**: Uses the `statfs` syscall mapped directly to each mount path.
+
+**Mathematical Models / Formatting:**
+- **Device Filtering**: Eliminates pseudo-filesystems by using a Source-Device Heuristic. Excludes paths lacking `/dev/`, `:` or `@`, and explicitly blacklists `tmpfs` and `devtmpfs`.
+- **Capacity**: Converts total, used, and free blocks into GiB. Calculates `usage_pct` dynamically based on available blocks.
+- **Inode Metrics**: Returns exact `total`, `used`, and `free` inode counts with a `usage_pct`, crucial for detecting MDT metadata exhaustion in Lustre/NFS which can cause "disk full" errors even with 99% capacity free.
+- **Hung Mount Trap Protection**: Wraps every `statfs` syscall in a goroutine with a strict 2000ms context timeout. If a network filesystem (e.g., Lustre OSS) goes offline, the `statfs` call blocks in an uninterruptible sleep (D-state). The tool safely abandons the stalled goroutine and sets the mount status to `hung`, instantly doubling as an availability health check for remote file systems.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/self/mountinfo` is missing or inaccessible.
+- Returns `status: "hung"` and populates the `error` field if the `statfs` system call exceeds the 2-second timeout, rather than returning a generic error and failing the execution.
+
 ---
 
 ### Mesh Infrastructure Tools
