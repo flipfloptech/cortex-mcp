@@ -10,6 +10,10 @@ import (
 	"github.com/flipfloptech/cortex-mcp/internal/sys/storage"
 )
 
+func init() {
+	registry.Register(New())
+}
+
 // Tool implements registry.Tool for get_mount_usage.
 type Tool struct {
 	procfsRoot string
