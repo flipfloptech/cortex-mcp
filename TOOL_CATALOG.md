@@ -393,6 +393,33 @@ Provides high-resolution I/O performance metrics by parsing kernel block-layer c
 - Context cancellation during the 500ms measurement window causes an immediate return, ensuring tool responsiveness under timeout conditions.
 
 
+#### `get_block_scheduler_info`
+*Category: `storage` · Runs on: Every Linux node*
+
+Audits block device I/O scheduler and read-ahead settings to identify software-induced latency (schedulers) and inefficient caching (read-ahead) that throttle high-performance storage hardware. Essential for Lustre OSS nodes where NVMe drives must use the `none` scheduler and read-ahead must not double-cache against Lustre's own algorithms.
+
+**Data Sources:**
+- **Scheduler Status**: `/sys/block/<dev>/queue/scheduler` — kernel returns space-separated available schedulers with the active one in brackets.
+- **Read-Ahead**: `/sys/block/<dev>/queue/read_ahead_kb` — integer in kilobytes.
+- **Device Discovery**: `/sys/block/` directory iteration with partition exclusion via sysfs `partition` marker file.
+
+**Device Filtering:**
+- Includes physical disks (NVMe, SATA, SAS, VirtIO), Device Mapper (`dm-*`), and MD RAID (`md*`) logical volumes.
+- Excludes `loop`, `ram`, `zram`, `nbd` pseudo-devices and partitions (which inherit queue settings from parent devices).
+
+**Mathematical Models / Formatting:**
+- **Scheduler Parsing**: Regex-free bracket extraction from kernel format `[active] avail1 avail2`. Handles edge cases: `none` without brackets (DM devices), empty files, whitespace-only content.
+- **Tuning Warnings**: Two heuristic rules producing a `warning_reasons []string` array:
+  1. **NVMe Scheduler Trap**: NVMe devices using schedulers other than `none` — PCIe NVMe drives have massive internal parallel queues; OS-level scheduling wastes CPU time re-ordering I/O the firmware handles natively.
+  2. **High Read-Ahead**: `read_ahead_kb >= 4096` — causes cache thrashing, especially on Lustre OSS nodes that implement their own read-ahead algorithms.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/sys/block` is missing (non-Linux or container without sysfs).
+- **Missing scheduler file**: `active_scheduler: "none"`, `available_schedulers: ["none"]`.
+- **Missing read_ahead_kb file**: `read_ahead_kb: 0`.
+- **DM/MD "none" without brackets**: Handled gracefully as `active_scheduler: "none"`.
+
+
 #### `get_mount_usage`
 *Category: `storage` · Runs on: Every Linux node*
 

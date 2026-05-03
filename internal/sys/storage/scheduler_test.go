@@ -11,10 +11,10 @@ import (
 func TestParseSchedulerString(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name            string
-		raw             string
-		wantActive      string
-		wantAvailable   []string
+		name          string
+		raw           string
+		wantActive    string
+		wantAvailable []string
 	}{
 		{
 			name:          "standard_multi",
