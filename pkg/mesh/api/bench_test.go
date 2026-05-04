@@ -283,6 +283,7 @@ func BenchmarkAddPeer(b *testing.B) {
 
 		// Measures AddPeer pipeline entry up to mTLS handshake
 		_ = node.AddPeer(ctx, c1, true)
+		_ = c1.Close()
 	}
 }
 
@@ -298,6 +299,7 @@ func BenchmarkAddPeerDual(b *testing.B) {
 			_ = cb.Close()
 		}()
 		_ = nodeA.AddPeer(ctx, ca, false)
+		_ = ca.Close()
 	}
 }
 
@@ -412,7 +414,9 @@ func BenchmarkAcceptDataStreams(b *testing.B) {
 	}
 
 	n := newTestNode("test-node")
+	defer func() { _ = n.Close() }()
 	n.grpcLis = newMeshListener()
+	defer func() { _ = n.grpcLis.Close() }()
 
 	// Consume grpcLis
 	go func() {
@@ -451,6 +455,7 @@ func BenchmarkNewTestNode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		n := newTestNode("test-node")
 		_ = n.NodeID()
+		_ = n.Close()
 	}
 }
 
