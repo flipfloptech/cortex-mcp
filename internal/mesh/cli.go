@@ -308,7 +308,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(daemonCmd, bridgeCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
+	rootCmd.AddCommand(daemonCmd, bridgeCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd, newPKICmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
