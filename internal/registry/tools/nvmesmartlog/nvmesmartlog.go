@@ -64,7 +64,7 @@ type SystemSummary struct {
 }
 
 type Output struct {
-	SystemSummary SystemSummary       `json:"system_summary"`
+	SystemSummary SystemSummary        `json:"system_summary"`
 	Drives        []*storage.NVMeDrive `json:"drives"`
 }
 

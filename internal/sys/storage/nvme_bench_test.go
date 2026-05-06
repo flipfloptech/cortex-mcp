@@ -24,7 +24,7 @@ func BenchmarkParseNVMeOutput(b *testing.B) {
 
 func BenchmarkDiscoverNVMeDevices(b *testing.B) {
 	tmpDir := b.TempDir()
-	
+
 	// Create mock sysfs
 	classNvme := tmpDir + "/class/nvme"
 	// Ignoring test setup for speed.

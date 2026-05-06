@@ -2,8 +2,8 @@ package nvmesmartlog
 
 import (
 	"context"
-	"testing"
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
+	"testing"
 )
 
 func TestToolContract(t *testing.T) {
@@ -25,7 +25,7 @@ func TestExecute_EPERM(t *testing.T) {
 	tool := New()
 	// Using a mock func to avoid actual execution if we were doing it thoroughly,
 	// but here we can just test that we return valid JSON even on error if we structure it.
-	
+
 	// Fast track test: we pass bad args.
 	res, err := tool.Execute(context.Background(), []byte(`{"target_device":"nonexistent"}`))
 	if err != nil {

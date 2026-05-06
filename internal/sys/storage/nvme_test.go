@@ -9,15 +9,25 @@ import (
 
 func TestDiscoverNVMeDevices(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create mock sysfs
 	classNvme := filepath.Join(tmpDir, "class", "nvme")
-	os.MkdirAll(classNvme, 0755)
-	os.Mkdir(filepath.Join(classNvme, "nvme0"), 0755)
-	os.Mkdir(filepath.Join(classNvme, "nvme1"), 0755)
+	if err := os.MkdirAll(classNvme, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(classNvme, "nvme0"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(classNvme, "nvme1"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	// Should ignore non-nvme dirs or anything that doesn't match nvme[0-9]*
-	os.Mkdir(filepath.Join(classNvme, "nvme-subsys0"), 0755)
-	os.Mkdir(filepath.Join(classNvme, "other"), 0755)
+	if err := os.Mkdir(filepath.Join(classNvme, "nvme-subsys0"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(classNvme, "other"), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	devices, err := DiscoverNVMeDevices(tmpDir)
 	if err != nil {
@@ -41,7 +51,7 @@ func TestParseNVMeOutput(t *testing.T) {
 		"critical_warning": 0
 	}`)
 	// Some nvme outputs report temperature_c maybe? Wait, actual nvme smart-log gives temperature in Kelvin (e.g. 321 K = 48 C).
-	
+
 	drive, err := ParseNVMeOutput(jsonData, "nvme0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -63,7 +73,7 @@ func TestParseNVMeOutputCritical(t *testing.T) {
 		"media_errors": 4,
 		"critical_warning": 1
 	}`)
-	
+
 	drive, err := ParseNVMeOutput(jsonData, "nvme1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
