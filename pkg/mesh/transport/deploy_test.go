@@ -154,8 +154,8 @@ func handleDeploySession(channel ssh.Channel, requests <-chan *ssh.Request, uplo
 
 			if !strings.Contains(cmd, "cat >") {
 				// Exec session: simulate a deployed fleet node.
-				// The command is the binary with subcommand args (e.g., "serve",
-				// "-daemon", etc.). Write the readiness magic first, then echo.
+				// The command is the binary with subcommand args (e.g., "daemon",
+				// "-config", etc.). Write the readiness magic first, then echo.
 				if _, err := channel.Write(DeployReadyMagic[:]); err != nil {
 					return
 				}
@@ -258,10 +258,10 @@ func TestWasDeployed_False_WrongValue(t *testing.T) {
 }
 
 // --- SelfDeployer.DefaultExecArgs ---
-// When ExecArgs is nil (zero value), execBinary should default to ["serve"]
+// When ExecArgs is nil (zero value), execBinary should default to ["daemon"]
 // so the remote binary enters fleet node mode via subcommand dispatch.
 
-func TestSelfDeployer_DefaultExecArgs_Serve(t *testing.T) {
+func TestSelfDeployer_DefaultExecArgs_Daemon(t *testing.T) {
 	t.Parallel()
 
 	hostSigner := testSSHSigner(t)
@@ -281,7 +281,7 @@ func TestSelfDeployer_DefaultExecArgs_Serve(t *testing.T) {
 		t.Fatalf("close temp file: %v", err)
 	}
 
-	// ExecArgs is nil — should default to ["serve"].
+	// ExecArgs is nil — should default to ["daemon"].
 	deployer := &SelfDeployer{
 		BinaryPath: tmpFile.Name(),
 		RemotePath: filepath.Join(t.TempDir(), "mesh-node"),
@@ -304,7 +304,7 @@ func TestSelfDeployer_DefaultExecArgs_Serve(t *testing.T) {
 	}()
 
 	// Verify bidirectional data — the test SSH server only echoes
-	// for commands containing 'serve'.
+	// for commands containing 'daemon'.
 	payload := []byte("default-args-test")
 	if _, err := stream.Write(payload); err != nil {
 		t.Fatalf("Write error: %v", err)

@@ -370,10 +370,10 @@ func (d *SelfDeployer) execBinary(client *ssh.Client, remotePath string) (io.Rea
 		return nil, fmt.Errorf("exec stderr pipe: %w", err)
 	}
 
-	// Execute the binary with the serve subcommand (default) or custom args.
+	// Execute the binary with the daemon subcommand (default) or custom args.
 	args := d.ExecArgs
 	if len(args) == 0 {
-		args = []string{"serve"}
+		args = []string{"daemon"}
 	}
 	var quotedArgs []string
 	for _, arg := range args {

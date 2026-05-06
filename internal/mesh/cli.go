@@ -136,25 +136,23 @@ func Execute() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to mesh.toml config file")
 	rootCmd.PersistentFlags().BoolVar(&skipDeploy, "skip-deploy", false, "skip SFTP upload when deploying nodes")
 
-	serveCmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Run as an ephemeral fleet node",
-		Run: func(cmd *cobra.Command, args []string) {
-			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
-			defer cancel()
-			lifecycle.SetLiveMode(true)
-			runFleetNode(ctx, nodeID, plugins, cfg, false)
-		},
-	}
-
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Run as a persistent daemon (systemd entry)",
+		Short: "Run as a fleet node (persistent if systemd/terminal, ephemeral otherwise)",
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx, cancel, nodeID, cfg, plugins := initEnv(configPath)
 			defer cancel()
 			lifecycle.SetLiveMode(true)
-			runFleetNode(ctx, nodeID, plugins, cfg, true)
+
+			// Auto-detect node mode.
+			// Systemd sets INVOCATION_ID. Terminal provides an interactive TTY.
+			// SSH deployer provides piped stdin/stdout and no INVOCATION_ID.
+			isSystemd := os.Getenv("INVOCATION_ID") != ""
+			stat, _ := os.Stdin.Stat()
+			isTerminal := (stat.Mode() & os.ModeCharDevice) != 0
+
+			isPersistent := isSystemd || isTerminal
+			runFleetNode(ctx, nodeID, plugins, cfg, isPersistent)
 		},
 	}
 
@@ -310,7 +308,7 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(serveCmd, daemonCmd, bridgeCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
+	rootCmd.AddCommand(daemonCmd, bridgeCmd, uninstallCmd, startCmd, stopCmd, installCmd, mcpCmd, buildImportExaCmd(), localOpCmd, versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
