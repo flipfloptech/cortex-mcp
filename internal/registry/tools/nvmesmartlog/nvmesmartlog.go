@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -96,11 +97,29 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 		}
 
 		cmdArgs := []string{"smart-log", "/dev/" + dev, "-o", "json"}
-		cmd := exec.CommandContext(ctx, "nvme", cmdArgs...)
-		out, err := cmd.Output()
+		var cmd *exec.Cmd
+
+		// If not running as root, attempt to use non-interactive sudo if available
+		if os.Geteuid() != 0 {
+			if _, err := exec.LookPath("sudo"); err == nil {
+				cmdArgs = append([]string{"-n", "nvme"}, cmdArgs...)
+				cmd = exec.CommandContext(ctx, "sudo", cmdArgs...)
+			} else {
+				cmd = exec.CommandContext(ctx, "nvme", cmdArgs...)
+			}
+		} else {
+			cmd = exec.CommandContext(ctx, "nvme", cmdArgs...)
+		}
+
+		out, err := cmd.CombinedOutput()
 		if err != nil {
-			if strings.Contains(err.Error(), "permission denied") {
-				return registry.NewErrorResult(t.Name(), "Unauthorized: Root privileges required to execute NVMe ioctls."), nil
+			errStr := strings.ToLower(err.Error())
+			outStr := strings.ToLower(string(out))
+
+			if strings.Contains(errStr, "permission denied") || strings.Contains(outStr, "permission denied") ||
+				strings.Contains(errStr, "operation not permitted") || strings.Contains(outStr, "operation not permitted") ||
+				strings.Contains(outStr, "password is required") {
+				return registry.NewErrorResult(t.Name(), "Unauthorized: Root or passwordless sudo privileges required to execute NVMe ioctls."), nil
 			}
 			continue
 		}
