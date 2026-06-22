@@ -19,6 +19,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/hugepageinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/irqaffinity"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/loadavg"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/lustreclientstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/memoryinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/mountusage"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numaedacerrors"
