@@ -50,7 +50,7 @@ Parameters: None
 Supported on: Linux`
 }
 
-func (t *SlabInfoTool) Category() string { return "memory" }
+func (t *SlabInfoTool) Category() registry.Category { return registry.CategoryMemory }
 
 func (t *SlabInfoTool) Parameters() []registry.ToolParam { return nil }
 

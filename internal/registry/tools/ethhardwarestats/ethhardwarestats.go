@@ -82,8 +82,8 @@ func (t *EthHardwareStatsTool) Name() string {
 	return "get_eth_hardware_stats"
 }
 
-func (t *EthHardwareStatsTool) Category() string {
-	return "network"
+func (t *EthHardwareStatsTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *EthHardwareStatsTool) Help() string {

@@ -61,7 +61,7 @@ func NewPluginRegistryFrom(nodeID string, tools []Tool) *PluginRegistry {
 		if ok {
 			pr.supportedMap[t.Name()] = t
 			pr.supportedList = append(pr.supportedList, t)
-			zap.S().Debugw("plugin loaded", "tool", t.Name(), "category", t.Category())
+			zap.S().Debugw("plugin loaded", "tool", t.Name(), "category", t.Category().String())
 		} else {
 			pr.unsupported[t.Name()] = reason
 			zap.S().Debugw("plugin skipped", "tool", t.Name(), "reason", reason)

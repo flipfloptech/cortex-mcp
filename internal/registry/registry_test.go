@@ -11,8 +11,8 @@ import (
 func TestPluginRegistry_FiltersUnsupported(t *testing.T) {
 	t.Parallel()
 
-	supported := &mockTool{name: "supported_tool", supported: true, category: "test"}
-	unsupported := &mockTool{name: "unsupported_tool", supported: false, reason: "missing binary", category: "test"}
+	supported := &mockTool{name: "supported_tool", supported: true, category: registry.CategorySystem}
+	unsupported := &mockTool{name: "unsupported_tool", supported: false, reason: "missing binary", category: registry.CategorySystem}
 
 	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{supported, unsupported})
 
@@ -57,8 +57,8 @@ func TestPluginRegistry_AllSupported(t *testing.T) {
 	t.Parallel()
 
 	tools := []registry.Tool{
-		&mockTool{name: "tool_a", supported: true, category: "a"},
-		&mockTool{name: "tool_b", supported: true, category: "b"},
+		&mockTool{name: "tool_a", supported: true, category: registry.CategoryCompute},
+		&mockTool{name: "tool_b", supported: true, category: registry.CategoryMemory},
 	}
 
 	pr := registry.NewPluginRegistryFrom("test-node", tools)
@@ -77,8 +77,8 @@ func TestPluginRegistry_AllUnsupported(t *testing.T) {
 	t.Parallel()
 
 	tools := []registry.Tool{
-		&mockTool{name: "tool_a", supported: false, reason: "needs root", category: "a"},
-		&mockTool{name: "tool_b", supported: false, reason: "wrong OS", category: "b"},
+		&mockTool{name: "tool_a", supported: false, reason: "needs root", category: registry.CategoryCompute},
+		&mockTool{name: "tool_b", supported: false, reason: "wrong OS", category: registry.CategoryMemory},
 	}
 
 	pr := registry.NewPluginRegistryFrom("test-node", tools)
@@ -95,7 +95,7 @@ func TestPluginRegistry_AllUnsupported(t *testing.T) {
 func TestPluginRegistry_GetTool_Found(t *testing.T) {
 	t.Parallel()
 
-	tool := &mockTool{name: "target_tool", supported: true, category: "test"}
+	tool := &mockTool{name: "target_tool", supported: true, category: registry.CategorySystem}
 	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{tool})
 
 	found, ok := pr.GetTool("target_tool")
@@ -112,7 +112,7 @@ func TestPluginRegistry_GetTool_Found(t *testing.T) {
 func TestPluginRegistry_GetTool_NotFound(t *testing.T) {
 	t.Parallel()
 
-	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: "test"}
+	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: registry.CategorySystem}
 	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{unsupported})
 
 	_, ok := pr.GetTool("hidden_tool")
@@ -130,8 +130,8 @@ func TestPluginRegistry_GetTool_NotFound(t *testing.T) {
 func TestPluginRegistry_GetAnyTool_Found(t *testing.T) {
 	t.Parallel()
 
-	supported := &mockTool{name: "target_tool", supported: true, category: "test"}
-	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: "test"}
+	supported := &mockTool{name: "target_tool", supported: true, category: registry.CategorySystem}
+	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: registry.CategorySystem}
 	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{supported, unsupported})
 
 	// Should find supported tool
@@ -158,7 +158,7 @@ func TestPluginRegistry_GetAnyTool_Found(t *testing.T) {
 func TestPluginRegistry_GetAnyTool_NotFound(t *testing.T) {
 	t.Parallel()
 
-	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: "test"}
+	unsupported := &mockTool{name: "hidden_tool", supported: false, reason: "nope", category: registry.CategorySystem}
 	pr := registry.NewPluginRegistryFrom("test-node", []registry.Tool{unsupported})
 
 	_, ok := pr.GetAnyTool("nonexistent")
@@ -184,7 +184,7 @@ func TestGlobalRegister_AddsToGlobalPool(t *testing.T) {
 	// Not parallel — modifies global state.
 	// We test the global registration path by directly calling Register
 	// and then building a registry from globals.
-	tool := &mockTool{name: "global_test_tool", supported: true, category: "test"}
+	tool := &mockTool{name: "global_test_tool", supported: true, category: registry.CategorySystem}
 
 	registry.Register(tool)
 

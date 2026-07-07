@@ -47,8 +47,8 @@ Degradation Profile:
 }
 
 // Category groups the tool in the catalog.
-func (t *ProcessTreeTool) Category() string {
-	return "compute"
+func (t *ProcessTreeTool) Category() registry.Category {
+	return registry.CategoryCompute
 }
 
 // Hidden indicates whether this tool should be hidden from get_tool_list.

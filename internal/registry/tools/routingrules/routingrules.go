@@ -48,8 +48,8 @@ func (t *RoutingRulesTool) Name() string {
 	return "get_routing_rules"
 }
 
-func (t *RoutingRulesTool) Category() string {
-	return "network"
+func (t *RoutingRulesTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *RoutingRulesTool) Help() string {

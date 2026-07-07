@@ -53,8 +53,8 @@ func (t *QuerySystemdStatusTool) Name() string {
 	return "get_systemd_status"
 }
 
-func (t *QuerySystemdStatusTool) Category() string {
-	return "system"
+func (t *QuerySystemdStatusTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QuerySystemdStatusTool) Help() string {

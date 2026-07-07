@@ -28,7 +28,7 @@ func (m *mockDispatcher) Dispatch(ctx context.Context, toolName string, args jso
 type mockTool struct {
 	name        string
 	description string
-	category    string
+	category    registry.Category
 	hidden      bool
 	params      []registry.ToolParam
 }
@@ -36,7 +36,7 @@ type mockTool struct {
 func (m *mockTool) Name() string                     { return m.name }
 func (m *mockTool) Description() string              { return m.description }
 func (m *mockTool) Help() string                     { return "long description" }
-func (m *mockTool) Category() string                 { return m.category }
+func (m *mockTool) Category() registry.Category      { return m.category }
 func (m *mockTool) Parameters() []registry.ToolParam { return m.params }
 func (m *mockTool) Hidden() bool                     { return m.hidden }
 func (m *mockTool) IsSupported() (bool, string)      { return true, "" }
@@ -59,9 +59,9 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 
 	// 2. Setup plugin registry with definitions
 	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
-		&mockTool{name: "get_uptime", description: "Get uptime", category: "system", hidden: false},
-		&mockTool{name: "get_system_info", description: "Get info", category: "system", hidden: false},
-		&mockTool{name: "secret_tool", description: "Hidden tool", category: "system", hidden: true},
+		&mockTool{name: "get_uptime", description: "Get uptime", category: registry.CategorySystem, hidden: false},
+		&mockTool{name: "get_system_info", description: "Get info", category: registry.CategorySystem, hidden: false},
+		&mockTool{name: "secret_tool", description: "Hidden tool", category: registry.CategorySystem, hidden: true},
 	})
 
 	srv := NewServer(&mockDispatcher{}, topology, plugins)
@@ -94,7 +94,7 @@ func TestServer_ToolHelpDynamic(t *testing.T) {
 	t.Parallel()
 
 	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
-		&mockTool{name: "get_uptime", description: "Get uptime", category: "system"},
+		&mockTool{name: "get_uptime", description: "Get uptime", category: registry.CategorySystem},
 	})
 
 	srv := NewServer(&mockDispatcher{}, nil, plugins)

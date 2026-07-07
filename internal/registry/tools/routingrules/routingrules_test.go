@@ -18,7 +18,7 @@ func TestRoutingRulesTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_routing_rules" {
 		t.Errorf("expected Name() == 'get_routing_rules', got %q", tool.Name())
 	}
-	if tool.Category() != "network" {
+	if tool.Category() != registry.CategoryNetwork {
 		t.Errorf("expected Category() == 'network', got %q", tool.Category())
 	}
 	if tool.Parameters() != nil {

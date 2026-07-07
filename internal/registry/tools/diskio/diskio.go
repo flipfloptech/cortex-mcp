@@ -40,8 +40,8 @@ func (t *Tool) Help() string {
 	return `Provides high-resolution I/O metrics by sampling /proc/diskstats and calculating precise deltas for throughput, IOPS, and latency. Automatically filters out virtual loopbacks and RAM disks.`
 }
 
-func (t *Tool) Category() string {
-	return "storage"
+func (t *Tool) Category() registry.Category {
+	return registry.CategoryStorage
 }
 
 func (t *Tool) Hidden() bool {

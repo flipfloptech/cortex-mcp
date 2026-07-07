@@ -36,8 +36,8 @@ func (t *Tool) Help() string {
 	return "Executes nvme smart-log against NVMe controllers (e.g. /dev/nvme0) to diagnose thermal throttling or imminent drive failure. Data sourced via nvme-cli or smartctl."
 }
 
-func (t *Tool) Category() string {
-	return "storage"
+func (t *Tool) Category() registry.Category {
+	return registry.CategoryStorage
 }
 
 func (t *Tool) Parameters() []registry.ToolParam {

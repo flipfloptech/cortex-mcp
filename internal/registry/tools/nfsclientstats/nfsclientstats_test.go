@@ -19,7 +19,7 @@ func TestNFSClientStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_nfs_client_stats" {
 		t.Errorf("expected Name() == 'get_nfs_client_stats', got %q", tool.Name())
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("expected Category() == 'storage', got %q", tool.Category())
 	}
 	if tool.Parameters() != nil {

@@ -15,7 +15,7 @@ func TestProcessTreeTool_ContractCompliance(t *testing.T) {
 		t.Errorf("expected name 'get_process_tree', got %q", tool.Name())
 	}
 
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected category 'compute', got %q", tool.Category())
 	}
 

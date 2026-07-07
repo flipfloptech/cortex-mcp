@@ -19,7 +19,7 @@ func TestNICEthtoolStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_nic_ethtool_stats" {
 		t.Errorf("expected Name() == 'get_nic_ethtool_stats', got %q", tool.Name())
 	}
-	if tool.Category() != "network" {
+	if tool.Category() != registry.CategoryNetwork {
 		t.Errorf("expected Category() == 'network', got %q", tool.Category())
 	}
 	params := tool.Parameters()

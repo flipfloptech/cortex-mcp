@@ -18,7 +18,7 @@ func TestSysctlTuningTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_sysctl_tuning_state" {
 		t.Errorf("expected Name() == 'get_sysctl_tuning_state', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

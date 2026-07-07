@@ -18,7 +18,7 @@ func TestQueryDmesgTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "query_dmesg" {
 		t.Errorf("expected Name() == 'query_dmesg', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

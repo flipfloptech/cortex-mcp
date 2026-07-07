@@ -19,7 +19,7 @@ func TestCPUTopologyTool_Contract(t *testing.T) {
 	if tool.Name() != "get_cpu_topology" {
 		t.Errorf("expected Name to be get_cpu_topology, got %q", tool.Name())
 	}
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected Category to be compute, got %q", tool.Category())
 	}
 	if tool.Description() == "" {

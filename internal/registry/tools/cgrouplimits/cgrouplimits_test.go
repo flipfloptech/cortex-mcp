@@ -18,7 +18,7 @@ func TestCgroupLimitsTool_Contract(t *testing.T) {
 	if tool.Name() != "get_cgroup_limits" {
 		t.Errorf("expected name get_cgroup_limits, got %s", tool.Name())
 	}
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected category compute, got %s", tool.Category())
 	}
 	if tool.Description() == "" {

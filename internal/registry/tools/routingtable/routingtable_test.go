@@ -19,7 +19,7 @@ func TestRoutingTableTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_routing_table" {
 		t.Errorf("expected Name() == 'get_routing_table', got %q", tool.Name())
 	}
-	if tool.Category() != "network" {
+	if tool.Category() != registry.CategoryNetwork {
 		t.Errorf("expected Category() == 'network', got %q", tool.Category())
 	}
 	if tool.Parameters() != nil {

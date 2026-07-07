@@ -28,7 +28,7 @@ type baseLifecycleTool struct {
 }
 
 func (b *baseLifecycleTool) Name() string                     { return b.name }
-func (b *baseLifecycleTool) Category() string                 { return "lifecycle" }
+func (b *baseLifecycleTool) Category() registry.Category      { return registry.CategoryLifecycle }
 func (b *baseLifecycleTool) Description() string              { return b.description }
 func (b *baseLifecycleTool) Help() string                     { return b.longDesc }
 func (b *baseLifecycleTool) Hidden() bool                     { return true }

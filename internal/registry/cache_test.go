@@ -17,7 +17,7 @@ type mockTool struct {
 func (m *mockTool) Name() string                { return "mock_tool" }
 func (m *mockTool) Description() string         { return "mock" }
 func (m *mockTool) Help() string                { return "mock" }
-func (m *mockTool) Category() string            { return "test" }
+func (m *mockTool) Category() Category          { return CategorySystem }
 func (m *mockTool) Parameters() []ToolParam     { return nil }
 func (m *mockTool) Hidden() bool                { return false }
 func (m *mockTool) IsSupported() (bool, string) { return true, "" }

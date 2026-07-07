@@ -25,7 +25,7 @@ func TestSystemInfoTool_ContractCompliance(t *testing.T) {
 	if tool.Help() == "" {
 		t.Error("Help() must not be empty")
 	}
-	if tool.Category() == "" {
+	if tool.Category() == registry.CategoryUnknown {
 		t.Error("Category() must not be empty")
 	}
 }
@@ -45,7 +45,7 @@ func TestSystemInfoTool_Category(t *testing.T) {
 	t.Parallel()
 
 	tool := &sysinfo.SystemInfoTool{}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("Category() = %q, want %q", tool.Category(), "system")
 	}
 }

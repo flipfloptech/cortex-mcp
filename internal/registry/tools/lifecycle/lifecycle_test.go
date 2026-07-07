@@ -14,7 +14,7 @@ func TestInstallTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "node_install" {
 		t.Errorf("expected node_install, got %s", tool.Name())
 	}
-	if tool.Category() != "lifecycle" {
+	if tool.Category() != registry.CategoryLifecycle {
 		t.Errorf("expected lifecycle, got %s", tool.Category())
 	}
 	if tool.Hidden() != true {

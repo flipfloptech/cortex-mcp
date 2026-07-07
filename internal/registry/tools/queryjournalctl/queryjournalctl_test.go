@@ -18,7 +18,7 @@ func TestQueryJournalctlTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "query_journalctl" {
 		t.Errorf("expected Name() == 'query_journalctl', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

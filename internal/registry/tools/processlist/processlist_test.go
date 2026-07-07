@@ -3,6 +3,7 @@ package processlist
 import (
 	"context"
 	"encoding/json"
+	"github.com/flipfloptech/cortex-mcp/internal/registry"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestProcessListTool_ContractCompliance(t *testing.T) {
 		t.Errorf("expected name get_process_list, got %s", tl.Name())
 	}
 
-	if tl.Category() != "compute" {
+	if tl.Category() != registry.CategoryCompute {
 		t.Errorf("expected category compute, got %s", tl.Category())
 	}
 

@@ -76,8 +76,8 @@ func (t *NICEthtoolStatsTool) Name() string {
 	return "get_nic_ethtool_stats"
 }
 
-func (t *NICEthtoolStatsTool) Category() string {
-	return "network"
+func (t *NICEthtoolStatsTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *NICEthtoolStatsTool) Help() string {

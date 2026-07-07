@@ -96,7 +96,7 @@ Supported on: Linux`
 }
 
 // Category returns the tool category.
-func (t *SystemInfoTool) Category() string { return "system" }
+func (t *SystemInfoTool) Category() registry.Category { return registry.CategorySystem }
 
 // Parameters returns the parameter schema (none for system_info).
 func (t *SystemInfoTool) Parameters() []registry.ToolParam { return nil }

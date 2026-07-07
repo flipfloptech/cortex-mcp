@@ -30,8 +30,8 @@ func (t *tool) Help() string {
 	return "Calculates accurate CPU% by taking a rapid delta of /proc/[pid]/stat utime/stime against system uptime."
 }
 
-func (t *tool) Category() string {
-	return "compute"
+func (t *tool) Category() registry.Category {
+	return registry.CategoryCompute
 }
 
 func (t *tool) Hidden() bool {

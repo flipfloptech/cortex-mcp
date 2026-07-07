@@ -49,7 +49,7 @@ Parameters: None`
 }
 
 // Category returns the tool category.
-func (t *IrqAffinityTool) Category() string { return "compute" }
+func (t *IrqAffinityTool) Category() registry.Category { return registry.CategoryCompute }
 
 // Parameters returns the parameter schema.
 func (t *IrqAffinityTool) Parameters() []registry.ToolParam { return nil }

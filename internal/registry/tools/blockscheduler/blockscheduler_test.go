@@ -19,7 +19,7 @@ func TestBlockSchedulerTool_Contract(t *testing.T) {
 	if tool.Name() != "get_block_scheduler_info" {
 		t.Errorf("Name = %q, want %q", tool.Name(), "get_block_scheduler_info")
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("Category = %q, want %q", tool.Category(), "storage")
 	}
 	if tool.Description() == "" {

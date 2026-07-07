@@ -18,7 +18,7 @@ func TestKernelModulesTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_kernel_modules" {
 		t.Errorf("expected Name() == 'get_kernel_modules', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

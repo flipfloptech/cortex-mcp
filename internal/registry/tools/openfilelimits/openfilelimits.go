@@ -44,8 +44,8 @@ func (t *QueryOpenFileLimitsTool) Name() string {
 	return "get_open_file_limits"
 }
 
-func (t *QueryOpenFileLimitsTool) Category() string {
-	return "system"
+func (t *QueryOpenFileLimitsTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QueryOpenFileLimitsTool) Help() string {

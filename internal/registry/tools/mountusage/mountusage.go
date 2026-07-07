@@ -45,8 +45,8 @@ Provides detailed storage and inode usage metrics.`
 }
 
 // Category organizes the tool within the registry.
-func (t *Tool) Category() string {
-	return "storage"
+func (t *Tool) Category() registry.Category {
+	return registry.CategoryStorage
 }
 
 // Hidden hides the tool from some interfaces if true.

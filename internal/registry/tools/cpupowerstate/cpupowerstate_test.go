@@ -81,7 +81,7 @@ func TestCpuPowerState_Contract(t *testing.T) {
 	if tool.Name() != "get_cpu_power_state" {
 		t.Errorf("expected name get_cpu_power_state, got %s", tool.Name())
 	}
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected category compute, got %s", tool.Category())
 	}
 	if tool.Description() == "" || tool.Help() == "" {

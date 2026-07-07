@@ -17,7 +17,7 @@ type benchTool struct {
 func (t benchTool) Name() string                { return t.name }
 func (t benchTool) Description() string         { return "bench tool" }
 func (t benchTool) Help() string                { return "help" }
-func (t benchTool) Category() string            { return "bench" }
+func (t benchTool) Category() Category          { return CategorySystem }
 func (t benchTool) Parameters() []ToolParam     { return nil }
 func (t benchTool) Hidden() bool                { return false }
 func (t benchTool) IsSupported() (bool, string) { return t.supported, "" }

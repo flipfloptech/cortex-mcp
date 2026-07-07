@@ -54,7 +54,7 @@ Parameters: None`
 }
 
 // Category returns the tool category.
-func (t *CpuPowerStateTool) Category() string { return "compute" }
+func (t *CpuPowerStateTool) Category() registry.Category { return registry.CategoryCompute }
 
 // Parameters returns the parameter schema.
 func (t *CpuPowerStateTool) Parameters() []registry.ToolParam { return nil }

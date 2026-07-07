@@ -32,8 +32,10 @@ type Tool interface {
 	//   - Any caveats or limitations
 	Help() string
 
-	// Category returns the tool category (e.g., "lustre", "system", "network").
-	Category() string
+	// Category returns the tool's taxonomy classification (e.g.,
+	// CategorySystem, CategoryStorage). Using the closed Category enum
+	// makes misspelled or miscased categories a compile-time error.
+	Category() Category
 
 	// Parameters returns the parameter schema for this tool.
 	Parameters() []ToolParam

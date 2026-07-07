@@ -45,8 +45,8 @@ Returns a JSON object detailing static hugepage utilization and THP allocation/f
 }
 
 // Category returns the tool classification.
-func (t *Tool) Category() string {
-	return "memory"
+func (t *Tool) Category() registry.Category {
+	return registry.CategoryMemory
 }
 
 // Parameters returns the parameter schema. This tool takes no parameters.

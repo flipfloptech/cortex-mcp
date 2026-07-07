@@ -54,7 +54,7 @@ Parameters: None
 Supported on: Linux`
 }
 
-func (t *NumaStatsTool) Category() string { return "memory" }
+func (t *NumaStatsTool) Category() registry.Category { return registry.CategoryMemory }
 
 func (t *NumaStatsTool) Parameters() []registry.ToolParam { return nil }
 

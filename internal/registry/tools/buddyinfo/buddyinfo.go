@@ -27,8 +27,8 @@ func (t *tool) Help() string {
 	return "Parses /proc/buddyinfo to calculate a fragmentation score (0-100, where 100 means highly fragmented) based on the availability of Order 4+ memory blocks."
 }
 
-func (t *tool) Category() string {
-	return "memory"
+func (t *tool) Category() registry.Category {
+	return registry.CategoryMemory
 }
 
 func (t *tool) Hidden() bool {

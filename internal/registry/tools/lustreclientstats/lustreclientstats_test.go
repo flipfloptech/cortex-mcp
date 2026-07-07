@@ -21,7 +21,7 @@ func TestLustreClientStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_lustre_client_stats" {
 		t.Errorf("expected Name() == 'get_lustre_client_stats', got %q", tool.Name())
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("expected Category() == 'storage', got %q", tool.Category())
 	}
 	if !strings.Contains(tool.Help(), "/sys/fs/lustre") && !strings.Contains(tool.Help(), "/proc/fs/lustre") {

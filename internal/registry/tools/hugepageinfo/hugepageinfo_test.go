@@ -14,7 +14,7 @@ func TestTool_Contract(t *testing.T) {
 	if tool.Name() != "get_hugepage_info" {
 		t.Errorf("expected name 'get_hugepage_info', got '%s'", tool.Name())
 	}
-	if tool.Category() != "memory" {
+	if tool.Category() != registry.CategoryMemory {
 		t.Errorf("expected category 'memory', got '%s'", tool.Category())
 	}
 	if tool.Description() == "" {

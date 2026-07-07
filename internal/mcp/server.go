@@ -119,7 +119,7 @@ func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, 
 			entries = append(entries, gateway.ListToolsEntry{
 				Name:        tool.Name(),
 				Description: tool.Description(),
-				Category:    tool.Category(),
+				Category:    tool.Category().String(),
 			})
 		}
 	}
@@ -166,7 +166,7 @@ func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, i
 		Name:            tool.Name(),
 		Description:     tool.Description(),
 		LongDescription: tool.Help(),
-		Category:        tool.Category(),
+		Category:        tool.Category().String(),
 		Parameters:      meshParams,
 	}
 

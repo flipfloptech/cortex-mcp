@@ -13,7 +13,7 @@ func TestTool_Contract(t *testing.T) {
 	if tool.Name() != "get_numa_edac_errors" {
 		t.Errorf("expected 'get_numa_edac_errors', got %s", tool.Name())
 	}
-	if tool.Category() != "hardware" {
+	if tool.Category() != registry.CategoryHardware {
 		t.Errorf("expected 'hardware', got %s", tool.Category())
 	}
 	if tool.Description() == "" {

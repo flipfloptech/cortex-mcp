@@ -57,8 +57,8 @@ func (t *QuerySysctlTuningTool) Name() string {
 	return "get_sysctl_tuning_state"
 }
 
-func (t *QuerySysctlTuningTool) Category() string {
-	return "system"
+func (t *QuerySysctlTuningTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QuerySysctlTuningTool) Help() string {

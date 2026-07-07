@@ -69,7 +69,7 @@ Supported on: Linux`
 }
 
 // Category classifies this tool under storage.
-func (t *Tool) Category() string { return "storage" }
+func (t *Tool) Category() registry.Category { return registry.CategoryStorage }
 
 // Parameters returns nil — this tool takes no arguments.
 func (t *Tool) Parameters() []registry.ToolParam { return nil }

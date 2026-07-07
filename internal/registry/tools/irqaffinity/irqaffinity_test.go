@@ -16,7 +16,7 @@ func TestIrqAffinityTool_Contract(t *testing.T) {
 	if tool.Name() != "get_irq_affinity" {
 		t.Errorf("expected name 'get_irq_affinity', got %q", tool.Name())
 	}
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected category 'compute', got %q", tool.Category())
 	}
 	if tool.Description() == "" {

@@ -38,8 +38,8 @@ Useful for identifying failing RAM sticks before they cause a system crash.`
 }
 
 // Category returns the functional group for this tool.
-func (t *Tool) Category() string {
-	return "hardware"
+func (t *Tool) Category() registry.Category {
+	return registry.CategoryHardware
 }
 
 // Parameters returns the expected arguments schema (empty for this tool).

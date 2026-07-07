@@ -15,7 +15,7 @@ func TestThreadWchan_Contract(t *testing.T) {
 		t.Errorf("expected get_thread_wchan, got %s", tool.Name())
 	}
 
-	if tool.Category() != "compute" {
+	if tool.Category() != registry.CategoryCompute {
 		t.Errorf("expected compute, got %s", tool.Category())
 	}
 

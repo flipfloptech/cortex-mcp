@@ -77,8 +77,8 @@ func (t *NFSClientStatsTool) Name() string {
 }
 
 // Category returns the tool category.
-func (t *NFSClientStatsTool) Category() string {
-	return "storage"
+func (t *NFSClientStatsTool) Category() registry.Category {
+	return registry.CategoryStorage
 }
 
 // Help returns usage instructions and documentation.

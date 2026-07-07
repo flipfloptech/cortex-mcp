@@ -70,7 +70,7 @@ Supported on: Linux`
 }
 
 // Category returns the tool category.
-func (t *MemoryInfoTool) Category() string { return "memory" }
+func (t *MemoryInfoTool) Category() registry.Category { return registry.CategoryMemory }
 
 // Parameters returns the parameter schema (parameterless).
 func (t *MemoryInfoTool) Parameters() []registry.ToolParam { return nil }

@@ -18,7 +18,7 @@ func TestSystemdStatusTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_systemd_status" {
 		t.Errorf("expected Name() == 'get_systemd_status', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

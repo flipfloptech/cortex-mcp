@@ -31,8 +31,8 @@ func (t *UptimeTool) Name() string {
 }
 
 // Category returns the grouping category for this tool.
-func (t *UptimeTool) Category() string {
-	return "system"
+func (t *UptimeTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 // Description provides a short summary for the MCP catalog.

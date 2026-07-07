@@ -66,8 +66,8 @@ func (t *QueryJournalctlTool) Name() string {
 	return "query_journalctl"
 }
 
-func (t *QueryJournalctlTool) Category() string {
-	return "system"
+func (t *QueryJournalctlTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QueryJournalctlTool) Help() string {

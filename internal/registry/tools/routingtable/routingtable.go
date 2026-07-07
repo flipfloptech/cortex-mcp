@@ -54,8 +54,8 @@ func (t *RoutingTableTool) Name() string {
 	return "get_routing_table"
 }
 
-func (t *RoutingTableTool) Category() string {
-	return "network"
+func (t *RoutingTableTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *RoutingTableTool) Help() string {

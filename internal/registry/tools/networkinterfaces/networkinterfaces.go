@@ -61,8 +61,8 @@ func (t *NetworkInterfacesTool) Name() string {
 	return "get_network_interfaces"
 }
 
-func (t *NetworkInterfacesTool) Category() string {
-	return "network"
+func (t *NetworkInterfacesTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *NetworkInterfacesTool) Help() string {

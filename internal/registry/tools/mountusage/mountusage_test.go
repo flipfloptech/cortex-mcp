@@ -17,7 +17,7 @@ func TestMountUsageTool_Contract(t *testing.T) {
 	if tool.Name() != "get_mount_usage" {
 		t.Errorf("Expected name get_mount_usage, got %s", tool.Name())
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("Expected category storage, got %s", tool.Category())
 	}
 

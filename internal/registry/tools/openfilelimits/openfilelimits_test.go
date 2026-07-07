@@ -18,7 +18,7 @@ func TestOpenFileLimitsTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_open_file_limits" {
 		t.Errorf("expected Name() == 'get_open_file_limits', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	params := tool.Parameters()

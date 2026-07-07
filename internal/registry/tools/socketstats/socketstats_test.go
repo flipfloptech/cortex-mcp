@@ -19,7 +19,7 @@ func TestSocketStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_socket_stats" {
 		t.Errorf("expected Name() == 'get_socket_stats', got %q", tool.Name())
 	}
-	if tool.Category() != "network" {
+	if tool.Category() != registry.CategoryNetwork {
 		t.Errorf("expected Category() == 'network', got %q", tool.Category())
 	}
 	if tool.Parameters() != nil {

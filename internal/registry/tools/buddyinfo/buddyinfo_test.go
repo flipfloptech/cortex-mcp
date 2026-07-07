@@ -15,7 +15,7 @@ func TestBuddyInfo_Contract(t *testing.T) {
 		t.Errorf("expected get_buddy_info, got %s", tool.Name())
 	}
 
-	if tool.Category() != "memory" {
+	if tool.Category() != registry.CategoryMemory {
 		t.Errorf("expected memory, got %s", tool.Category())
 	}
 

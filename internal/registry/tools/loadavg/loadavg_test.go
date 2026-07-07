@@ -21,7 +21,7 @@ func TestLoadAvgTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_loadavg" {
 		t.Errorf("expected Name() == 'loadavg', got %q", tool.Name())
 	}
-	if tool.Category() != "system" {
+	if tool.Category() != registry.CategorySystem {
 		t.Errorf("expected Category() == 'system', got %q", tool.Category())
 	}
 	if !strings.Contains(tool.Help(), "/proc/loadavg") {

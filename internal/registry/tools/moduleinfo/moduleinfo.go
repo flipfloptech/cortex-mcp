@@ -81,8 +81,8 @@ func (t *QueryKernelModuleInfoTool) Name() string {
 	return "get_kernel_module_info"
 }
 
-func (t *QueryKernelModuleInfoTool) Category() string {
-	return "system"
+func (t *QueryKernelModuleInfoTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QueryKernelModuleInfoTool) Help() string {

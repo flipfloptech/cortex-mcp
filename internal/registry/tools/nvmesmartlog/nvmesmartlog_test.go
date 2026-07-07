@@ -18,7 +18,7 @@ func TestToolContract(t *testing.T) {
 	if tool.Name() != "get_nvme_smart_log" {
 		t.Errorf("expected get_nvme_smart_log, got %s", tool.Name())
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("expected storage, got %s", tool.Category())
 	}
 	if tool.Description() == "" || tool.Help() == "" {

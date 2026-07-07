@@ -71,8 +71,8 @@ func (t *QueryDmesgTool) Name() string {
 	return "query_dmesg"
 }
 
-func (t *QueryDmesgTool) Category() string {
-	return "system"
+func (t *QueryDmesgTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 func (t *QueryDmesgTool) Help() string {

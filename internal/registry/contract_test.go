@@ -13,7 +13,7 @@ type mockTool struct {
 	name        string
 	description string
 	help        string
-	category    string
+	category    registry.Category
 	params      []registry.ToolParam
 	supported   bool
 	reason      string
@@ -23,7 +23,7 @@ type mockTool struct {
 func (t *mockTool) Name() string                     { return t.name }
 func (t *mockTool) Description() string              { return t.description }
 func (t *mockTool) Help() string                     { return t.help }
-func (t *mockTool) Category() string                 { return t.category }
+func (t *mockTool) Category() registry.Category      { return t.category }
 func (t *mockTool) Parameters() []registry.ToolParam { return t.params }
 func (t *mockTool) IsSupported() (bool, string)      { return t.supported, t.reason }
 func (t *mockTool) Hidden() bool                     { return false }
@@ -44,7 +44,7 @@ func TestToolInterface_ContractCompliance(t *testing.T) {
 		name:        "test_tool",
 		description: "A test tool",
 		help:        "Detailed help for test_tool.\n\nFiltering: deterministic.",
-		category:    "testing",
+		category:    registry.CategorySystem,
 		params: []registry.ToolParam{
 			{Name: "verbose", Type: "boolean", Description: "Enable verbose output", Required: false, Default: "false"},
 		},
@@ -61,8 +61,8 @@ func TestToolInterface_ContractCompliance(t *testing.T) {
 	if tool.Help() == "" {
 		t.Error("Help() must not be empty")
 	}
-	if tool.Category() != "testing" {
-		t.Errorf("Category() = %q, want %q", tool.Category(), "testing")
+	if tool.Category() != registry.CategorySystem {
+		t.Errorf("Category() = %q, want %q", tool.Category(), registry.CategorySystem)
 	}
 
 	params := tool.Parameters()

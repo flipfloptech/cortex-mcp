@@ -20,7 +20,7 @@ func TestBlockTopologyTool_ContractCompliance(t *testing.T) {
 	if tool.Name() != "get_block_topology" {
 		t.Errorf("Name() = %q, want %q", tool.Name(), "get_block_topology")
 	}
-	if tool.Category() != "storage" {
+	if tool.Category() != registry.CategoryStorage {
 		t.Errorf("Category() = %q, want %q", tool.Category(), "storage")
 	}
 	if tool.Hidden() {

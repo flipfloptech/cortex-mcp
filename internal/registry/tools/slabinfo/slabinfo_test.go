@@ -16,7 +16,7 @@ func TestSlabInfoTool_Contract(t *testing.T) {
 	if tool.Name() != "get_slab_info" {
 		t.Errorf("expected get_slab_info, got %s", tool.Name())
 	}
-	if tool.Category() != "memory" {
+	if tool.Category() != registry.CategoryMemory {
 		t.Errorf("expected memory, got %s", tool.Category())
 	}
 	if tool.Description() == "" {

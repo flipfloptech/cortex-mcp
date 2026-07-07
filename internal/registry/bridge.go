@@ -36,7 +36,7 @@ func (pr *PluginRegistry) BridgeToMesh(meshReg *tools.Registry) {
 			Name:            tool.Name(),
 			Description:     tool.Description(),
 			LongDescription: tool.Help(),
-			Category:        tool.Category(),
+			Category:        tool.Category().String(),
 			Parameters:      meshParams,
 			Hidden:          tool.Hidden(),
 		}, func(ctx context.Context, args json.RawMessage) (*tools.ToolResult, error) {

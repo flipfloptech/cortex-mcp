@@ -24,7 +24,7 @@ func TestNumaStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Help() == "" {
 		t.Error("Help() must not be empty")
 	}
-	if tool.Category() == "" {
+	if tool.Category() == registry.CategoryUnknown {
 		t.Error("Category() must not be empty")
 	}
 	if len(tool.Parameters()) != 0 {

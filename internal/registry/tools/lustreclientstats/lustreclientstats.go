@@ -96,8 +96,8 @@ func (t *LustreClientStatsTool) Name() string {
 }
 
 // Category returns the tool category.
-func (t *LustreClientStatsTool) Category() string {
-	return "storage"
+func (t *LustreClientStatsTool) Category() registry.Category {
+	return registry.CategoryStorage
 }
 
 // Help returns usage instructions and documentation for LLM consumption.

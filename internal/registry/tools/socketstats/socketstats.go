@@ -54,8 +54,8 @@ func (t *SocketStatsTool) Name() string {
 	return "get_socket_stats"
 }
 
-func (t *SocketStatsTool) Category() string {
-	return "network"
+func (t *SocketStatsTool) Category() registry.Category {
+	return registry.CategoryNetwork
 }
 
 func (t *SocketStatsTool) Help() string {

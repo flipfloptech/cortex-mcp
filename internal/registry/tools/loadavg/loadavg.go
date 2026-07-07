@@ -40,8 +40,8 @@ func (t *LoadAvgTool) Name() string {
 }
 
 // Category returns the tool category.
-func (t *LoadAvgTool) Category() string {
-	return "system"
+func (t *LoadAvgTool) Category() registry.Category {
+	return registry.CategorySystem
 }
 
 // Help returns usage instructions and documentation for LLM consumption.

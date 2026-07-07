@@ -75,8 +75,8 @@ func (t *CgroupLimitsTool) Name() string {
 	return "get_cgroup_limits"
 }
 
-func (t *CgroupLimitsTool) Category() string {
-	return "compute"
+func (t *CgroupLimitsTool) Category() registry.Category {
+	return registry.CategoryCompute
 }
 
 func (t *CgroupLimitsTool) Help() string {
