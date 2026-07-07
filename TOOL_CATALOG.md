@@ -403,6 +403,25 @@ Inspect unit activation states for specific daemons, list all loaded services, a
 
 ---
 
+#### `get_sysctl_tuning_state`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect and audit kernel parameters related to network buffer limits, connection queues, virtual memory caching ratios, and asymmetric routing.
+
+**Data Sources:**
+- **Primary**: Native `/proc/sys/` files (resolved via path-translation).
+- **Fallback**: `sysctl -n <key>` command execution.
+
+**Mathematical Models / Formatting:**
+- **Path Resolution**: Maps dot-notation sysctl parameter names to respective filesystem paths under `/proc/sys/`.
+- **Predefined HPC Profile**: Audits 10 critical parameters (`net.ipv4.conf.all.rp_filter`, `net.ipv4.conf.default.rp_filter`, `net.ipv4.tcp_rmem`, `net.ipv4.tcp_wmem`, `net.core.rmem_max`, `net.core.wmem_max`, `net.core.somaxconn`, `net.core.netdev_max_backlog`, `vm.dirty_ratio`, `vm.dirty_background_ratio`) to evaluate latency and throughput capabilities.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/sys` is unreadable.
+- If a parameter key does not exist or is protected by strict permission policies, its returned value contains the error message.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
