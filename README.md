@@ -81,9 +81,13 @@ In Cursor, navigate to **Settings -> Features -> MCP Servers** and add a new ser
 - `uninstall`: Remove the systemd service and binary from all remote hosts.
 - `mcp`: Launch the gateway in MCP server mode over Streamable HTTP (used by LLMs).
 
-## Tool Catalog
+## Documentation
 
-For a comprehensive list of all available tools, their mathematical models, data sources, and philosophical design (such as graceful degradation), please see the [Cortex MCP Tool Catalog](TOOL_CATALOG.md).
+For comprehensive guides, references, and architectural specifications, see the following documentation:
+
+- [Quick Start Guide](docs/QUICK_START.md) — Set up `cortex-mcp`, deploy fleet nodes, and connect LLM clients.
+- [Cortex MCP Tool Catalog](docs/TOOL_CATALOG.md) — Reference for all available diagnostics, routing, and system monitoring tools.
+- [PKI & Security Specification](docs/PKI.md) — Details on mTLS transport, cluster CA generation, and daemon handshake phases.
 
 ## Configuration (`mesh.toml`)
 
