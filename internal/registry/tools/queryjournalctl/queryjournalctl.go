@@ -246,19 +246,37 @@ func (t *QueryJournalctlTool) Execute(ctx context.Context, args json.RawMessage)
 }
 
 type rawJournalEntry struct {
-	RealtimeTimestamp string `json:"__REALTIME_TIMESTAMP"`
-	Message           string `json:"MESSAGE"`
-	SyslogIdentifier  string `json:"SYSLOG_IDENTIFIER"`
-	SystemdUnit       string `json:"_SYSTEMD_UNIT"`
-	Priority          string `json:"PRIORITY"`
-	Hostname          string `json:"_HOSTNAME"`
-	Pid               string `json:"_PID"`
+	RealtimeTimestamp string          `json:"__REALTIME_TIMESTAMP"`
+	Message           json.RawMessage `json:"MESSAGE"`
+	SyslogIdentifier  string          `json:"SYSLOG_IDENTIFIER"`
+	SystemdUnit       string          `json:"_SYSTEMD_UNIT"`
+	Priority          string          `json:"PRIORITY"`
+	Hostname          string          `json:"_HOSTNAME"`
+	Pid               string          `json:"_PID"`
 }
 
 func parseJournalLine(line []byte) (JournalEntry, error) {
 	var raw rawJournalEntry
 	if err := json.Unmarshal(line, &raw); err != nil {
 		return JournalEntry{}, err
+	}
+
+	var message string
+	if len(raw.Message) > 0 {
+		if raw.Message[0] == '"' {
+			if err := json.Unmarshal(raw.Message, &message); err != nil {
+				message = string(raw.Message)
+			}
+		} else if raw.Message[0] == '[' {
+			var bytesVal []byte
+			if err := json.Unmarshal(raw.Message, &bytesVal); err == nil {
+				message = string(bytesVal)
+			} else {
+				message = string(raw.Message)
+			}
+		} else {
+			message = string(raw.Message)
+		}
 	}
 
 	ts := formatRealtimeTimestamp(raw.RealtimeTimestamp)
@@ -270,7 +288,7 @@ func parseJournalLine(line []byte) (JournalEntry, error) {
 
 	return JournalEntry{
 		Timestamp:  ts,
-		Message:    raw.Message,
+		Message:    message,
 		Identifier: identifier,
 		Priority:   raw.Priority,
 		Hostname:   raw.Hostname,

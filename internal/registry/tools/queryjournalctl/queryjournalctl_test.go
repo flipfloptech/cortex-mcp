@@ -44,14 +44,30 @@ func TestFormatRealtimeTimestamp(t *testing.T) {
 func TestParseJournalLine(t *testing.T) {
 	t.Parallel()
 
-	input := `{"__REALTIME_TIMESTAMP":"1783433504008977","MESSAGE":"split lock detection","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"4","_HOSTNAME":"strixhalo","_PID":"1234"}`
-	entry, err := parseJournalLine([]byte(input))
-	if err != nil {
-		t.Fatalf("failed to parse: %v", err)
+	// 1. String message
+	{
+		input := `{"__REALTIME_TIMESTAMP":"1783433504008977","MESSAGE":"split lock detection","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"4","_HOSTNAME":"strixhalo","_PID":"1234"}`
+		entry, err := parseJournalLine([]byte(input))
+		if err != nil {
+			t.Fatalf("failed to parse: %v", err)
+		}
+
+		if entry.Message != "split lock detection" || entry.Timestamp != "2026-07-07T14:11:44.008977Z" || entry.Identifier != "kernel" || entry.Priority != "4" || entry.Hostname != "strixhalo" || entry.Pid != "1234" {
+			t.Errorf("unexpected parsed entry: %+v", entry)
+		}
 	}
 
-	if entry.Message != "split lock detection" || entry.Timestamp != "2026-07-07T14:11:44.008977Z" || entry.Identifier != "kernel" || entry.Priority != "4" || entry.Hostname != "strixhalo" || entry.Pid != "1234" {
-		t.Errorf("unexpected parsed entry: %+v", entry)
+	// 2. Byte array message
+	{
+		input := `{"__REALTIME_TIMESTAMP":"1783433504008977","MESSAGE":[115,112,108,105,116],"SYSLOG_IDENTIFIER":"kernel"}`
+		entry, err := parseJournalLine([]byte(input))
+		if err != nil {
+			t.Fatalf("failed to parse byte array message: %v", err)
+		}
+
+		if entry.Message != "split" {
+			t.Errorf("expected Message to be 'split', got %q", entry.Message)
+		}
 	}
 }
 
