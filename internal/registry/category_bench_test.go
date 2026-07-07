@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func BenchmarkCategoryString(b *testing.B) {
+func BenchmarkString(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = CategoryStorage.String()
@@ -40,14 +40,14 @@ func BenchmarkCategoryNames(b *testing.B) {
 	}
 }
 
-func BenchmarkCategoryMarshalJSON(b *testing.B) {
+func BenchmarkMarshalJSON(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_, _ = json.Marshal(CategoryStorage)
 	}
 }
 
-func BenchmarkCategoryUnmarshalJSON(b *testing.B) {
+func BenchmarkUnmarshalJSON(b *testing.B) {
 	data := []byte(`"storage"`)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
