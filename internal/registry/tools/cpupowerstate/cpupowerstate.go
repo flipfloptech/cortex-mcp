@@ -3,6 +3,7 @@ package cpupowerstate
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -50,6 +51,11 @@ Data is sourced purely from sysfs (/sys/devices/system/cpu/).
 Outputs hardware limits, average active frequencies, and sleep states. 
 Crucial for diagnosing latency spikes or thermal throttling.
 
+Also reports cumulative thermal throttle event counters (Intel-specific,
+from cpu*/thermal_throttle/) as a "thermal_throttle" block, warning when
+the CPU has thermally throttled since boot. The block is omitted when the
+interface is absent (AMD, most VMs).
+
 Parameters: None`
 }
 
@@ -93,11 +99,26 @@ type CStateLimits struct {
 	DisabledStates []string `json:"disabled_states"`
 }
 
+// ThermalThrottle aggregates the cumulative thermal throttle event counters
+// exposed by the x86 thermal interrupt driver (Intel-specific; absent on AMD
+// and most virtual machines). Counters are cumulative since boot.
+type ThermalThrottle struct {
+	CoreEventsTotal    uint64 `json:"core_events_total"`
+	PackageEventsTotal uint64 `json:"package_events_total"`
+	CpusWithCoreEvents int    `json:"cpus_with_core_events"`
+	// PackageCountApproximate is set when topology/physical_package_id is
+	// unavailable and package_events_total is the max counter observed
+	// across CPUs instead of a per-package distinct sum.
+	PackageCountApproximate bool `json:"package_count_approximate,omitempty"`
+}
+
 // CpuPowerStateData is the JSON root struct.
 type CpuPowerStateData struct {
 	SystemSummary     SystemSummary               `json:"system_summary"`
 	FrequencyProfiles map[string]FrequencyProfile `json:"frequency_profiles,omitempty"`
 	CStateLimits      *CStateLimits               `json:"c_state_limits,omitempty"`
+	ThermalThrottle   *ThermalThrottle            `json:"thermal_throttle,omitempty"`
+	WarningReasons    []string                    `json:"warning_reasons,omitempty"`
 }
 
 // groupData tracks raw parsing state for calculating averages.
@@ -116,12 +137,17 @@ func (t *CpuPowerStateTool) Execute(_ context.Context, _ json.RawMessage) (*regi
 		FrequencyProfiles: make(map[string]FrequencyProfile),
 	}
 
+	// 0. Collect thermal throttle counters (independent of cpufreq visibility;
+	// nil when the sysfs interface is absent, e.g. AMD or most VMs).
+	data.ThermalThrottle = collectThermalThrottle()
+
 	// 1. Check for cpufreq management via cpu0
 	cpu0Freq := filepath.Join(sysDevicesSystemCpuPath, "cpu0", "cpufreq")
 	if _, err := os.Stat(cpu0Freq); err != nil {
 		data.SystemSummary.PowerManagementManagedByOS = false
 		data.SystemSummary.CStatesVisible = false
-		return registry.NewResult(t.Name(), registry.StatusOK, "Power management managed by BIOS/Hypervisor", data), nil
+		status, summary := applyThrottleWarning(&data, "Power management managed by BIOS/Hypervisor")
+		return registry.NewResult(t.Name(), status, summary, data), nil
 	}
 	data.SystemSummary.PowerManagementManagedByOS = true
 
@@ -248,7 +274,108 @@ func (t *CpuPowerStateTool) Execute(_ context.Context, _ json.RawMessage) (*regi
 		}
 	}
 
-	return registry.NewResult(t.Name(), registry.StatusOK, "CPU Power State Data", data), nil
+	status, summary := applyThrottleWarning(&data, "CPU Power State Data")
+	return registry.NewResult(t.Name(), status, summary, data), nil
+}
+
+// collectThermalThrottle scans <root>/cpu<N>/thermal_throttle counters and
+// aggregates them. It returns nil (block omitted) when cpu0 does not expose a
+// thermal_throttle directory. Package counters are identical for every CPU in
+// a physical package, so they are summed once per distinct package via
+// topology/physical_package_id; when topology is unavailable the maximum
+// observed counter is reported and flagged as approximate.
+func collectThermalThrottle() *ThermalThrottle {
+	if _, err := os.Stat(filepath.Join(sysDevicesSystemCpuPath, "cpu0", "thermal_throttle")); err != nil {
+		return nil
+	}
+
+	entries, err := os.ReadDir(sysDevicesSystemCpuPath)
+	if err != nil {
+		return nil
+	}
+
+	tt := &ThermalThrottle{}
+	pkgCounts := make(map[int]uint64)
+	topologyOK := true
+	var maxPkgCount uint64
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if matches := cpuRegex.FindStringSubmatch(e.Name()); len(matches) != 2 {
+			continue
+		}
+		ttDir := filepath.Join(sysDevicesSystemCpuPath, e.Name(), "thermal_throttle")
+		if _, err := os.Stat(ttDir); err != nil {
+			continue
+		}
+
+		core := readThrottleCount(filepath.Join(ttDir, "core_throttle_count"))
+		tt.CoreEventsTotal += core
+		if core > 0 {
+			tt.CpusWithCoreEvents++
+		}
+
+		pkg := readThrottleCount(filepath.Join(ttDir, "package_throttle_count"))
+		if pkg > maxPkgCount {
+			maxPkgCount = pkg
+		}
+
+		pkgIDData, err := os.ReadFile(filepath.Join(sysDevicesSystemCpuPath, e.Name(), "topology", "physical_package_id"))
+		if err != nil {
+			topologyOK = false
+			continue
+		}
+		pkgID, err := strconv.Atoi(strings.TrimSpace(string(pkgIDData)))
+		if err != nil {
+			topologyOK = false
+			continue
+		}
+		if pkg > pkgCounts[pkgID] {
+			pkgCounts[pkgID] = pkg
+		}
+	}
+
+	if topologyOK {
+		for _, v := range pkgCounts {
+			tt.PackageEventsTotal += v
+		}
+	} else {
+		tt.PackageEventsTotal = maxPkgCount
+		tt.PackageCountApproximate = true
+	}
+
+	return tt
+}
+
+// readThrottleCount reads a cumulative throttle counter file. Unreadable or
+// malformed files are treated as 0 events.
+func readThrottleCount(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	v, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// applyThrottleWarning appends a thermal throttle warning to data when any
+// throttle events were recorded and returns the result status and summary.
+// With no events (or no throttle telemetry) the ok status and the provided
+// summary are returned unchanged.
+func applyThrottleWarning(data *CpuPowerStateData, okSummary string) (registry.ResultStatus, string) {
+	tt := data.ThermalThrottle
+	if tt == nil || (tt.CoreEventsTotal == 0 && tt.PackageEventsTotal == 0) {
+		return registry.StatusOK, okSummary
+	}
+	warning := fmt.Sprintf("CPU has thermally throttled since boot (core events: %d, package events: %d)",
+		tt.CoreEventsTotal, tt.PackageEventsTotal)
+	data.WarningReasons = append(data.WarningReasons, warning)
+	return registry.StatusWarning, warning
 }
 
 func readKHz(path string) (int, error) {

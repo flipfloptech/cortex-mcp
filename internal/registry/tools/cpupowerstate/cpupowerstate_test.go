@@ -581,3 +581,59 @@ func TestCpuPowerState_ThermalThrottle_BiosManagedIncludesBlock(t *testing.T) {
 		t.Errorf("expected power_management_managed_by_os to remain false")
 	}
 }
+
+// setupThrottleSysfsBench builds a minimal throttle tree for benchmarks.
+func setupThrottleSysfsBench(b *testing.B) string {
+	b.Helper()
+	dir := b.TempDir()
+	for cpu := 0; cpu < 2; cpu++ {
+		ttDir := filepath.Join(dir, "cpu"+strconv.Itoa(cpu), "thermal_throttle")
+		if err := os.MkdirAll(ttDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		topoDir := filepath.Join(dir, "cpu"+strconv.Itoa(cpu), "topology")
+		if err := os.MkdirAll(topoDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(ttDir, "core_throttle_count"), []byte("3\n"), 0644); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(ttDir, "package_throttle_count"), []byte("7\n"), 0644); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(topoDir, "physical_package_id"), []byte("0\n"), 0644); err != nil {
+			b.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func BenchmarkCollectThermalThrottle(b *testing.B) {
+	old := sysDevicesSystemCpuPath
+	sysDevicesSystemCpuPath = setupThrottleSysfsBench(b)
+	defer func() { sysDevicesSystemCpuPath = old }()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collectThermalThrottle()
+	}
+}
+
+func BenchmarkReadThrottleCount(b *testing.B) {
+	dir := b.TempDir()
+	path := filepath.Join(dir, "core_throttle_count")
+	if err := os.WriteFile(path, []byte("42\n"), 0644); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = readThrottleCount(path)
+	}
+}
+
+func BenchmarkApplyThrottleWarning(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		data := CpuPowerStateData{ThermalThrottle: &ThermalThrottle{CoreEventsTotal: 5, PackageEventsTotal: 2}}
+		_, _ = applyThrottleWarning(&data, "CPU Power State Data")
+	}
+}
