@@ -46,7 +46,7 @@ Provides detailed storage and inode usage metrics.`
 
 // Category organizes the tool within the registry.
 func (t *Tool) Category() string {
-	return "Storage"
+	return "storage"
 }
 
 // Hidden hides the tool from some interfaces if true.

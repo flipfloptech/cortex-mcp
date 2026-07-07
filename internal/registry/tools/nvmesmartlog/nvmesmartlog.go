@@ -37,7 +37,7 @@ func (t *Tool) Help() string {
 }
 
 func (t *Tool) Category() string {
-	return "Storage"
+	return "storage"
 }
 
 func (t *Tool) Parameters() []registry.ToolParam {
