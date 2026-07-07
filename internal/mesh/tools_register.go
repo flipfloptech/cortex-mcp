@@ -30,6 +30,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numastats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nicethtoolstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nvmesmartlog"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/openfilelimits"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processtree"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/querydmesg"

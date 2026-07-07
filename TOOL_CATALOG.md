@@ -440,6 +440,24 @@ Inspect loaded Linux kernel modules/drivers, operational states, sizes, memory a
 
 ---
 
+#### `get_open_file_limits`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect system-wide file descriptor allocation limits and utilization percentage.
+
+**Data Sources:**
+- **Primary**: Native `/proc/sys/fs/file-nr` file.
+- **Fallback**: `sysctl fs.file-nr` command execution.
+
+**Mathematical Models / Formatting:**
+- **Allocation Statistics**: Parses space-separated metrics, calculating system file descriptor capacity limit usage percentage as `(allocated / max) * 100`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the proc file is missing and the `sysctl` command is not in `PATH`.
+- If both read types fail, a tool execution error is returned.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
