@@ -77,6 +77,8 @@ git checkout -b feat/my-new-tool
 
 ## Phase 1: Tool Definition & Tests (TDD)
 
+Before proceeding, clarify any ambiguous requirements or design choices. Formulate and ask questions to the user if there are any unknowns (e.g., data source locations, structure formats, fallback commands).
+
 Write tests *before* writing the implementation (Tests First, Code Second). Create `internal/registry/tools/mytool/mytool_test.go`.
 
 ### Required Test Coverage & Scope:
