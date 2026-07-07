@@ -854,6 +854,11 @@ These tools operate at the MCP gateway, not on individual nodes. They are **dire
 
 Discovers all available **visible** tools across the mesh. Hidden tools are excluded. Returns name, description, and category for each tool.
 
+**Parameters:**
+- `category` (string, optional): Only list tools in this category. Case-insensitive. Valid values: `system`, `compute`, `memory`, `network`, `storage`, `hardware`, `lifecycle`. Invalid values return an error listing the valid categories.
+
+Categories are a closed enum (`registry.Category`) — tools declare them as typed constants, so a misspelled or miscased category cannot compile.
+
 ### `get_tool_help`
 *Category: `meta` · MCP Access: Direct*
 

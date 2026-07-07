@@ -57,7 +57,7 @@ EOF
 ./cortex-mcp install
 ```
 
-Point your MCP client at `http://localhost:8080/mcp`. Start with the `get_mesh_overview` tool — it aggregates roles, versions, and topology across the fleet and renders a Mermaid diagram. The server also ships a `system_introduction` prompt that teaches the LLM the meta-tool workflow.
+Point your MCP client at `http://localhost:8080/mcp`. Start with the `get_mesh_overview` tool — it aggregates roles, versions, and topology across the fleet and renders a Mermaid diagram. `get_tool_list` accepts an optional `category` filter (`system`, `compute`, `memory`, `network`, `storage`, `hardware`). The server also ships a `system_introduction` prompt that teaches the LLM the meta-tool workflow.
 
 Running `./cortex-mcp` with no arguments also works with **zero configuration**: it becomes a local-only node exposing this machine's diagnostics.
 

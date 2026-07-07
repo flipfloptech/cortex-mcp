@@ -140,8 +140,8 @@ Returns the cluster topology map, active nodes, and roles (SFA/MGS/MDS/OSS/Clien
 - *LLM Prompt*: `"Show me the current state and structure of the cluster mesh."`
 
 ### 2. `get_tool_list`
-Discovers all registered diagnostic tools available in the fleet.
-- *LLM Prompt*: `"What diagnostics tools are available in the cluster?"`
+Discovers all registered diagnostic tools available in the fleet. Accepts an optional `category` filter (`system`, `compute`, `memory`, `network`, `storage`, `hardware`).
+- *LLM Prompt*: `"What storage diagnostics tools are available in the cluster?"`
 
 ### 3. `get_tool_help`
 Retrieves the exact parameter schema for a specific tool.
