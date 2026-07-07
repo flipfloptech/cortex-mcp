@@ -364,6 +364,26 @@ Query the systemd journal logs with time-bounds and regex filtering.
 
 ---
 
+#### `query_dmesg`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect and filter the kernel ring buffer logs.
+
+**Data Sources:**
+- **Primary**: Native syslog `klogctl` syscalls (actions 10 and 3).
+- **Fallback**: `dmesg -r` command (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **Raw Buffer Parser**: Decodes logs line-by-line, matching syslog priority prefixes `<p>` to map facility values and level names (`emerg`, `alert`, `crit`, `err`, `warn`, `notice`, `info`, `debug`).
+- **Timestamp Parsing**: Extracts decimal seconds offset string `[seconds]` into float values representing kernel runtime offsets.
+- **Go Regex Engine**: Matches message payload substrings against compiled expressions.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `dmesg` binary is missing and raw `klogctl` returns permission errors.
+- If both native reads and shell fallbacks are restricted by security policies, an execution error is returned.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
