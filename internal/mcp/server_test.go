@@ -65,7 +65,7 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 	})
 
 	srv := NewServer(&mockDispatcher{}, topology, plugins)
-	res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, EmptyInput{})
+	res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, ListToolsInput{})
 	if err != nil {
 		t.Fatalf("handleListTools failed: %v", err)
 	}
@@ -87,6 +87,173 @@ func TestServer_ListToolsDynamic(t *testing.T) {
 	}
 	if strings.Contains(content, `"secret_tool"`) {
 		t.Error("did not expect 'secret_tool' tool in result (it is hidden)")
+	}
+}
+
+// listToolsTestServer builds a server whose topology advertises one system
+// tool, one storage tool, and one hidden lifecycle tool.
+func listToolsTestServer() *Server {
+	topology := &mockTopologyProvider{
+		snapshot: api.TopologySnapshot{
+			NodeDetails: []api.NodeSummary{
+				{NodeID: "node1", Capabilities: []string{"tool:get_uptime", "tool:get_disk_io_stats", "tool:node_stop"}},
+			},
+		},
+	}
+	plugins := registry.NewPluginRegistryFrom("test-node", []registry.Tool{
+		&mockTool{name: "get_uptime", description: "Get uptime", category: registry.CategorySystem},
+		&mockTool{name: "get_disk_io_stats", description: "Disk IO", category: registry.CategoryStorage},
+		&mockTool{name: "node_stop", description: "Stop node", category: registry.CategoryLifecycle, hidden: true},
+	})
+	return NewServer(&mockDispatcher{}, topology, plugins)
+}
+
+// TestServer_ListToolsCategoryFilter verifies get_tool_list honors the
+// optional category argument.
+func TestServer_ListToolsCategoryFilter(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		category    string
+		wantTool    string
+		excludeTool string
+	}{
+		{"filter storage", "storage", `"get_disk_io_stats"`, `"get_uptime"`},
+		{"filter system", "system", `"get_uptime"`, `"get_disk_io_stats"`},
+		// Case-insensitive: the exact bug class that motivated the enum.
+		{"filter mixed case", "Storage", `"get_disk_io_stats"`, `"get_uptime"`},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := listToolsTestServer()
+			res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, ListToolsInput{Category: tc.category})
+			if err != nil {
+				t.Fatalf("handleListTools failed: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("expected success, got error: %v", res.Content)
+			}
+			content := res.Content[0].(*mcp.TextContent).Text
+			if !strings.Contains(content, tc.wantTool) {
+				t.Errorf("category %q: expected %s in result, got: %s", tc.category, tc.wantTool, content)
+			}
+			if strings.Contains(content, tc.excludeTool) {
+				t.Errorf("category %q: did not expect %s in result, got: %s", tc.category, tc.excludeTool, content)
+			}
+		})
+	}
+}
+
+// TestServer_ListToolsCategoryFilter_Empty verifies the no-filter behavior is
+// unchanged: all visible tools, hidden excluded.
+func TestServer_ListToolsCategoryFilter_Empty(t *testing.T) {
+	t.Parallel()
+
+	srv := listToolsTestServer()
+	res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, ListToolsInput{})
+	if err != nil {
+		t.Fatalf("handleListTools failed: %v", err)
+	}
+	content := res.Content[0].(*mcp.TextContent).Text
+	for _, want := range []string{`"get_uptime"`, `"get_disk_io_stats"`} {
+		if !strings.Contains(content, want) {
+			t.Errorf("expected %s in unfiltered result", want)
+		}
+	}
+	if strings.Contains(content, `"node_stop"`) {
+		t.Error("hidden tool must not appear in unfiltered result")
+	}
+}
+
+// TestServer_ListToolsCategoryFilter_Invalid verifies an unknown category
+// returns a self-correcting error that lists every valid category.
+func TestServer_ListToolsCategoryFilter_Invalid(t *testing.T) {
+	t.Parallel()
+
+	srv := listToolsTestServer()
+	res, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, ListToolsInput{Category: "lustre"})
+	if err != nil {
+		t.Fatalf("handleListTools failed: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected error result for invalid category")
+	}
+	content := res.Content[0].(*mcp.TextContent).Text
+	for _, name := range registry.CategoryNames() {
+		if !strings.Contains(content, name) {
+			t.Errorf("invalid-category error must list %q, got: %s", name, content)
+		}
+	}
+}
+
+// TestServer_ListToolsFallbackDispatch verifies the local-fallback path
+// (no plugins/topology) dispatches the gateway's canonical meta-tool name
+// "list_tools" — not "get_tool_list", which gateway.Dispatch rejects —
+// and passes the category filter through.
+func TestServer_ListToolsFallbackDispatch(t *testing.T) {
+	t.Parallel()
+
+	var gotName string
+	var gotArgs json.RawMessage
+	disp := &mockDispatcher{
+		dispatchFunc: func(_ context.Context, toolName string, args json.RawMessage) (*tools.ToolResult, error) {
+			gotName = toolName
+			gotArgs = args
+			return &tools.ToolResult{Content: json.RawMessage(`{"tools":[]}`)}, nil
+		},
+	}
+
+	srv := NewServer(disp, nil, nil)
+	_, _, err := srv.handleListTools(context.Background(), &mcp.CallToolRequest{}, ListToolsInput{Category: "storage"})
+	if err != nil {
+		t.Fatalf("handleListTools failed: %v", err)
+	}
+	if gotName != "list_tools" {
+		t.Errorf("fallback dispatched %q, want %q", gotName, "list_tools")
+	}
+	if !strings.Contains(string(gotArgs), `"storage"`) {
+		t.Errorf("fallback args %s must carry the category filter", gotArgs)
+	}
+}
+
+// TestServer_ToolHelpFallbackDispatch verifies the same name-mismatch fix
+// for get_tool_help → tool_help.
+func TestServer_ToolHelpFallbackDispatch(t *testing.T) {
+	t.Parallel()
+
+	var gotName string
+	disp := &mockDispatcher{
+		dispatchFunc: func(_ context.Context, toolName string, _ json.RawMessage) (*tools.ToolResult, error) {
+			gotName = toolName
+			return &tools.ToolResult{Content: json.RawMessage(`{}`)}, nil
+		},
+	}
+
+	srv := NewServer(disp, nil, nil)
+	_, _, err := srv.handleToolHelp(context.Background(), &mcp.CallToolRequest{}, ToolHelpInput{ToolName: "get_uptime"})
+	if err != nil {
+		t.Fatalf("handleToolHelp failed: %v", err)
+	}
+	if gotName != "tool_help" {
+		t.Errorf("fallback dispatched %q, want %q", gotName, "tool_help")
+	}
+}
+
+// TestListToolsDescription_MentionsAllCategories keeps the LLM-facing help
+// text in lockstep with the Category enum: adding a category without
+// updating discoverability documentation must fail the build.
+func TestListToolsDescription_MentionsAllCategories(t *testing.T) {
+	t.Parallel()
+
+	desc := listToolsDescription()
+	for _, name := range registry.CategoryNames() {
+		if !strings.Contains(desc, name) {
+			t.Errorf("get_tool_list description must mention category %q, got: %s", name, desc)
+		}
 	}
 }
 
