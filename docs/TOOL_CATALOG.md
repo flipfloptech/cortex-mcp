@@ -477,6 +477,346 @@ Inspect system-wide file descriptor allocation limits and utilization percentage
 
 ---
 
+#### `get_pressure_stall_info`
+*Category: `system` · Runs on: Every Linux node with PSI enabled (kernel ≥ 4.20, not booted with `psi=0`)*
+
+Reads the kernel's Pressure Stall Information (PSI) accounting to quantify how much wall-clock time tasks spend stalled waiting for CPU, memory, I/O, and IRQ. This is the canonical saturation signal: non-zero `full` pressure means every non-idle task was blocked simultaneously — pure lost throughput.
+
+**Data Sources:**
+- Read directly from `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`.
+- `/proc/pressure/irq` (optional; kernels ≥ 6.1 only).
+
+**Mathematical Models / Formatting:**
+- Decodes each `some`/`full` record into `avg10`/`avg60`/`avg300` percentages plus the cumulative stall total in microseconds (`total_usec`).
+- Pre-evaluated `warning_reasons` on the 10-second averages: `cpu some avg10 > 40%` (CPU contention), `memory full avg10 > 10%` (reclaim/thrashing stalls), `io full avg10 > 10%` (storage saturation). Any breach flips the result status to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/pressure/cpu` is missing ("PSI not available (kernel < 4.20 or psi=0)").
+- A missing `irq` file is normal on kernels < 6.1 and is silently omitted; the `cpu` resource has no `full` record on kernels < 5.13.
+- A malformed resource file is skipped and reported in `notes`; if no resource is readable at all, an error result is returned.
+
+---
+
+#### `get_time_sync_status`
+*Category: `system` · Runs on: Every Linux node*
+
+Audits system clock discipline: whether the clock is synchronized, by how much it drifts, which kernel clocksource is active, and which NTP daemon (if any) is steering it. Clock skew silently breaks TLS, Kerberos, distributed locks, log correlation, and lease logic.
+
+**Data Sources:**
+- Native `adjtimex(2)` syscall in read-only mode (`modes=0`): `STA_UNSYNC` synchronization flag, clock offset (nanoseconds when `STA_NANO` is set, microseconds otherwise), estimated/maximum error bounds.
+- `/sys/devices/system/clocksource/clocksource0/current_clocksource` and `available_clocksource`.
+- Enrichment via binaries when present: `chronyc -c tracking` (stratum, reference source, daemon offset, leap status) or `timedatectl show` (`NTP=`/`NTPSynchronized=` properties, attributed to `systemd-timesyncd`).
+
+**Mathematical Models / Formatting:**
+- Kernel offset normalized to milliseconds with 2 decimal places, sign preserved (`STA_NANO` unit handling).
+- `warning_reasons`: clock not synchronized; absolute offset > 100 ms; current clocksource is not `tsc` on amd64 (caveat: paravirtual clocksources such as `kvm-clock`/`hyperv_clocksource` are normal on VMs).
+
+**Degradation Profile:**
+- `adjtimex` denied (`EPERM`, common in unprivileged containers): falls back to daemon queries only and reports `"kernel_status_available": false`; synchronization is then judged from the daemon (chrony leap status / `NTPSynchronized`).
+- No `chronyc`/`timedatectl`: the `ntp_daemon` object is omitted; kernel + clocksource data still returned.
+- Missing clocksource sysfs files: the `clocksource` object is omitted.
+
+---
+
+#### `get_kernel_security_state`
+*Category: `system` · Runs on: Every Linux node*
+
+Audits the kernel's integrity and hardening posture: taint state (is this kernel still trustworthy/supportable?), lockdown mode, active LSM (SELinux/AppArmor), and per-CPU-vulnerability mitigation state.
+
+**Data Sources:**
+- `/proc/sys/kernel/tainted` — decimal bitmask decoded bit-by-bit (bits 0–18) into flag letters and plain-language reasons (P proprietary module, F force loaded, O out-of-tree, E unsigned, L soft lockup, K live patched, ...).
+- `/sys/kernel/security/lockdown` — the active mode is the bracketed word in `none [integrity] confidentiality`.
+- SELinux: `/sys/fs/selinux/enforce` (`1` = enforcing, `0` = permissive, absent = `not_present`).
+- AppArmor: `/sys/module/apparmor/parameters/enabled` (`Y`/`N`, absent = `not_present`).
+- CPU vulnerabilities: `/sys/devices/system/cpu/vulnerabilities/*`.
+
+**Mathematical Models / Formatting:**
+- Each vulnerability's raw kernel string is classified deterministically: `Not affected` → `not_affected`, `Mitigation: ...` → `mitigated`, `Vulnerable...` → `vulnerable` (context-prefixed strings like `KVM: Mitigation: ...` handled); `vulnerable_count` aggregates the unmitigated ones.
+- `warning_reasons`: any `vulnerable_count > 0` (with the affected names), and trust-relevant taint bits P (proprietary), F (force loaded), E (unsigned module).
+
+**Degradation Profile:**
+- Every source is independent: a missing file yields `not_present` (LSM), an omitted `lockdown_mode`, an empty vulnerability list, or an untainted default — never an execution error.
+- An unparseable taint value degrades to untainted (`0`).
+
+---
+
+#### `get_scheduled_jobs`
+*Category: `system` · Runs on: Linux nodes with systemd and/or cron*
+
+Inventories all recurring background work on the node: systemd timers and cron entries. Essential for explaining periodic load spikes, tracing unexpected file changes, and auditing active automation.
+
+**Data Sources:**
+- systemd timers: `systemctl list-timers --all --no-pager --output=json`; on older systemd without JSON support, the plain-text table is parsed as a fallback (unit/activates always recovered, timestamps best-effort).
+- System cron parsed natively: `/etc/crontab` and `/etc/cron.d/*` (`m h dom mon dow user command` format).
+- User crontabs parsed natively: `/var/spool/cron/crontabs/*` (Debian) and `/var/spool/cron/*` (RHEL) — one file per user, no user column.
+
+**Mathematical Models / Formatting:**
+- Timer microsecond-epoch fields (`next`, `last`) converted to RFC3339 UTC (`next_iso`, `last_iso`), `null` preserved for never/none.
+- Comments and environment lines skipped; `@reboot`/`@daily` specials preserved verbatim as the schedule.
+- Token caps: timers limited to 50, cron entries to 100, commands truncated to 120 characters; `summary` always carries the total discovered counts (`timers`, `cron_entries`, `crontabs_skipped`).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `systemctl` is absent from `$PATH` **and** no cron path exists.
+- `systemctl` missing or failing: timers list empty, cron still reported.
+- Unreadable user crontab files/dirs (running unprivileged): counted in `summary.crontabs_skipped`, execution still returns status `ok`.
+
+---
+
+#### `get_logged_in_sessions`
+*Category: `system` · Runs on: Every Linux node with /run/utmp or systemd-logind*
+
+Enumerates active interactive login sessions — local TTYs and remote SSH/PTY logins — revealing who is on the node, from where, and since when. Useful for correlating performance anomalies or configuration drift with human activity.
+
+**Data Sources:**
+- **Native**: `/run/utmp` binary session database. Each 384-byte record (little-endian x86_64 glibc layout) is decoded with `encoding/binary`; NUL-padded C strings are trimmed. Only `USER_PROCESS` (type 7) records — real interactive logins — are reported; reboot, runlevel, and dead-process records are filtered out.
+- **Fallback**: `loginctl list-sessions --output=json` (systemd-logind) when the utmp database is missing or unreadable. This path carries no login timestamp or leader PID, so those fields degrade to empty/`0`.
+
+**Mathematical Models / Formatting:**
+- **Timestamp Normalization**: utmp `timeval` (32-bit sec/usec) is converted to RFC3339 UTC `login_time`.
+- **Local vs Remote**: `remote_host` is the origin host/IP for remote logins and empty for local console sessions — no reverse-DNS heuristics are applied.
+- **List Capping**: The session list is capped at 100 entries; `count` reflects the returned list. The `source` field (`utmp`|`loginctl`) tells the LLM which fidelity level was used.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/run/utmp` is absent AND no `loginctl` binary exists.
+- Malformed or truncated utmp records are skipped individually, never fatal.
+- Zero active sessions is a valid `ok` result (headless/compute nodes).
+- loginctl execution or JSON parse failures return an encapsulated error result, never a hard Go error.
+
+---
+
+#### `get_package_audit`
+*Category: `system` · Runs on: Any node with rpm or dpkg*
+
+Audits whether specific packages are installed and at which exact version/release, straight from the native package manager database. Designed for fleet-wide verification of driver stacks, security patch levels, and dependency presence via a required `packages` array parameter (globs allowed, e.g. `kernel*`).
+
+**Data Sources:**
+- **rpm** (RHEL/Rocky/SUSE): `rpm -q --queryformat "%{NAME}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n" <pkg>`. Missing packages exit 1 with `package X is not installed`.
+- **dpkg** (Debian/Ubuntu): `dpkg-query -W -f '${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n' <pkg>`. Only rows whose `db:Status-Status` is exactly `installed` count — config-file residue is treated as missing.
+- **Manager Detection**: `rpm` is preferred when both binaries exist (rpm-based distros commonly ship dpkg shims).
+
+**Mathematical Models / Formatting:**
+- **Query Expansion**: One query may produce multiple entries when globs match several packages or multiple versions are installed side by side (multi-version kernels); each entry carries its originating `query` field.
+- **Batch Capping**: The query list is capped at 50 names per call; truncation is flagged in the summary.
+- **Precomputed Aggregates**: `installed_count` and a `missing[]` list of not-installed queries are precomputed so the LLM never has to re-derive them.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when neither `rpm` nor `dpkg-query` is in `$PATH`.
+- A per-package query failure (even rpmdb corruption) degrades to an `installed: false` entry for that query; the batch is never aborted.
+- Missing/empty `packages` parameter returns an encapsulated error result.
+
+---
+
+#### `query_coredumps`
+*Category: `system` · Runs on: Nodes with systemd-coredump (coredumpctl or /var/lib/systemd/coredump)*
+
+Queries recent application crashes captured by systemd-coredump, surfacing crash-looping executables and the fatal signals that killed them. Accepts an optional `last_n` parameter (default 20, capped at 100).
+
+**Data Sources:**
+- **Primary**: `coredumpctl list --json=short --no-pager` — a JSON array with µs-epoch `time`, `pid`, `uid`, `sig`, `corefile` state (`present`|`missing`|`none`), and executable path. Exit status 1 with `No coredumps found` is treated as a valid empty result, not a failure.
+- **Fallback**: filename scan of `/var/lib/systemd/coredump`, parsing `core.<comm>.<uid>.<boot-id>.<pid>.<timestamp>[.zst]` entries when the `coredumpctl` binary is unavailable or fails. The comm segment may contain dots, so fixed fields are anchored from the right.
+
+**Mathematical Models / Formatting:**
+- **Signal Decoding**: Common fatal signals are decoded to names (4 → `SIGILL`, 6 → `SIGABRT`, 7 → `SIGBUS`, 8 → `SIGFPE`, 11 → `SIGSEGV`); anything else renders as `SIG<n>`. Filename-fallback entries omit the signal (not encoded in the name).
+- **Temporal Ordering**: Dumps are sorted newest-first on the raw µs timestamp before the `last_n` cut; µs-epoch values are emitted as RFC3339 UTC.
+- **Crash-Loop Aggregation**: `count_by_executable` is computed over ALL dumps found (not just the returned window) alongside `total`, so repeat offenders are visible even beyond the cap.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when there is no `coredumpctl` binary and no coredump spool directory.
+- "No coredumps found" and an empty spool directory both return `ok` with zero dumps.
+- Unparseable spool filenames are skipped individually, never fatal.
+- A hard `coredumpctl` failure silently falls back to the directory scan when the spool directory exists.
+
+---
+
+#### `get_file_locks`
+*Category: `system` · Runs on: Every Linux node*
+
+Summarizes the kernel file-lock table to diagnose lock contention: counts by lock type and mode, the processes holding the most locks, and blocked waiters queued behind held locks.
+
+**Data Sources:**
+- **Lock Table**: `/proc/locks` text file, including `->` blocked-waiter lines (`ID: [->] TYPE MODE KIND PID MAJ:MIN:INO START END`).
+- **Process Names**: `/proc/<pid>/comm` for holder and waiter identity resolution.
+
+**Mathematical Models / Formatting:**
+- **Aggregation**: `total_locks` counts held locks only (waiter lines excluded); `by_type` buckets POSIX / FLOCK / OFDLCK / LEASE and `by_mode` buckets READ / WRITE.
+- **Top Holders**: held locks grouped per pid, ranked by lock count (ties broken by pid) and capped at the top 15, each with resolved `comm`.
+- **Blocked Waiters**: exact `count` plus a detail list (`{pid, comm, type, mode}`) capped at 15 entries.
+- **Warning Heuristic**: any blocked waiter appends a `warning_reasons` entry ("N process(es) blocked waiting on file locks") and flips the result status from `ok` to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/locks` is missing.
+- Dead pids (comm unreadable) degrade to `comm: "unknown"`; OFD locks carry pid `-1` and report `"OFD (no owner pid)"` instead of a process name.
+- Malformed lock-table lines are skipped rather than failing the parse; an empty table is a valid `ok` result with zeroed aggregates.
+- A missing locks file at execution time and cancelled contexts are encapsulated as error results (never hard Go errors).
+
+---
+
+#### `get_container_inventory`
+*Category: `compute` · Runs on: Every Linux node with /sys/fs/cgroup (cgroup v2)*
+
+Discovers every running container on the node **without requiring any container runtime daemon**, by walking the cgroup v2 unified hierarchy for runtime scope directories. Per-container process counts, memory usage, and cumulative CPU time are read natively from cgroup controller files.
+
+**Data Sources:**
+- **Scope Discovery**: walk of `/sys/fs/cgroup` matching `docker-<id>.scope` (Docker, under system.slice), `libpod-<id>.scope` (Podman), and `cri-containerd-<id>.scope` / `crio-<id>.scope` (Kubernetes pods under `kubepods*.slice`). IDs must be ≥12-char hex, which naturally excludes helper scopes like `libpod-conmon-*`.
+- **Per-Container Metrics**: `cgroup.procs` (line count → `procs`), `memory.current` (bytes), and `cpu.stat` `usage_usec` from each container's cgroup directory.
+- **Opportunistic Enrichment**: `docker ps --format {{json .}}` and `podman ps --format json` map 12-char ID prefixes to container `name` and `image` when those CLIs are present — invoked only for runtimes actually observed in the cgroup tree.
+
+**Mathematical Models / Formatting:**
+- **Unit Conversion**: `memory_mb` = bytes / 1024² and `cpu_usage_seconds` = usage_usec / 10⁶, both rounded to 1 decimal place.
+- **ID Normalization**: `id_short` is the canonical 12-char prefix, matching Docker CLI display convention and enabling cross-referencing.
+- **Aggregation & Capping**: containers are sorted (runtime, id) for determinism and capped at 100 entries; `counts_by_runtime` and `total` are computed over ALL containers found.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/sys/fs/cgroup` is missing.
+- **cgroup v1 hosts**: no `cgroup.controllers` at the root returns a `degraded` result with `{"is_supported": false, "message": "cgroup v1 not supported..."}` — only the v2 unified hierarchy is parsed (same contract as `get_cgroup_limits`).
+- Zero container scopes is a valid empty `ok` result.
+- CLI enrichment failures (daemon down, permission denied) are completely silent: containers are reported with IDs only.
+- Unreadable metric files degrade to `0` values; unreadable subtrees are skipped during the walk.
+
+---
+
+#### `get_process_memory_detail`
+*Category: `memory` · Runs on: Every Linux node*
+
+Produces an accurate memory footprint for a single process (required `target_pid` parameter), distinguishing truly-owned memory (PSS, private pages) from shared library pages that naive RSS readings double-count, plus swap pressure, transparent huge page usage, and the rlimits bounding the process.
+
+**Data Sources:**
+- **Primary**: `/proc/<pid>/smaps_rollup` — kernel-precomputed totals for `Rss`, `Pss`, `Shared_Clean`, `Shared_Dirty`, `Private_Clean`, `Private_Dirty`, `Swap`, `SwapPss`, and `AnonHugePages` (all `kB` lines).
+- **Fallback**: `/proc/<pid>/smaps` — the same keys summed across every mapping on kernels older than 4.14 that lack `smaps_rollup`.
+- **Identity**: `/proc/<pid>/status` for `Name` (comm), `Threads`, and `VmSwap` (used only when smaps carries no Swap key).
+- **Limits**: `/proc/<pid>/limits` rows `Max address space` and `Max locked memory` (soft limit reported; `unlimited` preserved as a string).
+
+**Mathematical Models / Formatting:**
+- **Unit Conversion**: all sizes converted from kB to MB, rounded to 1 decimal place.
+- **Composite Fields**: `shared_mb = Shared_Clean + Shared_Dirty`; `private_mb = Private_Clean + Private_Dirty`; `thp_mb = AnonHugePages`.
+- **Headroom Ratio**: `rss_pct_of_address_limit = RSS / soft address-space limit × 100` (1dp), emitted **only** when that limit is finite — never against `unlimited`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/self/status` is unreadable (non-Linux).
+- Nonexistent `target_pid` returns a `process not found` error result; missing/invalid `target_pid` returns a parameter error result.
+- Missing `smaps_rollup` (old kernels) silently falls back to summing `smaps`.
+- Permission denied on smaps data (other users' processes without root/CAP_SYS_PTRACE) returns an error result explicitly naming the privilege requirement.
+- An unreadable `limits` file degrades to `"unknown"` limit values, never fatal.
+
+---
+
+#### `get_pci_link_status`
+*Category: `hardware` · Runs on: Every Linux node with a PCI bus*
+
+Audits PCIe link training and Advanced Error Reporting (AER) health for every PCI device, surfacing downtrained links (e.g. a x16 HCA silently renegotiated to x4 after a reseat) and devices accumulating correctable/nonfatal/fatal bus errors — the classic signatures of failed risers, retimers, and poorly seated cards.
+
+**Data Sources:**
+- Device Discovery: `/sys/bus/pci/devices/` directory iteration.
+- Link Training: `current_link_speed`, `current_link_width`, `max_link_speed`, `max_link_width` per device.
+- Identity: `class`, `vendor`, `device`, `numa_node` per device.
+- AER Counters (when exposed by the kernel AER driver): `aer_dev_correctable`, `aer_dev_nonfatal`, `aer_dev_fatal` — multi-line `KEY N` files whose individual counters are summed, excluding `TOTAL_ERR_*` aggregate lines to avoid double counting.
+
+**Mathematical Models / Formatting:**
+- **Downtraining Detection**: Parses the numeric `GT/s` prefix of the speed strings (`"8.0 GT/s PCIe"` → `8.0`) and flags `is_downtrained` when current speed < max speed or current width < max width, emitting explicit reasons like `running x4 at max x8`.
+- **Class Decoding**: Renders raw PCI class hex into LLM-friendly family names (`0x0108` → `nvme`, `0x0207`/`0x0c04` → `infiniband`, `0x02` → `ethernet`, `0x03` → `gpu`, `0x01` → `storage`); unmapped classes keep the raw hex as `other (0x...)`.
+- **Signal-over-Noise Filtering**: By default only devices that are downtrained, have AER errors, or belong to an interesting class (NVMe, network/InfiniBand, GPU, fabric) are returned; `all=true` returns every device exposing link files. The devices list is capped at 64 entries with a `summary.truncated` flag.
+- **Status Escalation**: Result status becomes `warning` when any link is downtrained or any device reports nonfatal/fatal AER errors.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/sys/bus/pci/devices` does not exist (no PCI bus exposed, e.g. some VMs/containers).
+- Devices without link capability files (virtual functions, host bridges) are skipped silently.
+- `numa_node` of `-1` (no affinity reported) omits the field entirely; missing AER files omit the `aer` block rather than reporting zeros.
+
+---
+
+#### `get_sensor_readings`
+*Category: `hardware` · Runs on: Bare-metal Linux nodes exposing hwmon chips*
+
+Collects every hardware monitoring sensor the kernel exposes — temperatures, fan tachometers, power draw, and voltage rails — normalized into human units and classified against hardware-defined thermal thresholds. Identifies overheating packages, dead fans, and sagging rails without requiring `lm-sensors` to be installed.
+
+**Data Sources:**
+- Chip Discovery: `/sys/class/hwmon/hwmon*/` iteration; attributes are resolved from the chip directory first, then the nested `device/` directory used by older kernel layouts.
+- Chip Name: `hwmon*/name`.
+- Temperatures: `temp<N>_input` (millidegrees C) with `temp<N>_label`, `temp<N>_max`, `temp<N>_crit`.
+- Fans: `fan<N>_input` (RPM) with `fan<N>_label`.
+- Power: `power<N>_average` preferred over `power<N>_input` (microwatts) with `power<N>_label`.
+- Voltages: `in<N>_input` (millivolts) with `in<N>_label`.
+
+**Mathematical Models / Formatting:**
+- **Unit Normalization**: m°C → °C (1 decimal), µW → W (1 decimal), mV → V (3 decimals); labels fall back to the sysfs index (`temp1`) when no `_label` file exists.
+- **Threshold Classification** (deterministic, per temperature): reading ≥ `crit` → `critical`, reading ≥ `max` → `warning`, otherwise `ok`; each breach is written to a top-level `warning_reasons[]` entry naming the chip, sensor, reading, and threshold.
+- **Status Escalation**: any `critical` sensor → result status `error`, any `warning` sensor → `warning`, mirroring the EDAC tool's health mapping.
+- **Payload Caps**: 64 sensors per type per chip and 20 warning reasons (overflow noted as `(+N more ...)`).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` with reason `no hwmon sensors exposed (common in VMs)` when `/sys/class/hwmon` is missing or contains no `hwmon*` directories.
+- Individual unreadable or unparseable sensor files are skipped silently; chips exposing zero readable sensors are omitted from the output.
+- Missing `temp<N>_max`/`temp<N>_crit` files omit the thresholds and leave the sensor status `ok` — never escalating on absent data.
+
+---
+
+#### `get_dmi_inventory`
+*Category: `hardware` · Runs on: Every Linux node exposing SMBIOS/DMI*
+
+Reports the physical identity of the machine — manufacturer, product, serial number, mainboard, firmware level, and chassis form factor — and, when possible, the exact physical DIMM population per slot. Essential for support cases, firmware audits, and correlating EDAC memory errors to the physical module that needs replacing.
+
+**Data Sources:**
+- **Native (pure sysfs)**: `/sys/class/dmi/id/` attributes — `sys_vendor`, `product_name`, `product_serial` (root-only, mode 0400), `product_uuid` (root-only), `board_vendor`, `board_name`, `bios_vendor`, `bios_version`, `bios_date`, `chassis_type` (numeric SMBIOS code).
+- **Enrichment (binary fallback)**: `dmidecode -t memory`, wrapped in `sudo -n` when the agent runs without root. Parses `Memory Device` blocks for `Locator`, `Size`, `Speed`, `Type`, `Manufacturer`, and `Part Number` using exact key matching (so `Bank Locator`, `Type Detail`, and `Configured Memory Speed` never pollute the fields).
+
+**Mathematical Models / Formatting:**
+- **Chassis Decoding**: Maps the numeric `chassis_type` through the SMBIOS 7.4.1 enum (1..36, e.g. `1=Other`, `3=Desktop`, `17=Main Server Chassis`, `23=Rack Mount Chassis`); unmapped codes render as `type <n>`, unparseable values as `unknown`.
+- **Slot Accounting**: DIMM blocks reporting `No Module Installed` are counted as `dimm_summary.empty_slots` instead of emitting empty entries; the populated list is capped at 64 modules.
+- **Privilege Signaling**: `serial_available` explicitly reports whether `product_serial` was readable, letting an LLM distinguish "machine has no serial" from "agent needs root".
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/sys/class/dmi/id` does not exist (firmware exposes no SMBIOS, e.g. some containers/architectures).
+- Unreadable root-only attributes (`product_serial`, `product_uuid`) are omitted with `serial_available: false` — the result stays `ok`.
+- Missing identity attributes degrade to `"unknown"` per the catalog philosophy; if `dmidecode` is absent or fails (no passwordless sudo), the `dimms`/`dimm_summary` sections are omitted entirely without erroring.
+
+---
+
+#### `get_gpu_status`
+*Category: `hardware` · Runs on: Nodes with NVIDIA or AMD GPU telemetry (vendor CLI or amdgpu sysfs)*
+
+Reports a per-GPU health snapshot — utilization, VRAM pressure, temperature, power draw/limit and (NVIDIA only) volatile uncorrected ECC errors and performance state — so accelerator saturation, thermal throttling and silicon degradation can be spotted before jobs fail. Vendor CLIs are the justified primary source because GPU telemetry rides proprietary protocols (NVML / ROCm SMI); a native sysfs fallback keeps partial coverage when no tooling is installed.
+
+**Data Sources:**
+- **Primary (NVIDIA)**: `nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,ecc.errors.uncorrected.volatile.total,pstate --format=csv,noheader,nounits`.
+- **Secondary (AMD)**: `rocm-smi --showuse --showmemuse --showtemp --showpower --json`, parsed defensively since metric key labels vary between ROCm releases (edge temperature preferred, average package power preferred).
+- **Native fallback (amdgpu sysfs)**: `/sys/class/drm/card<N>/device/` — `gpu_busy_percent`, `mem_info_vram_used`, `mem_info_vram_total`, plus `hwmon/hwmon*/temp1_input` (millidegrees) and `hwmon/hwmon*/power1_average` (microwatts). Connector children (`card0-eDP-1`) and render nodes (`renderD128`) are excluded.
+
+**Mathematical Models / Formatting:**
+- Pre-computes `memory_used_pct = memory_used_mb / memory_total_mb × 100`, rounded to one decimal place, so the LLM never divides.
+- Scales raw sysfs units locally: millidegrees → °C, microwatts → W, bytes → MB.
+- Heuristic per-GPU `warning_reasons` flag temperature > 85°C, uncorrected ECC errors > 0 and memory utilization > 95%; any flagged GPU elevates the result status to `warning`.
+- The `backend` field records which source (`nvidia-smi`, `rocm-smi`, `sysfs`) produced the snapshot.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when neither `nvidia-smi` nor `rocm-smi` is in `PATH` and no `/sys/class/drm/card*/device/gpu_busy_percent` exists.
+- Backends degrade in priority order: a failing `nvidia-smi` falls through to `rocm-smi`, then to the sysfs partial read; only when every source fails does the tool return an error result naming each failed backend.
+- Values a backend reports as `[N/A]` / `[Not Supported]` (and sysfs files that are missing or unreadable) are omitted from the JSON entirely rather than zeroed; NVIDIA-only fields (`ecc_uncorrected`, `pstate`) are absent on other backends.
+- Command execution respects context cancellation/timeouts and returns an encapsulated error result instead of a hard failure.
+
+---
+
+#### `query_ipmi_sel`
+*Category: `hardware` · Runs on: Bare-metal nodes with a BMC exposing an IPMI character device*
+
+Queries the baseboard management controller's System Event Log to surface out-of-band hardware events — temperature excursions, fan failures, ECC faults, PSU state changes — recorded by the BMC independently of the host OS, along with the SEL's remaining capacity. `ipmitool` is the justified primary source since SEL access requires the vendor IPMI protocol over the kernel's BMC character device.
+
+**Data Sources:**
+- **Primary records**: `ipmitool sel elist` (wrapped in `sudo -n` when the effective UID is not 0 and sudo is available), parsed row-by-row into `{id, timestamp, sensor, event, direction}`.
+- **Capacity metadata**: `ipmitool sel info`, parsed tolerantly (`Entries`, `Free Space`, `Percent Used` labels vary slightly between BMC firmwares; the first integer in each value is extracted).
+- **Device gate**: a BMC character device must exist at `/dev/ipmi0`, `/dev/ipmi/0` or `/dev/ipmidev/0`.
+
+**Mathematical Models / Formatting:**
+- Converts `MM/DD/YYYY HH:MM:SS` date/time columns to RFC3339; events logged before BMC clock initialization keep their raw `Pre-Init` marker.
+- Aggregates the entire SEL into `counts_by_sensor_type` (e.g. `Temperature: 3`) by stripping the `#0xNN` sensor suffix, while `records` returns only the `last_n` most recent rows (default 25, capped at 200) to bound token payload.
+- Heuristic `warning_reasons` flag any record whose event contains `Critical` or `Non-recoverable` (case-sensitive, so IPMI's warning-level `Non-critical` does not false-positive) and SEL usage above 75%; itemized critical warnings are capped at 10 with an aggregate overflow entry.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `ipmitool` is missing from `PATH` or no BMC character device exists — the reason string distinguishes which prerequisite failed.
+- Permission failures (sudo password required, device permission denied, insufficient privilege level) return the encapsulated error result `Unauthorized: Root or passwordless sudo privileges required for BMC access.` instead of a hard Go error.
+- A failing `sel info` degrades gracefully: records are still returned and `sel_info` is omitted from the payload. An empty SEL ("SEL has no entries") yields an `ok` result with an empty records list.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
@@ -641,6 +981,157 @@ Collects NFS client statistics, active server connections, mounted volumes, and 
 
 ---
 
+#### `get_raid_health`
+*Category: `storage` · Runs on: Nodes with Linux software RAID (md driver loaded)*
+
+Audits Linux software RAID (md) array health natively from the kernel — no mdadm dependency — reporting per-array state, degradation, rebuild/resync progress, mismatch counts, and per-member device states, and flagging faulty members and arrays running at reduced redundancy.
+
+**Data Sources:**
+- **Support Gate**: `/proc/mdstat` presence indicates the md driver is loaded.
+- **Array Discovery**: Entries under `/sys/block/md*` that contain an `md/` subdirectory (the definitive array marker, which also excludes partitions like `md0p1`).
+- **Per-Array Attributes**: `/sys/block/md*/md/{array_state,degraded,sync_action,sync_completed,mismatch_cnt,raid_disks,level}`.
+- **Per-Member State**: `/sys/block/md*/md/dev-*/state` (`in_sync`, `faulty`, `spare`, ...).
+
+**Mathematical Models / Formatting:**
+- **Rebuild Progress**: `rebuild_pct` is computed from the `sync_completed` fraction (`N / M` sectors) as `N / M × 100`, rounded to 1 decimal place; `none`, a zero denominator, or unparseable content yield `0`.
+- **Per-Array Warning Heuristics**: Populates `warning_reasons []string` from four rules — `degraded=1`, any member whose state contains `faulty` (also promoted into `failed_members[]`), an active `sync_action` of `recover`/`resync` (redundancy not at full strength; `check`/`repair` scrubs are not warnings), and `mismatch_cnt > 0` (blocks inconsistent between mirrors/parity).
+- **Summary Aggregation**: `summary` counts `total`, `degraded_count`, and `rebuilding_count` (arrays with `sync_action` of `recover`/`resync`); any warning flips the result status from `ok` to `warning`.
+- **Determinism**: Arrays and members are sorted by name for stable, diff-friendly output.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/proc/mdstat` is missing (md driver not loaded).
+- **No Arrays**: A node with the md driver loaded but zero arrays is a valid state — returns `arrays: []` with an `ok` status.
+- **Missing Attributes**: Individual missing/unreadable sysfs attributes degrade to zero values (`""`, `0`, `false`) instead of failing the array or the execution.
+- **Cancellation**: A cancelled context returns an encapsulated error result, never a hard Go error.
+
+---
+
+#### `get_multipath_status`
+*Category: `storage` · Runs on: SAN-attached nodes with dm-multipath maps or multipath-tools installed*
+
+Audits device-mapper multipath (dm-multipath) maps and their individual SAN paths, flagging offline/failed paths and — critically — maps that have lost every active path (all I/O to that LUN fails).
+
+**Data Sources:**
+- **Map Discovery (native)**: Scans `/sys/block/dm-*/dm/uuid` for the `mpath-` prefix; LVM, dm-crypt, and other dm targets are excluded. Friendly names come from `dm/name`.
+- **Path Membership (native)**: The map's `slaves/` directory lists its component path devices.
+- **Per-Path State (native)**: `/sys/block/<slave>/device/state` (`running` / `offline`).
+- **Enrichment (optional)**: `multipathd show maps raw format "%n %w %N %t"` adds the device-mapper state (`dm_state`, e.g. `active`/`suspend`) per map when the daemon is reachable.
+
+**Mathematical Models / Formatting:**
+- **Path Accounting**: `active_paths` counts paths in the `running` state; `failed_paths = total_paths − active_paths`. A missing per-path state file degrades to `unknown` and is counted as failed.
+- **Per-Map Warning Heuristics**: Populates `warning_reasons []string` with one entry per non-running path, plus an explicit `CRITICAL: no active paths remaining` entry when a map with paths has zero active ones.
+- **Status Escalation**: Any map with zero active paths drives the result status to `error`; any failed path (with redundancy remaining) drives `warning`; otherwise `ok`.
+- **Summary Aggregation**: `summary` precomputes `total_maps`, `maps_with_failed_paths`, and `maps_with_no_active_paths`. Maps and paths are sorted by name for stable output.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when there is no `mpath-` dm device in sysfs **and** neither `multipath` nor `multipathd` is in `PATH` (reason: "no multipath devices and multipathd not installed").
+- **No Maps**: Zero multipath maps is a valid state — returns `maps: []` with an `ok` status.
+- **Daemon Failures Ignored**: multipathd socket/permission errors never affect results — native sysfs is the source of truth and enrichment is best-effort (`dm_state` is simply omitted).
+- **Cancellation**: A cancelled context returns an encapsulated error result, never a hard Go error.
+
+---
+
+#### `get_smart_health`
+*Category: `storage` · Runs on: Nodes with `smartctl` (smartmontools) installed*
+
+Audits the SMART health of SATA/SAS drives (`sd*`) to catch failing spinning disks and SSDs before data loss, reducing full smartctl output to the failure-predictive core: overall self-assessment, temperature, power-on hours, and the four canonical defect/link counters. Accepts an optional `target_device` parameter (e.g., `sda`) to audit a single drive; audits all discovered drives when omitted. NVMe devices are excluded — they are covered by `get_nvme_smart_log`.
+
+**Data Sources:**
+- **Device Discovery**: Enumerates `/sys/class/block` entries matching `^sd[a-z]+$` that have a physical `device/` entry (partitions and virtual devices excluded) — no external binary needed for discovery. `device/vendor` + `device/model` provide the identity fallback when smartctl reports no `model_name`.
+- **Primary**: `smartctl -a -j /dev/<dev>`, parsing `smart_status.passed`, `temperature.current`, `power_on_time.hours`, and `ata_smart_attributes.table[]` raw values for IDs 5 (Reallocated_Sector_Ct), 197 (Current_Pending_Sector), 198 (Offline_Uncorrectable), and 199 (UDMA_CRC_Error_Count).
+- **Privilege Escalation**: SMART ioctls require root; when running unprivileged, commands are automatically wrapped in non-interactive `sudo -n` if `sudo` is in `PATH` (same contract as `get_nvme_smart_log`).
+
+**Mathematical Models / Formatting:**
+- **Exit-Bitmask Tolerance**: smartctl exits non-zero when SMART checks fail even though its JSON is valid, so output is parsed regardless of exit status; only unparseable output counts as a per-drive failure.
+- **Per-Drive Warning Heuristics**: Populates `warning_reasons []string` from six rules — failed self-assessment, `reallocated_sectors > 0` (grown defects), `pending_sectors > 0` (unstable sectors), `uncorrectable_sectors > 0`, `crc_errors > 0` (cabling/backplane link integrity), and temperature `> 60°C`. Any warning flips the drive's `status` from `healthy` to `critical`.
+- **Status Escalation**: A failed SMART self-assessment drives the result status to `error`; attribute-level findings alone drive `warning`; otherwise `ok`.
+- **System Summary**: Aggregates `drives_audited`, `drives_failing` (drives in `critical` status), and `total_reallocated` (summed across drives).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only if `smartctl` is not in `PATH`.
+- **No SATA/SAS Hardware**: Zero matching drives is a valid state — returns `drives: []` with `drives_audited: 0` rather than failing.
+- **Permission Lockout**: If the command is refused (`permission denied`, `operation not permitted`, or sudo demanding a password), returns an explicit `Unauthorized` error instructing that root or passwordless sudo is required — rather than silently returning partial data.
+- **Per-Drive Skip**: A drive whose output fails to parse (USB bridge without SAT, dead device) is skipped and the remaining drives are still audited.
+- **Cancellation**: A cancelled context returns an encapsulated error result, never a hard Go error.
+
+---
+
+#### `get_zfs_status`
+*Category: `storage` · Runs on: Nodes with the ZFS kernel module loaded or `zpool` installed*
+
+Audits the ZFS storage stack: per-pool health, capacity, fragmentation, scrub/resilver progress, and device error counters, plus ARC cache efficiency — combining native kernel counters with the zpool CLI's stable parseable output.
+
+**Data Sources:**
+- **ARC (native)**: `/proc/spl/kstat/zfs/arcstats` 3-column kstat rows (`size`, `c_max`, `hits`, `misses`).
+- **Module Version (native)**: `/sys/module/zfs/version`.
+- **Pool Inventory**: `zpool list -Hp -o name,size,alloc,free,frag,cap,health` (script-friendly: no header, exact byte values). `zpool` JSON output requires ZFS ≥ 2.3, so the stable text/parseable formats are used instead.
+- **Pool Detail**: `zpool status <pool>` text — the `scan:` line for scrub/resilver state and the config table for per-device READ/WRITE/CKSUM counters.
+
+**Mathematical Models / Formatting:**
+- **ARC Efficiency**: `hit_ratio_pct = hits / (hits + misses) × 100`, rounded to 2 decimal places (0 when there are no lookups); `size_mb`/`max_mb` converted from bytes (MiB).
+- **Capacity Conversion**: `size_gb`/`alloc_gb` converted from exact bytes to GiB, rounded to 1 decimal place; `frag_pct`/`capacity_pct` taken from zpool's precomputed percentages.
+- **Scan Classification**: The `scan:` line is normalized to `scrub in progress`, `resilver in progress`, `scrub repaired`, `resilvered`, or `none`; in-progress scans include `scan_pct` extracted from the `NN.NN% done` progress figure.
+- **Error Accounting**: READ/WRITE/CKSUM counters are summed across every row of the config tree (pool, vdevs, and leaf devices) with human-readable magnitude suffixes (`1.05K`, `3M`, ...) expanded; dashes and garbage degrade to 0.
+- **Per-Pool Warning Heuristics**: Populates `warning_reasons []string` from three rules — health ≠ `ONLINE`, any error counter > 0, and `capacity_pct > 90` (ZFS performance degrades when nearly full). Any warning flips the result status to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/sys/module/zfs` is absent **and** `zpool` is not in `PATH`.
+- **No Pools**: Zero imported pools is a valid state — returns `pools: []` with an `ok` status.
+- **ARC Missing**: If `arcstats` is unreadable (module unloaded, procfs restricted), the `arc` block is omitted entirely rather than reporting zeros.
+- **Binary Missing / CLI Failure**: If the kernel module is loaded but `zpool` is missing or `zpool list` fails, the tool degrades to an ARC-only report with an explanatory `note` and a `degraded` status. A per-pool `zpool status` failure keeps the list-derived health/capacity data (scan state falls back to `none`).
+- **Cancellation**: A cancelled context returns an encapsulated error result, never a hard Go error.
+
+---
+
+#### `get_open_files`
+*Category: `storage` · Runs on: Every Linux node*
+
+Finds every process holding open file descriptors under a path prefix — the native (binary-free) answer to "why can't this filesystem unmount?" and "what is still writing to this mount?".
+
+**Data Sources:**
+- **FD Tables**: `/proc/<pid>/fd/*` symlinks resolved via `readlink` for every numeric `/proc` entry (no `lsof`/`fuser` binaries).
+- **Process Names**: `/proc/<pid>/comm`.
+- **Deleted Files**: readlink targets ending in `" (deleted)"` mark files that hold disk space until closed.
+
+**Mathematical Models / Formatting:**
+- **Prefix Matching**: fd targets are matched with a plain prefix comparison against the required `path` parameter (so `/mnt/lustre` also matches `/mnt/lustre2`; pass a trailing slash to bind to a directory). The deleted suffix is stripped before matching.
+- **Ranking & Caps**: processes are ranked by matching `fd_count` (ties broken by pid) and truncated to `limit` (default 20, cap 100); each entry carries up to 3 `example_paths` and a `has_deleted` flag.
+- **Totals**: `total_matching_fds` and `deleted_open_count` cover the full scan, not just the truncated process list.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` off-Linux or when `<procfs>/self/fd` is not readable.
+- fd directories unreadable due to permissions (other users' processes when unprivileged) are counted in `processes_skipped` — never an error.
+- Processes that vanish mid-scan (fd dir or individual fds gone) are skipped silently; dead-pid comm reads degrade to `"unknown"`.
+- Missing/empty `path`, malformed arguments, and cancelled contexts (checked between pid iterations) are encapsulated as error results (never hard Go errors).
+
+---
+
+#### `get_lustre_server_stats`
+*Category: `storage` · Runs on: Lustre Server nodes (OSS/MDS/MGS)*
+
+Collects per-target statistics for Lustre server roles: OSS (`obdfilter`), MDS (`mdt`), and MGS (`mgs`) — export counts, capacity/inode utilization, top RPC/IO counters, and the OSS disk-I/O-size distribution.
+
+**Data Sources:**
+- **Target Discovery & Roles**: subdirectories of `/sys/fs/lustre/{obdfilter,mdt,mgs}/` (or `/proc/fs/lustre/...`); each file is resolved sysfs-first with a per-file procfs fallback, matching the split layout of real Lustre releases.
+- **OSS Targets**: `obdfilter/<target>/{num_exports,kbytestotal,kbytesfree,filestotal,filesfree,stats,brw_stats}`.
+- **MDS Targets**: `mdt/<target>/{num_exports,stats,md_stats}` (open/close/getattr/setattr counters), plus capacity/inode files when exposed.
+- **MGS Target**: `mgs/MGS/{num_exports,stats}`.
+
+**Mathematical Models / Formatting:**
+- **Utilization**: precomputes `used_pct = (total - free) / total * 100` (rounded to 2 decimals) for both capacity (`kbytestotal`/`kbytesfree`) and inodes (`filestotal`/`filesfree`).
+- **Top Counters**: parses `name count samples [unit] min max sum` lines from `stats` (merged with `md_stats` on MDTs) and keeps the top-10 counters by count, ties broken by name for deterministic output.
+- **brw_stats Condensation** (OSS only): parses only the `disk I/O size` histogram section and emits the top-5 non-zero buckets per direction as `{size, pct}` (e.g. `1M` / `43%`), dropping zero-sample buckets.
+- **Role Summary**: `role_summary {is_oss, is_mds, is_mgs}` derived from which target-type directories contain entries.
+- **Target Filter**: optional `target` parameter restricts output to a single target name; an unknown name returns an error result listing the requested target.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` via `registry.DetectNodeRoles()` when the node has no OSS/MDS/MGS role ("node has no Lustre server targets").
+- Missing per-target files (e.g. `num_exports`, capacity counters, `stats`) degrade to zero values / empty `top_stats` — a partial entry is always returned instead of failing.
+- Missing or unparseable `brw_stats` omits the `brw_io_sizes` block entirely.
+- Zero discovered targets returns a `warning` status ("no Lustre server targets found") rather than an error; cancelled contexts and malformed arguments are encapsulated as error results.
+
+---
+
 ### Network & Fabric Tools
 
 #### `get_network_interfaces`
@@ -758,6 +1249,147 @@ Query the system Routing Policy Database (RPDB) rules (i.e. policy routing).
 **Degradation Profile:**
 - `IsSupported()` returns `false` if the `ip` binary is not in `PATH`.
 - If JSON execution fails, fallback text output is evaluated.
+
+---
+
+#### `get_infiniband_status`
+*Category: `network` · Runs on: Nodes with InfiniBand/RoCE HCAs (sysfs `class/infiniband` present)*
+
+Audits every InfiniBand/RoCE HCA port natively from sysfs, decoding link state, physical state, rate, LID, and per-port error counters, and raising deterministic warnings for non-ACTIVE links or nonzero error counters.
+
+**Data Sources:**
+- **Primary**: `/sys/class/infiniband/<hca>/ports/<n>/{state,phys_state,rate,lid,link_layer}` sysfs attributes.
+- **Primary**: `/sys/class/infiniband/<hca>/ports/<n>/counters/` error counter files: `symbol_error`, `link_downed`, `link_error_recovery`, `port_rcv_errors`, `port_xmit_discards`.
+- No external binaries are executed.
+
+**Mathematical Models / Formatting:**
+- **State Decoding**: Strips numeric prefixes from kernel state strings (`"4: ACTIVE"` → `ACTIVE`, `"5: LinkUp"` → `LinkUp`).
+- **Rate Decoding**: Preserves the raw rate string (`"100 Gb/sec (4X EDR)"`) and precomputes a numeric `rate_gbps` field for the leading speed value.
+- **LID Decoding**: Hex-decodes the sysfs `lid` attribute (`0x3` → `3`) into an integer.
+- **Warning Reasons**: Per-port deterministic warnings when `state != ACTIVE`, `phys_state != LinkUp`, or any error counter is nonzero.
+- **System Summary**: Precomputes `hca_count`, `total_ports`, `active_ports`, and `ports_with_errors`; the result status escalates to `warning` when any warning reason exists.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` with reason "no InfiniBand devices (sysfs path missing)" when `<sysfs>/class/infiniband` does not exist.
+- Absent counter files (common on RoCE ports) are omitted from the `counters` map rather than zero-filled; a fully absent `counters/` directory omits the map entirely.
+- RoCE ports (`link_layer: Ethernet`) are reported factually with the same fields and warning logic; no special-casing.
+- HCAs without a readable `ports/` directory and non-numeric entries in `ports/` are skipped; missing attribute files degrade to empty/zero fields instead of failing.
+- A canceled context or an unreadable `class/infiniband` directory returns an encapsulated `error` result (never a hard Go error).
+
+---
+
+#### `get_lnet_status`
+*Category: `network` · Runs on: Nodes with the LNet kernel module loaded or `lnetctl` installed (Lustre servers, routers, and clients)*
+
+Reports the health of the LNet fabric layer used by Lustre: local network interfaces (NIs) with up/down status and tx credit levels, known peer count, and global message counters (send/recv/route/drop/errors).
+
+**Data Sources:**
+- **Primary**: `/sys/kernel/debug/lnet/nis` (NI status, refs, max/tx/min credits), `/sys/kernel/debug/lnet/peers` (peer count), and `/sys/kernel/debug/lnet/stats` (positional message counters). debugfs typically requires root.
+- **Fallback**: `lnetctl net show` and `lnetctl stats show` command outputs, parsed by simple `key: value` indentation scanning (no YAML library), wrapped with `sudo -n` when not running as root.
+
+**Mathematical Models / Formatting:**
+- **Positional Decoding**: The single-line `stats` file is decoded into named counters (`msgs_alloc msgs_max errors send_count recv_count route_count drop_count send_length recv_length route_length drop_length`).
+- **Credit Semantics**: `max/tx/min` credits are emitted as optional fields; a negative minimum tx credit means messages had to queue waiting for credits (fabric congestion). Credits are debugfs-only and omitted on the `lnetctl` path instead of emitting misleading zeros.
+- **Warning Reasons**: Deterministic triggers — any NI whose status is not `up` (NID lists capped at 5 entries), negative `min` tx credits (credit starvation), and `drop_count > 0`. Any trigger flips the result status to `warning`.
+- **Source Attribution**: The `source` field records whether `debugfs` or `lnetctl` served the data.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` with reason `"LNet not loaded and lnetctl not found"` if `/sys/module/lnet` does not exist and `lnetctl` is not in `PATH`.
+- If `/sys/kernel/debug/lnet/nis` is unreadable (non-root debugfs), the tool falls back to `lnetctl net show` / `lnetctl stats show`. Peer count is debugfs-only and reported with `peers_available: false` on the fallback path.
+- If debugfs is unreadable and `lnetctl` is missing or denied, the tool returns an error result explaining the root / passwordless-sudo requirement. Missing `peers`/`stats` files degrade gracefully (`peers_available` / `stats_available` set to `false`) rather than failing.
+
+---
+
+#### `get_bond_status`
+*Category: `network` · Runs on: Nodes with the Linux bonding module loaded (`/proc/net/bonding` present)*
+
+Audits every configured bonding (link aggregation) device by parsing the kernel bonding driver's procfs report, extracting bond mode, MII status, the currently active slave, per-slave link health, and 802.3ad (LACP) aggregator details when present.
+
+**Data Sources:**
+- **Primary**: `/proc/net/bonding/<bond>` text files (one per configured bond) exposed by the bonding kernel module.
+- Bond-level fields parsed: `Bonding Mode:`, `MII Status:`, `Currently Active Slave:`, and 802.3ad info (`LACP rate:`, Active Aggregator `Partner Mac Address:`).
+- Per-slave sections parsed: `Slave Interface:`, `MII Status:`, `Speed:`, `Duplex:`, `Link Failure Count:`.
+- No external binaries are executed.
+
+**Mathematical Models / Formatting:**
+- **Speed Decoding**: Converts the kernel `Speed:` field (`"25000 Mbps"`) into an integer `speed_mbps`; `Unknown`, negative, or malformed speeds decode to `0`.
+- **Active Slave Normalization**: `Currently Active Slave: None` is decoded to an empty field instead of the literal string `None`.
+- **Warning Reasons**: Per-bond deterministic warnings when the bond MII status is not `up`, any slave MII status is not `up`, or any slave has a nonzero `Link Failure Count`.
+- **System Summary**: Precomputes `total_bonds`, `bonds_up`, `total_slaves`, `slaves_up`, and `bonds_with_warnings`; the result status escalates to `warning` when any warning reason exists.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `<procfs>/net/bonding` does not exist (bonding module not loaded).
+- Unparseable or missing fields degrade to empty strings / zero values — parsing never fails on garbage content.
+- Indented per-slave LACP PDU detail lines (e.g. `system mac address:`) are deliberately not matched, so partner data cannot leak into slave fields.
+- An empty bonding directory is a valid result (`bonds: []`, status `ok`); unreadable individual bond files are skipped.
+- A canceled context or an unreadable bonding directory returns an encapsulated `error` result (never a hard Go error).
+
+---
+
+#### `get_arp_neighbors`
+*Category: `network` · Runs on: Every Linux node (procfs ARP table or `ip` binary)*
+
+Collects the kernel neighbor (ARP/NDP) tables, classifies every entry by resolution state, and surfaces broken address resolution first: FAILED and INCOMPLETE neighbors are prioritized ahead of healthy ones, and every FAILED neighbor is always listed in full.
+
+**Data Sources:**
+- **Primary**: `/proc/net/arp` text table (IPv4; columns IP / HWtype / Flags / HWaddress / Mask / Device).
+- **Fallback/Enrichment**: `ip -j neigh` JSON output (adds IPv6 neighbors and granular NUD states: `reachable`, `stale`, `failed`, `incomplete`, `permanent`, `delay`, `probe`).
+
+**Mathematical Models / Formatting:**
+- **Flag Decoding**: procfs hex flags decode by bit — `ATF_PERM` (`0x4`, thus also `0x6`) → `permanent`, `ATF_COM` (`0x2`) → `reachable`, `0x0` → `incomplete`; unparseable flags → `unknown`.
+- **Enrichment Merge**: `ip neigh` entries are overlaid onto procfs entries keyed by `(ip, device)`; granular NUD states win over coarse flag mappings, MACs are filled in when missing, and unmatched entries (e.g., IPv6) are appended.
+- **MAC Normalization**: The all-zero placeholder MAC (`00:00:00:00:00:00`) of incomplete entries is blanked.
+- **Prioritized Capping**: Entries are stably sorted `failed` → `incomplete` → all other states, then capped at 50 (`entries_shown`, `truncated`); `total_entries` and `counts_by_state` always reflect the full table, and the `failed` list is never truncated.
+- **Warning Reasons**: A warning is raised (status `warning`) when any neighbor is in the FAILED state.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `/proc/net/arp` is missing **and** the `ip` binary is not in `PATH`.
+- If `ip` is missing, fails to execute, or returns unparseable JSON, the tool degrades to procfs-only IPv4 data, sets `ipv6_included: false`, and records the reason in a `note` field.
+- If `/proc/net/arp` is unreadable but `ip -j neigh` works, the ip output alone is used.
+- When neither source is usable, or the context is canceled, an encapsulated `error` result is returned (never a hard Go error).
+
+---
+
+#### `get_conntrack_summary`
+*Category: `network` · Runs on: Every Linux node with the nf_conntrack module loaded*
+
+Summarizes netfilter connection-tracking table pressure: current entry count vs table capacity with a precomputed usage percentage, plus per-CPU failure counters summed across all CPUs. This is the go-to check when a busy node starts logging `nf_conntrack: table full, dropping packet`.
+
+**Data Sources:**
+- **Primary**: `/proc/sys/net/netfilter/nf_conntrack_count` (current tracked connections), `/proc/sys/net/netfilter/nf_conntrack_max` (table capacity), and `/proc/net/stat/nf_conntrack` (header line plus one row of hexadecimal counters per CPU).
+- **Fallback**: None required — all sources are world-readable procfs files.
+
+**Mathematical Models / Formatting:**
+- **Usage Percentage**: `usage_pct = round(count / max × 100, 2dp)`, guarded to `0` when `max` is unavailable.
+- **Header-Driven Hex Decoding**: `/proc/net/stat/nf_conntrack` columns vary across kernel versions (`searched`/`delete_list` vs `clashres`/`chainlength`), so columns are resolved by header name rather than position. Each per-CPU row is parsed as base-16 and summed column-wise; the row count is reported as `cpu_count`.
+- **Counter Selection**: Only failure-relevant sums are emitted (`invalid`, `insert_failed`, `drop`, `early_drop`, `search_restart`) instead of the full raw matrix.
+- **Warning Reasons**: Deterministic triggers — `usage_pct > 80`, and non-zero `drop`, `early_drop`, or `insert_failed` sums. Any trigger flips the result status to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` with reason `"conntrack not loaded"` if `nf_conntrack_count` does not exist (conntrack module absent).
+- If `/proc/net/stat/nf_conntrack` is missing or unparsable, the tool degrades to counts only and sets `counters_available: false` (status stays `ok`).
+- If `nf_conntrack_max` is unreadable, `max` and `usage_pct` are reported as `0` rather than failing. Only an unreadable `nf_conntrack_count` produces an error result.
+
+---
+
+#### `get_firewall_summary`
+*Category: `network` · Runs on: Every Linux node with `nft`, `iptables-save`, or `iptables` in `PATH`*
+
+Summarizes the host packet-filter configuration without dumping the full ruleset: the active backend, every table and chain with its policy, per-chain rule counts, and packet/byte counters. A factual tool — it reports state and emits no warnings by default. When both `table` and `chain` parameters are provided, the matching chain's individual rules are rendered compactly (capped at 100).
+
+**Data Sources:**
+- **Primary**: `nft -j list ruleset` JSON output (`nftables[]` array of `{table}`, `{chain}`, and `{rule}` objects; `metainfo`, sets, and named counters are ignored).
+- **Fallback**: `iptables-save -c` text output (`*table` headers, `:CHAIN POLICY [pkts:bytes]` policy counters, `-A` rule lines). As a last resort, `iptables -S` is parsed (filter table only, no counters). Commands are wrapped with `sudo -n` when not running as root.
+
+**Mathematical Models / Formatting:**
+- **Counter Semantics**: `packets`/`bytes` per chain are the policy counters from `:CHAIN POLICY [pkts:bytes]` for iptables, but the **sum of anonymous rule counter expressions** for nftables (nftables chains carry no implicit counters). Named counter references (`{"counter": "name"}`) are skipped.
+- **Activity Heuristic**: `firewall_active = total_rules > 0`; an empty ruleset is a valid `ok` result with `firewall_active: false`.
+- **Rule Rendering**: With `table` + `chain` given, nftables rules are rendered as `family table chain handle N: <compact expr JSON>` (plus comment); iptables rules are the raw `-A ...` lines. Output is capped at 100 rules with `rules_truncated: true` beyond that, and `requested_chain_found` reports whether the chain exists. Chain names are matched case-sensitively (nftables lowercase, iptables uppercase).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if none of `nft`, `iptables-save`, or `iptables` are in `PATH`.
+- If `nft` fails for a non-permission reason (e.g. no nf_tables kernel support), the tool falls back to `iptables-save -c`, then `iptables -S`.
+- Permission-denied output from any backend (`permission denied`, `operation not permitted`, sudo password prompts) produces an error result explaining the root / passwordless-sudo requirement instead of a partial answer.
 
 ---
 
