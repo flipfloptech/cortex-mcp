@@ -505,6 +505,26 @@ Collects network interface information including MAC addresses, IP configuration
 
 ---
 
+#### `get_routing_table`
+*Category: `network` · Runs on: Every Linux node*
+
+Collects the active IPv4 and IPv6 system routing table entries and default gateway targets.
+
+**Data Sources:**
+- **Primary**: `/proc/net/route` (IPv4 routing table) and `/proc/net/ipv6_route` (IPv6 routing table) text files.
+- **Fallback**: `ip -j route` (IPv4) and `ip -6 -j route` (IPv6) command outputs.
+
+**Mathematical Models / Formatting:**
+- **Hex Decoding**: Decodes destination, gateway, and mask addresses from kernel little-endian host hex representation (IPv4) and big-endian 32-character hex strings (IPv6).
+- **Prefix Masks**: Converts IPv4 hexadecimal masks into unified prefix length integers.
+- **Gateway Count**: Identifies default route targets (IPv4 destination `0.0.0.0` or IPv6 destination `::` with a non-zero gateway).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/net` does not exist and the `ip` binary is not in `PATH`.
+- If native `/proc` reads fail or return empty routes, the tool runs command fallbacks `ip -j route` and `ip -6 -j route` respectively to gather routing configurations.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
