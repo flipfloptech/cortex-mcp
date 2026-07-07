@@ -151,7 +151,7 @@ func TestParseIpAddrJSON(t *testing.T) {
 	}
 
 	eth0 := interfaces[0]
-	if eth0.Name != "eth0" || eth0.Index != 2 || eth0.MTU != 1500 || eth0.OperState != "UP" || eth0.MAC != "00:11:22:33:44:55" {
+	if eth0.Name != "eth0" || eth0.Index != 2 || eth0.MTU != 1500 || eth0.OperState != "up" || eth0.MAC != "00:11:22:33:44:55" {
 		t.Errorf("unexpected interface metadata: %+v", eth0)
 	}
 	if len(eth0.IPs) != 2 {
