@@ -59,7 +59,7 @@ func (gw *Gateway) MetaTools() []*tools.ToolDefinition {
 			Description: "Discover available tools across the mesh",
 			Category:    "meta",
 			Parameters: []tools.ToolParam{
-				{Name: "category", Type: "string", Description: "Filter by category (e.g., 'lustre', 'network', 'system')", Required: false},
+				{Name: "category", Type: "string", Description: "Filter by category (e.g., 'system', 'compute', 'memory', 'network', 'storage', 'hardware')", Required: false},
 			},
 		},
 		{

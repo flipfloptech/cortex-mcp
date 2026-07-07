@@ -47,7 +47,25 @@ func BenchmarkHandleListTools(b *testing.B) {
 	req := &mcp.CallToolRequest{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = srv.handleListTools(ctx, req, EmptyInput{})
+		_, _, _ = srv.handleListTools(ctx, req, ListToolsInput{})
+	}
+}
+
+func BenchmarkHandleListToolsCategoryFilter(b *testing.B) {
+	srv := NewServer(dummyDispatcher{}, dummyTopology{}, nil)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	in := ListToolsInput{Category: "storage"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _ = srv.handleListTools(ctx, req, in)
+	}
+}
+
+func BenchmarkListToolsDescription(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = listToolsDescription()
 	}
 }
 

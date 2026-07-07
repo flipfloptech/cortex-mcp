@@ -56,7 +56,7 @@ func NewServer(dispatcher Dispatcher, topology TopologyProvider, plugins *regist
 	// get_tool_list
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_tool_list",
-		Description: "Discover available tools across the entire Cortex Mesh. Returns a list of tool names, categories, and descriptions.",
+		Description: listToolsDescription(),
 	}, srv.handleListTools)
 
 	// get_tool_help
@@ -95,9 +95,46 @@ func (s *Server) MCPServer() *mcp.Server {
 
 type EmptyInput struct{}
 
-func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, input EmptyInput) (*mcp.CallToolResult, any, error) {
+// listToolsDescription builds the get_tool_list description from the
+// Category enum so the LLM-facing help text can never drift from the
+// actual taxonomy.
+func listToolsDescription() string {
+	return fmt.Sprintf(
+		"Discover available tools across the entire Cortex Mesh. Returns a list of tool names, categories, and descriptions. "+
+			"Optionally filter by category: %s.",
+		strings.Join(registry.CategoryNames(), ", "))
+}
+
+// ListToolsInput is the input schema for the get_tool_list meta-tool.
+type ListToolsInput struct {
+	Category string `json:"category,omitempty" jsonschema:"Optional: only list tools in this category (system, compute, memory, network, storage, hardware, lifecycle). Case-insensitive. Omit to list all tools."`
+}
+
+func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, input ListToolsInput) (*mcp.CallToolResult, any, error) {
+	// Validate and normalize the optional category filter.
+	var filter registry.Category
+	if input.Category != "" {
+		parsed, err := registry.ParseCategory(input.Category)
+		if err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: err.Error()},
+				},
+			}, nil, nil
+		}
+		filter = parsed
+	}
+
 	if s.topology == nil || s.plugins == nil {
-		return s.dispatchToMesh(ctx, "get_tool_list", nil)
+		// Local fallback: relay to the mesh gateway, whose canonical
+		// meta-tool name is "list_tools". It applies the same category
+		// filter against its own registry.
+		var args json.RawMessage
+		if filter != registry.CategoryUnknown {
+			args, _ = json.Marshal(map[string]string{"category": filter.String()})
+		}
+		return s.dispatchToMesh(ctx, "list_tools", args)
 	}
 
 	snap := s.topology.MeshTopology()
@@ -115,13 +152,18 @@ func (s *Server) handleListTools(ctx context.Context, req *mcp.CallToolRequest, 
 	// Lookup schema for each active tool
 	entries := make([]gateway.ListToolsEntry, 0)
 	for toolName := range activeTools {
-		if tool, ok := s.plugins.GetAnyTool(toolName); ok && !tool.Hidden() {
-			entries = append(entries, gateway.ListToolsEntry{
-				Name:        tool.Name(),
-				Description: tool.Description(),
-				Category:    tool.Category().String(),
-			})
+		tool, ok := s.plugins.GetAnyTool(toolName)
+		if !ok || tool.Hidden() {
+			continue
 		}
+		if filter != registry.CategoryUnknown && tool.Category() != filter {
+			continue
+		}
+		entries = append(entries, gateway.ListToolsEntry{
+			Name:        tool.Name(),
+			Description: tool.Description(),
+			Category:    tool.Category().String(),
+		})
 	}
 
 	data, _ := json.Marshal(gateway.ListToolsResponse{Tools: entries})
@@ -138,8 +180,9 @@ type ToolHelpInput struct {
 
 func (s *Server) handleToolHelp(ctx context.Context, req *mcp.CallToolRequest, input ToolHelpInput) (*mcp.CallToolResult, any, error) {
 	if s.plugins == nil {
+		// The mesh gateway's canonical meta-tool name is "tool_help".
 		args, _ := json.Marshal(input)
-		return s.dispatchToMesh(ctx, "get_tool_help", args)
+		return s.dispatchToMesh(ctx, "tool_help", args)
 	}
 
 	tool, ok := s.plugins.GetAnyTool(input.ToolName)
@@ -338,7 +381,7 @@ func (s *Server) handleSystemIntroduction(ctx context.Context, req *mcp.GetPromp
 	desc := `You are connected to the Cortex Mesh via the MCP Gateway.
 The Cortex Mesh is a decentralized fleet of nodes. You have four tools available:
 
-1. 'get_tool_list' -> Returns the list of available tools across the entire mesh. Call this FIRST.
+1. 'get_tool_list' -> Returns the list of available tools across the entire mesh. Call this FIRST. Accepts an optional 'category' filter (system, compute, memory, network, storage, hardware) to narrow the list.
 2. 'get_tool_help' -> Returns the exact JSON schema required to call a specific tool.
 3. 'call_tool' -> Invokes a tool on a specific node, a group, or all nodes.
 4. 'get_mesh_overview' -> Returns a complete cluster topology with every node's role (SFA/MGS/MDS/OSS/Client), connectivity graph, and a Mermaid diagram. Use this to understand the fleet before diving into specifics.
