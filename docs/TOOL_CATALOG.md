@@ -574,6 +574,30 @@ Provides instantaneous capacity and inode exhaustion metrics for all active, phy
 
 ---
 
+#### `get_nvme_smart_log`
+*Category: `storage` · Runs on: Nodes with `nvme-cli` or `smartctl` installed*
+
+Audits the physical health, thermal state, and silicon degradation of NVMe storage media by querying controller SMART logs, identifying thermal throttling risk and imminent drive failure before it corrupts data. Accepts an optional `target_device` parameter (e.g., `nvme1`) to audit a single controller; audits all discovered controllers when omitted.
+
+**Data Sources:**
+- **Device Discovery**: Enumerates NVMe controllers (`nvme0`, `nvme1`, …) from `/sys/class/nvme/` — no external binary needed for discovery.
+- **Primary**: `nvme smart-log /dev/<dev> -o json` (nvme-cli).
+- **Fallback**: `smartctl -a -j /dev/<dev>`, parsing the `nvme_smart_health_information_log` block.
+- **Privilege Escalation**: NVMe admin ioctls require root; when running unprivileged, commands are automatically wrapped in non-interactive `sudo -n` if `sudo` is in `PATH`.
+
+**Mathematical Models / Formatting:**
+- **Temperature Unit Heuristic**: Controllers report temperature in Kelvin or Celsius depending on tooling; values `> 200` are treated as Kelvin and converted (`value − 273`) to a normalized `temperature_c`.
+- **Per-Drive Warning Heuristics**: Populates a `warning_reasons []string` array from four rules — temperature `> 75°C` (thermal throttling likely), `percent_used > 90` (rated lifespan nearly consumed), `media_errors > 0` (unrecovered data-integrity failures), and a non-zero controller `critical_warning` bitmask. Any warning flips the drive's `status` from `healthy` to `critical`.
+- **System Summary**: Aggregates `drives_audited`, `critical_warnings_detected` (count of drives with a critical-warning bitmask), and `media_errors_detected` (summed across drives).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only if **neither** `nvme` nor `smartctl` is in `PATH`.
+- **No NVMe Hardware**: An empty `/sys/class/nvme/` is a valid state — returns `drives_audited: 0` with empty results rather than failing.
+- **Permission Lockout**: If the ioctl is refused (`permission denied`, `operation not permitted`, or sudo demanding a password), returns an explicit `Unauthorized` error instructing that root or passwordless sudo is required — rather than silently returning partial data.
+- **Per-Device Fallback Chain**: If nvme-cli output fails to parse for a device, the tool retries via smartctl; if both fail non-fatally, the device is skipped and remaining drives are still audited.
+
+---
+
 #### `get_lustre_client_stats`
 *Category: `storage` · Runs on: Lustre Client nodes*
 
