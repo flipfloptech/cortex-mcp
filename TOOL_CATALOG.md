@@ -585,6 +585,25 @@ Deep audit of ethernet hardware configurations, queue limits, coalescing states,
 
 ---
 
+#### `get_routing_rules`
+*Category: `network` · Runs on: Every Linux node*
+
+Query the system Routing Policy Database (RPDB) rules (i.e. policy routing).
+
+**Data Sources:**
+- **Primary**: `ip -j rule` (JSON output)
+- **Fallback**: `ip rule` (plain text output)
+
+**Mathematical Models / Formatting:**
+- **JSON Parsing**: Directly maps structural keys to rules fields (priority, src, dst, table, proto, iif, oif, fwmark, tos).
+- **Text Parser**: Falls back to tokenizing space-separated `ip rule` outputs, mapping matching rule attributes.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the `ip` binary is not in `PATH`.
+- If JSON execution fails, fallback text output is evaluated.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`

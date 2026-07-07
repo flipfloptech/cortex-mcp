@@ -31,6 +31,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nvmesmartlog"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processtree"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/routingrules"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/routingtable"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/socketstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/slabinfo"
