@@ -385,7 +385,7 @@ func TestRound1(t *testing.T) {
 	}{
 		{45.06, 45.1},
 		{45.04, 45.0},
-		{-1.25, -1.2},
+		{-1.25, -1.3}, // math.Round: half away from zero
 		{0, 0},
 	}
 	for _, tc := range tests {
