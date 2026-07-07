@@ -132,6 +132,23 @@ Returns a highly aggregated map of CPU frequency profiles (P-states) and idle sl
 - **Virtualization / BIOS Lockout**: If the OS does not have visibility into P-states (no `cpu0/cpufreq`), safely degrades by setting `power_management_managed_by_os: false` and omitting frequency profiles.
 - **C-State Visibility**: If `cpuidle` is missing, drops the `c_state_limits` block entirely and flags `c_states_visible: false` to prevent misinterpretation.
 
+**Enhancements (per-tool additions):**
+
+**Data Sources (added by enhancement):**
+- **Thermal Throttle Events**: Reads `/sys/devices/system/cpu/cpu*/thermal_throttle/` for `core_throttle_count` and `package_throttle_count` — cumulative throttle event counts since boot exposed by the x86 thermal interrupt driver (Intel-specific; absent on AMD and most VMs).
+- **Package Topology**: Reads `cpu*/topology/physical_package_id` to attribute package throttle counters to distinct physical packages.
+
+**Mathematical Models / Output Structuring (added by enhancement):**
+- **Core Event Sum**: `core_events_total` is the sum of `core_throttle_count` across all logical CPUs; `cpus_with_core_events` counts the CPUs reporting a non-zero core counter.
+- **Distinct Package Sum**: Every CPU in a physical package reports the same `package_throttle_count`, so `package_events_total` sums one counter per distinct `physical_package_id` (avoiding N-way overcounting on SMT/multicore parts).
+- **Throttle Warning**: When `core_events_total > 0` or `package_events_total > 0`, the result status is elevated to `warning` and `warning_reasons` carries `"CPU has thermally throttled since boot (core events: N, package events: M)"`; the warning text becomes the result summary.
+- The block is collected independently of cpufreq visibility, so it is also present on BIOS/Hypervisor-managed systems that expose the interface.
+
+**Degradation Profile (added by enhancement):**
+- **Interface Absent (AMD / VMs)**: When `cpu0/thermal_throttle/` does not exist, the entire `thermal_throttle` block is omitted from the payload (no error, no empty object) and status behavior is unchanged.
+- **Unreadable Counters**: Individually unreadable or malformed counter files are treated as `0` events rather than failing the scan.
+- **Topology Missing**: When `topology/physical_package_id` is unavailable, `package_events_total` degrades to the maximum package counter observed across CPUs and the payload is flagged with `"package_count_approximate": true`.
+
 #### `get_cgroup_limits`
 *Category: `compute` · Runs on: Every Linux node*
 
@@ -288,6 +305,19 @@ Provides a comprehensive audit of memory paging efficiency by identifying the al
 **Degradation Profile:**
 - `IsSupported()` returns `false` if `/proc/meminfo` is missing or inaccessible.
 - **Missing THP Fallback**: If the kernel lacks THP support (`/sys/kernel/mm/transparent_hugepage` missing), degrades gracefully by omitting the `thp_stats` block entirely and reporting `thp_enabled_mode` as `unsupported`, while still returning accurate static hugepage telemetry.
+
+**Enhancements (per-tool additions):**
+
+**Data Sources (added by enhancement):**
+- **Per-NUMA-node Pools**: Reads `/sys/devices/system/node/node<N>/hugepages/hugepages-<size>kB/` for `nr_hugepages`, `free_hugepages`, and `surplus_hugepages`, covering every hugepage size exposed per node (e.g. 2 MB and 1 GB pools).
+
+**Mathematical Models / Output Structuring (added by enhancement):**
+- **Per-node Breakdown**: Emits `per_node` as a flat array of `{node, size_kb, total, free, surplus}` objects, sorted by node then numerically by page size, so the LLM can cross-reference NUMA topology without re-sorting (`2048` sorts before `1048576`).
+- **Allocation Imbalance Warning**: For each page size, if one node is exhausted (`free == 0` with `total > 0`) while another node of the same size still has free pages, the result status is elevated to `warning` and `warning_reasons` carries `"HugePages exhausted on node N while node M has X free — NUMA-pinned allocations may fail"` (the referenced donor node is the one with the most free pages for that size); the first warning becomes the result summary. Exhaustion on every node simultaneously is capacity pressure, not imbalance, and does not warn.
+
+**Degradation Profile (added by enhancement):**
+- **UMA / Old Kernels**: When no per-node hugepage directories exist (`/sys/devices/system/node` missing, no `node<N>` entries, or nodes without a `hugepages/` subtree), the `per_node` block is omitted entirely (no error, no empty array) and the pre-existing payload is unchanged.
+- **Partial Node Data**: Whatever is readable is included — unreadable or malformed individual counter files are reported as `0`, and malformed `hugepages-*` directory names are skipped without aborting the scan.
 
 #### `get_numa_stats`
 *Category: `memory` · Runs on: Every Linux node*
@@ -817,6 +847,102 @@ Queries the baseboard management controller's System Event Log to surface out-of
 
 ---
 
+#### `get_process_states`
+*Category: `compute` · Runs on: Every Linux node*
+
+Classifies every process on the node by scheduler state — running, sleeping, disk_sleep (uninterruptible), zombie, stopped, traced, idle — and turns the two states that actually indicate trouble into actionable detail: zombies are itemized with the parent that is failing to reap them, and D-state processes are itemized with the kernel function they are blocked in, so fork-leak bugs and I/O stalls can be attributed to a specific process instead of a raw `ps` dump.
+
+**Data Sources:**
+- `/proc/[pid]/stat` — state (field 3) and PPID (field 4), parsed relative to the *last* `)` so comm values containing spaces or parentheses cannot shift the fields.
+- `/proc/[pid]/comm` — process name, falling back to the comm embedded in stat when unreadable.
+- `/proc/[pid]/wchan` — kernel wait channel for D-state processes (`?` when restricted or empty).
+- `/proc/[pid]/cmdline` — command line for D-state processes (NUL separators joined with spaces, truncated to 100 chars).
+
+**Mathematical Models / Formatting:**
+- Deterministic `O(N)` single scan: state characters map to named counters (`R`→running, `S`→sleeping, `D`→disk_sleep, `Z`→zombie, `T`→stopped, `t`→traced, `I`→idle) with unrecognized characters aggregated under `other`; `counts.total` is always the untruncated population.
+- Zombies are joined against the scanned process table to resolve `parent_comm`/`parent_state`, then grouped into `parents_with_zombies` with a per-parent `zombie_count` and an `is_init` flag (PPID 1 means init will reap them — expected, not a bug).
+- Heuristic `warning_reasons` flag every group of zombies whose parent is alive and not PID 1 (`"N zombie(s) not being reaped by <comm> (pid P)"` — a wait()/SIGCHLD bug in that parent) and more than 5 concurrent D-state processes (possible I/O or lock stall); any warning elevates the result status to `warning`.
+- Itemized lists are capped for token economy: `zombies` at 25, `d_state` at 20; the counts remain exact.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `<procfs>/self/stat` is not readable.
+- PIDs that vanish between the directory scan and the stat read are skipped silently — a scan can never fail because processes exited mid-flight.
+- Unreadable `wchan` degrades to `?`; unreadable `cmdline`/`comm` degrade to empty and the stat-embedded comm respectively.
+- Cancellation is checked between pid iterations; a canceled context returns an encapsulated error result instead of a hard failure.
+
+---
+
+#### `query_oom_events`
+*Category: `memory` · Runs on: Every Linux node with ring buffer access (klogctl or dmesg)*
+
+Extracts OOM-killer incidents from the kernel ring buffer as structured events — victim pid/comm, memory footprint at kill time, OOM constraint, memcg and global-vs-cgroup scope, with boot-relative timestamps converted to wallclock RFC3339 — so "what got killed, when, and was it a cgroup limit or true system exhaustion" is answered without grepping raw dmesg text.
+
+**Data Sources:**
+- **Primary**: kernel ring buffer read natively via the `klogctl` syscall (`SYSLOG_ACTION_READ_ALL`, non-destructive; buffer sized via `SYSLOG_ACTION_SIZE_BUFFER` with a 1 MB fallback).
+- **Fallback**: `dmesg -r` when the syscall is blocked (e.g. `kernel.dmesg_restrict=1` without `CAP_SYSLOG`).
+- **Wallclock anchor**: the `btime` line of `/proc/stat` (boot time, seconds since epoch).
+
+**Mathematical Models / Formatting:**
+- Parses both kernel record formats: `Out of memory: Killed process PID (comm) total-vm:...kB, anon-rss:...kB, file-rss:...kB, shmem-rss:...kB` (global scope) and the `Memory cgroup out of memory: Killed process ...` variant (cgroup scope); the adjacent `oom-kill:constraint=...,oom_memcg=...,task=...,pid=...` context record is paired with its kill record by pid, contributing `constraint` and `memcg` (`oom_memcg` preferred, `task_memcg` fallback). Unpaired records of either kind still surface as standalone events.
+- Event wallclock time = `btime` + the boot-relative `[offset]` prefix, rendered RFC3339 UTC; when the offset prefix or btime is unavailable the event is preserved with `time: null` rather than dropped.
+- Pre-computes `total_vm_mb`, `anon_rss_mb`, `file_rss_mb`, `shmem_rss_mb` (kB → MB, rounded to one decimal) so the LLM never does unit math.
+- Events are returned newest-first, capped by `last_n` (default 10, max 50); `total_found` and `count_by_comm` aggregate every event in the buffer, and a fixed `note` records that the ring buffer covers recent history only. Any event found elevates the result status to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when the klogctl read fails *and* no `dmesg` binary is in `PATH`.
+- When both sources fail at execution time (typically permission denied), returns an encapsulated error result explaining the required privilege (`CAP_SYSLOG`/root, `kernel.dmesg_restrict`) instead of a hard Go error.
+- Zero OOM events is a healthy `ok` result with an empty `events` array; malformed or truncated records are skipped without aborting the parse.
+- Command execution respects context cancellation.
+
+---
+
+#### `get_memory_reclaim_stats`
+*Category: `memory` · Runs on: Every Linux node with procfs*
+
+Samples `/proc/vmstat` twice across a short window (default 500 ms) and converts the kernel's cumulative reclaim counters into per-second rates. Any non-zero direct reclaim, allocation stall, swap, or compaction stall activity means processes are already paying memory-pressure latency — this is the live early-warning signal that fires long before an OOM kill.
+
+**Data Sources:**
+- `/proc/vmstat` (sampled twice; `key value` lines): `pgscan_kswapd`/`pgscan_direct`, `pgsteal_kswapd`/`pgsteal_direct`, `allocstall_*` (all zone variants summed), `compact_stall`/`compact_fail`/`compact_success`, `pswpin`/`pswpout`, `pgmajfault`, `thp_fault_fallback`, `oom_kill`.
+- Pre-4.8 kernels export per-zone spellings (e.g. `pgscan_kswapd_dma`); all variants are summed into the modern unsuffixed counter. The `pgscan_direct_throttle` event counter is excluded (it counts throttle events, not pages).
+
+**Mathematical Models / Formatting:**
+- `rates_per_sec` (2 decimal places): counter deltas divided by the measured window width — `swap_in`, `swap_out`, `direct_scan`, `kswapd_scan`, `direct_steal`, `kswapd_steal`, `allocstall`, `major_faults`, `compact_stall`. `window_ms` reports the actual measured window.
+- `totals_since_boot`: cumulative counters from the second sample (`pswpin`, `pswpout`, `pgscan_direct`, `pgscan_kswapd`, `allocstall`, `compact_stall`, `compact_fail`, `compact_success`, `thp_fault_fallback`, `oom_kill`).
+- `reclaim_efficiency_pct` = total `pgsteal`/`pgscan` × 100 since boot (2 decimal places, omitted when `pgscan` is 0); low values mean the kernel scans many pages per page actually freed.
+- Pre-evaluated `warning_reasons` on any in-window activity: `direct_scan > 0` (processes are direct-reclaiming — allocation latency impact), `allocstall > 0`, `swap_in`/`swap_out > 0`, `compact_stall > 0`. Any breach flips the result status to `warning`.
+- `sample_duration_ms` parameter (integer, optional, default 500) is clamped to [10, 5000].
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/vmstat` is missing.
+- Counters not exported by this kernel are omitted from `totals_since_boot` and contribute a 0 rate.
+- Context cancellation during the sampling window returns an error result promptly instead of waiting the window out.
+
+---
+
+#### `get_shared_memory`
+*Category: `memory` · Runs on: Every Linux node with SysV IPC (`/proc/sysvipc/shm` present)*
+
+Inventories all three shared-memory surfaces on the node — SysV IPC segments, POSIX `/dev/shm` files, and tmpfs mount usage — and pre-evaluates the classic failure signatures: orphaned SysV segments (created, then the owner died without `shmctl(IPC_RMID)` — the canonical crashed-MPI-job leak) and tmpfs mounts filling up, which consume RAM and evict page cache.
+
+**Data Sources:**
+- `/proc/sysvipc/shm` — SysV segments, parsed by header column names so varying kernel column layouts (with/without `rss`+`swap`) are handled.
+- `/dev/shm` — recursive listing of POSIX shared memory files with size, owner uid (`syscall.Stat_t`), and mtime.
+- `/proc/self/mountinfo` — tmpfs mounts, sized via `statfs` with a strict 2-second hung-mount guard per mount.
+
+**Mathematical Models / Formatting:**
+- `sysv`: top 20 segments by size `{shmid, size_mb, nattch, creator_pid, creator_alive, last_pid, orphaned}` plus `segment_count`, `total_mb`, `orphaned_count`, `orphaned_mb`. A segment is `orphaned` when `nattch == 0`; `creator_alive` checks `/proc/<cpid>` existence. All sizes in megabytes (1 decimal place).
+- `posix`: top 20 `/dev/shm` files by size `{name, size_mb, uid, mtime}` plus `file_count` and `total_mb`.
+- `tmpfs[]`: every tmpfs mount `{mount, used_mb, total_mb, used_pct, status}` with `used_pct` = used/total × 100 (1 decimal place).
+- Pre-evaluated `warning_reasons`: `orphaned_count > 0` ("N orphaned SysV segments (M MB) — likely leaked by exited processes (common MPI failure)") and any tmpfs `used_pct > 80%`. Any breach flips the result status to `warning`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/sysvipc/shm` is missing ("SysV IPC not available").
+- Unreadable `/dev/shm`: the `posix` block is omitted and explained in `notes`; status becomes `degraded`.
+- A `statfs` timeout marks that mount `status: "hung"`, excludes it from `used_pct` math and warnings, and degrades the result instead of wedging the tool.
+- Missing `/proc/self/mountinfo`: empty `tmpfs` list plus a note.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
@@ -1132,6 +1258,59 @@ Collects per-target statistics for Lustre server roles: OSS (`obdfilter`), MDS (
 
 ---
 
+#### `get_lustre_job_stats`
+*Category: `storage` · Runs on: Lustre Server nodes (OSS/MDS)*
+
+Attributes Lustre server load to the jobs generating it ("who is hammering the filesystem?") by parsing the YAML-ish per-target `job_stats` files, aggregating each job's counters across every target, and condensing them into three leaderboards: top jobs by write volume, by read volume, and by metadata operations.
+
+**Data Sources:**
+- **Target Discovery**: subdirectories of `/sys/fs/lustre/{obdfilter,mdt}/` (or `/proc/fs/lustre/...`); each `job_stats` file is then resolved sysfs-first with a per-file procfs fallback, matching the split layout of real Lustre releases. MGS carries no `job_stats` and is not scanned.
+- **OSS Targets**: `obdfilter/<target>/job_stats` — per-job `read_bytes` / `write_bytes` blocks (`{ samples, unit, min, max, sum }`).
+- **MDS Targets**: `mdt/<target>/job_stats` — per-job metadata op counters (`open`, `close`, `getattr`, `setattr`, `mkdir`, `rmdir`, `unlink`, `rename`, `statfs`, ...).
+- **Parser Tolerance**: indent-based line-by-line parsing; `job_id` values may be quoted and contain dots, spaces, or user names; `snapshot_time` lines are skipped; malformed blocks (empty `job_id`, unparseable brace bodies) are skipped and surfaced via `parse_errors`.
+
+**Mathematical Models / Formatting:**
+- **Cross-Target Aggregation**: per job_id, `read/write` samples and byte sums are summed across all scanned targets; every other counter is treated as a metadata op and accumulated from MDT targets only (zero-sample ops excluded).
+- **Volume Conversion**: `write_mb` / `read_mb` = byte sum ÷ 2²⁰, rounded to 1 decimal place, so the LLM never divides.
+- **Leaderboards**: `top_jobs_by_write` / `top_jobs_by_read` sort by bytes desc → ops desc → job_id asc (deterministic ties); `top_jobs_by_metadata_ops` sorts by `total_ops` desc → job_id asc and names the dominant op as `top_op` (ties broken alphabetically). Jobs with zero activity in a dimension are excluded from that board; each entry lists the (sorted) targets where the job was observed in that dimension.
+- **Limit**: optional `limit` parameter sizes each leaderboard (default 15, capped at 50); `total_jobs_tracked` still counts every unique job.
+- **Warnings**: `warning_reasons` is present but empty by default — this is an attribution tool, not a threshold monitor.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` via `registry.DetectNodeRoles()` when the node is neither OSS nor MDS ("node has no Lustre server targets (not OSS/MDS)").
+- **Job Stats Disabled**: targets exist but no job is tracked (files absent or header-only) → `degraded` status with an enablement note: set `jobid_var`, e.g. `lctl conf_param <fs>.sys.jobid_var=procname_uid`.
+- **Unknown Target**: an unmatched `target` parameter returns an error result naming the requested target; zero discovered targets returns a `warning` status.
+- **Metadata Board Omission**: `top_jobs_by_metadata_ops` is omitted entirely when no MDT was scanned.
+- **Recency Caveat**: entries expire after `job_cleanup_interval`, so leaderboards reflect recent activity; cancelled contexts and malformed arguments are encapsulated as error results.
+
+---
+
+#### `get_filesystem_errors`
+*Category: `storage` · Runs on: All Linux nodes with a readable `/proc/self/mountinfo`*
+
+Surfaces filesystem-level error state that usually goes unnoticed until a mount flips read-only: kernel-recorded ext4 error counters, unexpected read-only block-device mounts (the classic `errors=remount-ro` trip signature), and per-device btrfs error counters.
+
+**Data Sources:**
+- **ext4 (native)**: `/sys/fs/ext4/<dev>/{errors_count,first_error_time,last_error_time,first_error_func}` per device; the non-device `features` directory is excluded and devices are mapped to mount points via mountinfo source basenames.
+- **Read-Only Detection (native)**: `/proc/self/mountinfo` — per-mount options (field 6) and superblock options (third field after the `-` separator).
+- **btrfs (optional enrichment)**: `btrfs device stats <mount>` for each btrfs filesystem when the `btrfs` binary is in `PATH` (`[<device>].write_io_errs / read_io_errs / flush_io_errs / corruption_errs / generation_errs` lines) — btrfs exposes these counters only through its own tooling, not sysfs. Filesystems mounted at multiple points (subvolumes) are queried once per source device.
+
+**Mathematical Models / Formatting:**
+- **Timestamps**: `first_error_time` / `last_error_time` unix epochs are rendered as RFC3339 UTC (`first_error` / `last_error`), omitted when 0 or absent (never an error recorded).
+- **Read-Only Rule**: a mount is flagged when `ro` appears as a whole comma-separated token in the per-mount **or** superblock options (so `errors=remount-ro` never matches), the fstype is not read-only by design (`squashfs`, `iso9660`, `erofs`, `cramfs`, `romfs`, `udf`), and the source starts with `/dev/`.
+- **Warning Heuristics**: `warning_reasons` collects — `errors_count > 0` ("ext4 `<dev>` has recorded N filesystem errors since last fsck — check dmesg"), each unexpected read-only mount ("`<mount>` is mounted read-only — possible error-triggered remount"), and any nonzero btrfs counter. Any warning flips the result status to `warning`.
+- **Summary**: precomputed `{ext4_devices_checked, devices_with_errors, readonly_count}` where `devices_with_errors` counts ext4 devices with `errors_count > 0` plus btrfs devices with any nonzero counter.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` only when `<procfs>/self/mountinfo` is missing.
+- **No ext4/btrfs**: empty `ext4` / `readonly_mounts` arrays with an `ok` status — a node without these filesystems is healthy, not broken.
+- **Healthy ext4**: a missing `errors_count` file means no error was ever recorded (reported with count 0); an unreadable or unparseable counter skips that device.
+- **btrfs CLI Missing / Failing**: without the binary the `btrfs` block is omitted and an explanatory `note` is added (status unaffected); a per-filesystem `btrfs device stats` failure skips that filesystem only.
+- **XFS Limitation**: XFS exposes no cumulative error counters in sysfs; use `query_dmesg` for XFS corruption events (documented in Help). LVM/device-mapper ext4 devices appear under their `dm-N` sysfs name, which may not match the `/dev/mapper` mountinfo source — the `mount` field is then omitted.
+- **Cancellation**: a cancelled context returns an encapsulated error result, never a hard Go error.
+
+---
+
 ### Network & Fabric Tools
 
 #### `get_network_interfaces`
@@ -1390,6 +1569,52 @@ Summarizes the host packet-filter configuration without dumping the full ruleset
 - `IsSupported()` returns `false` if none of `nft`, `iptables-save`, or `iptables` are in `PATH`.
 - If `nft` fails for a non-permission reason (e.g. no nf_tables kernel support), the tool falls back to `iptables-save -c`, then `iptables -S`.
 - Permission-denied output from any backend (`permission denied`, `operation not permitted`, sudo password prompts) produces an error result explaining the root / passwordless-sudo requirement instead of a partial answer.
+
+---
+
+#### `get_listening_services`
+*Category: `network` · Runs on: Every Linux node*
+
+Maps every listening TCP socket and bound UDP socket to its owning process — the native answer to "what is exposed on this node?", "which daemon holds this port?", and port-conflict triage. No `ss`/`netstat` binaries are involved: socket tables are parsed straight from procfs and joined to processes through a single `/proc/[pid]/fd` symlink walk.
+
+**Data Sources:**
+- **Primary**: `/proc/net/tcp` and `/proc/net/tcp6` — rows with `st == 0A` (LISTEN) only; `/proc/net/udp` and `/proc/net/udp6` — all bound sockets with a non-zero local port. Columns consumed: `local_address` (HEXIP:HEXPORT), `st`, `uid`, `inode`.
+- **Process join**: `/proc/[pid]/fd/*` readlink targets of the form `socket:[<inode>]` build a one-pass inode→pid map, then `/proc/[pid]/comm` and `/proc/[pid]/cmdline` (NUL-separated argv joined with spaces, truncated to 80 characters) name the owner.
+
+**Mathematical Models / Formatting:**
+- **Hex decoding**: IPv4 addresses are little-endian hex (`0100007F` → `127.0.0.1`); IPv6 addresses are four 32-bit groups, each byte-swapped, reassembled into canonical form (`000080FE…01000000` → `fe80::1`); ports are big-endian hex. Filtering is deterministic.
+- **Wildcard detection**: listeners bound to `0.0.0.0` or `::` carry `wildcard: true` so full-exposure sockets stand out.
+- **Sorting & capping**: listeners are sorted ascending by port and capped at 200 entries with a `truncated` flag (lowest — best-known — ports are kept). Summary counters (`tcp_listeners`, `udp_sockets`, `resolved`, `unresolved`, `processes_scanned`, `fd_dirs_skipped`) always reflect the full scan.
+- **Unresolved digest**: sockets whose inode matched no fd keep their listener entry (pid/comm/cmdline omitted) and are additionally digested into `unresolved[]` as `{proto, port, inode, uid}`.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/net/tcp` is missing (non-Linux or procfs unavailable).
+- Missing `tcp6`/`udp6`/`udp` tables (e.g. IPv6 disabled) degrade silently to the tables that exist; only an unreadable primary `/proc/net/tcp` produces an error result.
+- Without root, other users' `/proc/[pid]/fd` directories are unreadable: each is counted in `fd_dirs_skipped`, the affected sockets land in `unresolved[]`, and a note advises "run as root for complete socket→process mapping".
+- Vanished pids, closed fds and malformed table rows are skipped, never fatal; unreadable `comm`/`cmdline` files simply omit those fields. The context is checked between pid iterations, and cancellation returns an encapsulated error result.
+
+---
+
+#### `get_network_throughput`
+*Category: `network` · Runs on: Every Linux node*
+
+Measures live per-interface network throughput by sampling the kernel's cumulative interface counters twice over a short, context-cancellable window — the native answer to "is this link saturated?" and "are we dropping packets right now?". Loopback is excluded; every physical and virtual NIC with counters is measured.
+
+**Data Sources:**
+- **Primary**: `/proc/net/dev` sampled twice over `sample_duration_ms` (default 500 ms, clamped to 10–5000 ms). Per interface, the rx `bytes/packets/errs/drop` and tx `bytes/packets/errs/drop` columns are consumed.
+- **Link speed**: `/sys/class/net/<iface>/speed` (negotiated Mbps; absent, unreadable, or `-1` on virtual interfaces).
+
+**Mathematical Models / Formatting:**
+- **Rates from deltas** (deterministic): `rx_mbps`/`tx_mbps` = bytes-delta × 8 / 10⁶ / elapsed seconds, rounded to 2 decimal places; `rx_pps`/`tx_pps` and the per-second drop/error rates are rounded to 1 decimal place. `window_ms` reports the actually elapsed window, not the requested one.
+- **Utilization**: `utilization_pct` = max(`rx_mbps`, `tx_mbps`) / link speed × 100 at 1 decimal place; omitted together with `link_speed_mbps` whenever sysfs reports no usable speed, so the LLM never divides by an unknown.
+- **Summary**: precomputes `total_rx_mbps`, `total_tx_mbps`, `busiest_interface` (highest combined rx+tx Mbps) and `interfaces_measured`; interfaces are listed sorted by name.
+- **Warnings** (result status elevates to `warning`): any packet drops or interface errors observed during the window, and utilization strictly above 90% of the link speed.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` when `/proc/net/dev` is missing (non-Linux or procfs unavailable).
+- A counter that wraps or resets mid-window (second sample below the first) zeroes that interface's rates for this run and records a note in `notes[]` instead of reporting a bogus negative rate.
+- Interfaces appearing or disappearing between the two samples are skipped and noted; malformed rows are ignored.
+- Context cancellation during the sampling window returns a prompt encapsulated error result (the tool never waits out the window after cancellation); unreadable snapshots and malformed arguments also return error results, never hard Go errors.
 
 ---
 
