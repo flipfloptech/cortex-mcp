@@ -144,3 +144,9 @@ func BenchmarkCollectVulnerabilities(b *testing.B) {
 		_, _ = collectVulnerabilities(dir)
 	}
 }
+
+func BenchmarkOrUnavailable(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = orUnavailable("")
+	}
+}
