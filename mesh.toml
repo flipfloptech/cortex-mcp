@@ -21,13 +21,13 @@
 #   addresses = ["<ip-or-hostname>", ...]
 
 [hosts.oss1]
-addresses = ["10.0.2.30"]
+addresses = ["10.0.2.19"]
 
 [hosts.oss2]
-addresses = ["10.0.2.198"]
+addresses = ["10.0.2.94"]
 
-[hosts.client1]
-addresses = ["192.168.0.21"]
+#[hosts.client1]
+#addresses = ["192.168.0.21"]
 
 # --- Credentials ---
 # SSH credentials for deploying mesh nodes to remote hosts.
