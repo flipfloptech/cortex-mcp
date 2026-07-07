@@ -525,6 +525,26 @@ Collects the active IPv4 and IPv6 system routing table entries and default gatew
 
 ---
 
+#### `get_socket_stats`
+*Category: `network` · Runs on: Every Linux node*
+
+Collects system network socket statistics for active and listening ports.
+
+**Data Sources:**
+- **Primary**: `/proc/net/tcp` & `/proc/net/udp` (IPv4) and `/proc/net/tcp6` & `/proc/net/udp6` (IPv6) text files.
+- **Fallback**: `ss -t -u -a -n -H` command output (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **Hex Decoding**: Decodes hex IP addresses and ports. Swaps bytes of 32-bit segments to reconstruct big-endian representations from host-endian (little-endian on x86_64) formatted kernel strings in IPv6 procfs records.
+- **State Mappings**: Maps numerical socket states to standard protocol connection names (e.g. `ESTABLISHED`, `LISTEN`, `CLOSE_WAIT`, `TIME_WAIT`).
+- **Connection Counts**: Aggregates total socket counts, including statistics grouped by active states.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/net` does not exist and the `ss` binary is not in `PATH`.
+- If native procfs reads fail or return no active sockets, the tool runs fallback command `ss -t -u -a -n -H` and parses the text response.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
