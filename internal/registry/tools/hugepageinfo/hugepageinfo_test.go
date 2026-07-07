@@ -405,3 +405,61 @@ func TestTool_PerNode_PartialDataIncluded(t *testing.T) {
 		t.Errorf("Status = %q, want ok", res.Status)
 	}
 }
+
+// setupNodeSysfsBench builds a minimal two-node tree for benchmarks.
+func setupNodeSysfsBench(b *testing.B) string {
+	b.Helper()
+	dir := b.TempDir()
+	for node := 0; node < 2; node++ {
+		sizeDir := filepath.Join(dir, fmt.Sprintf("node%d", node), "hugepages", "hugepages-2048kB")
+		if err := os.MkdirAll(sizeDir, 0755); err != nil {
+			b.Fatal(err)
+		}
+		for name, content := range map[string]string{
+			"nr_hugepages":      "512\n",
+			"free_hugepages":    "128\n",
+			"surplus_hugepages": "0\n",
+		} {
+			if err := os.WriteFile(filepath.Join(sizeDir, name), []byte(content), 0644); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	return dir
+}
+
+func BenchmarkCollectPerNodeHugePages(b *testing.B) {
+	old := sysDevicesSystemNodePath
+	sysDevicesSystemNodePath = setupNodeSysfsBench(b)
+	defer func() { sysDevicesSystemNodePath = old }()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = collectPerNodeHugePages()
+	}
+}
+
+func BenchmarkReadHugeCount(b *testing.B) {
+	dir := b.TempDir()
+	path := filepath.Join(dir, "nr_hugepages")
+	if err := os.WriteFile(path, []byte("512\n"), 0644); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = readHugeCount(path)
+	}
+}
+
+func BenchmarkEvaluateNodeImbalance(b *testing.B) {
+	perNode := []NodeHugePages{
+		{Node: 0, SizeKB: 2048, Total: 1024, Free: 0},
+		{Node: 1, SizeKB: 2048, Total: 1024, Free: 768},
+		{Node: 0, SizeKB: 1048576, Total: 2, Free: 1},
+		{Node: 1, SizeKB: 1048576, Total: 2, Free: 2},
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = evaluateNodeImbalance(perNode)
+	}
+}
