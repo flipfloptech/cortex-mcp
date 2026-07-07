@@ -422,6 +422,24 @@ Inspect and audit kernel parameters related to network buffer limits, connection
 
 ---
 
+#### `get_kernel_modules`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect loaded Linux kernel modules/drivers, operational states, sizes, memory addresses, and dependency linkages.
+
+**Data Sources:**
+- **Primary**: Native `/proc/modules` file.
+- **Fallback**: `lsmod` command (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **Tokens Extractor**: Parses space-separated lists from raw modules data buffers, decoding module names, byte sizes, reference counts, dependencies list (splitting by commas), module states, and memory addresses.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/modules` file is missing and the `lsmod` binary is not in `PATH`.
+- If permission denied errors prevent native file reads, the command execution fallback is evaluated.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`
