@@ -22,6 +22,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/lustreclientstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/memoryinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/mountusage"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nfsclientstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numaedacerrors"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numastats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nvmesmartlog"

@@ -464,6 +464,26 @@ Collects Lustre client stats, read-ahead performance, and active MDT/OST connect
 
 ---
 
+#### `get_nfs_client_stats`
+*Category: `storage` · Runs on: NFS Client nodes*
+
+Collects NFS client statistics, active server connections, mounted volumes, and RPC transport / backlog metrics.
+
+**Data Sources:**
+- **NFS Servers**: `/proc/fs/nfsfs/servers` (if available).
+- **NFS Volumes**: `/proc/fs/nfsfs/volumes` (if available).
+- **Mount Statistics**: `/proc/self/mountstats` (or `/proc/mountstats`).
+
+**Mathematical Models / Formatting:**
+- **RPC Backlog**: Sums cumulative backlog metrics across all mounted NFS instances.
+- **Protocol & Transport**: Extracts protocol type (`tcp`/`udp`), ports, age, active requests, max slots, sends, receives, and bad transaction IDs (`bad_xids`).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/proc/self/mountstats` and `/proc/mountstats` are both missing.
+- If `/proc/fs/nfsfs/` files do not exist (e.g. NFS client module is not loaded or there are no active NFS connections), the tool degrades gracefully by reporting empty servers/volumes list and parsing mount stats only.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
