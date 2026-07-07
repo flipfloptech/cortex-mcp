@@ -18,8 +18,8 @@ func TestDiskIOTool_Contract(t *testing.T) {
 	if tool.Name() != "get_disk_io_stats" {
 		t.Errorf("Expected name get_disk_io_stats, got %s", tool.Name())
 	}
-	if tool.Category() != "Storage" {
-		t.Errorf("Expected category Storage, got %s", tool.Category())
+	if tool.Category() != "storage" {
+		t.Errorf("Expected category storage, got %s", tool.Category())
 	}
 
 	params := tool.Parameters()

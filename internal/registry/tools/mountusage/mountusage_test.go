@@ -17,8 +17,8 @@ func TestMountUsageTool_Contract(t *testing.T) {
 	if tool.Name() != "get_mount_usage" {
 		t.Errorf("Expected name get_mount_usage, got %s", tool.Name())
 	}
-	if tool.Category() != "Storage" {
-		t.Errorf("Expected category Storage, got %s", tool.Category())
+	if tool.Category() != "storage" {
+		t.Errorf("Expected category storage, got %s", tool.Category())
 	}
 
 	params := tool.Parameters()

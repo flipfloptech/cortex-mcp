@@ -18,8 +18,8 @@ func TestToolContract(t *testing.T) {
 	if tool.Name() != "get_nvme_smart_log" {
 		t.Errorf("expected get_nvme_smart_log, got %s", tool.Name())
 	}
-	if tool.Category() != "Storage" {
-		t.Errorf("expected Storage, got %s", tool.Category())
+	if tool.Category() != "storage" {
+		t.Errorf("expected storage, got %s", tool.Category())
 	}
 	if tool.Description() == "" || tool.Help() == "" {
 		t.Errorf("missing description or help")
