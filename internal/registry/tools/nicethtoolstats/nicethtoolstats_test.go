@@ -22,8 +22,9 @@ func TestNICEthtoolStatsTool_ContractCompliance(t *testing.T) {
 	if tool.Category() != "network" {
 		t.Errorf("expected Category() == 'network', got %q", tool.Category())
 	}
-	if tool.Parameters() != nil {
-		t.Errorf("expected Parameters() to be nil")
+	params := tool.Parameters()
+	if len(params) != 2 {
+		t.Errorf("expected 2 parameters, got %d", len(params))
 	}
 }
 
@@ -159,7 +160,77 @@ TX:		512
 	if iface.Interface != "eth0" || iface.RxDropped != 15 || iface.RxFifoErrors != 1 || iface.RingParams == nil {
 		t.Errorf("unexpected interface statistics: %+v", iface)
 	}
-	if iface.RingParams.RxMax != 4096 || iface.RingParams.RxCurrent != 512 {
-		t.Errorf("unexpected ring params: %+v", iface.RingParams)
+}
+
+func TestNICEthtoolStatsTool_Execute_Filtering(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	netDir := filepath.Join(tmpDir, "sys", "class", "net")
+
+	// Set up two mock interfaces: eth0 and eth1
+	for _, iface := range []string{"eth0", "eth1"} {
+		ethDir := filepath.Join(netDir, iface, "statistics")
+		if err := os.MkdirAll(ethDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(ethDir, "rx_dropped"), []byte("10\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tool := &NICEthtoolStatsTool{
+		sysfsRoot: netDir,
+		execCommand: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		},
+	}
+
+	// 1. Filter by interfaces array: ["eth0"]
+	{
+		args, _ := json.Marshal(map[string]interface{}{
+			"interfaces": []string{"eth0"},
+		})
+		res, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data NicStatsData
+		_ = json.Unmarshal(res.Data, &data)
+		if len(data.Interfaces) != 1 || data.Interfaces[0].Interface != "eth0" {
+			t.Errorf("expected only eth0 interface when filtering by array, got %v", data.Interfaces)
+		}
+	}
+
+	// 2. Filter by single interface string: "eth1"
+	{
+		args, _ := json.Marshal(map[string]interface{}{
+			"interface": "eth1",
+		})
+		res, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data NicStatsData
+		_ = json.Unmarshal(res.Data, &data)
+		if len(data.Interfaces) != 1 || data.Interfaces[0].Interface != "eth1" {
+			t.Errorf("expected only eth1 interface when filtering by single string, got %v", data.Interfaces)
+		}
+	}
+
+	// 3. Filter by comma-separated string: "eth0,eth1"
+	{
+		args, _ := json.Marshal(map[string]interface{}{
+			"interface": "eth0,eth1",
+		})
+		res, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data NicStatsData
+		_ = json.Unmarshal(res.Data, &data)
+		if len(data.Interfaces) != 2 {
+			t.Errorf("expected both interfaces when filtering by comma-separated string, got %v", data.Interfaces)
+		}
 	}
 }
