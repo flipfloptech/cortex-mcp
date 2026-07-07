@@ -88,3 +88,9 @@ func BenchmarkParseSpeedMbps(b *testing.B) {
 		_ = parseSpeedMbps("25000 Mbps")
 	}
 }
+
+func BenchmarkFieldValue(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_, _ = fieldValue("MII Status: up", "MII Status:")
+	}
+}
