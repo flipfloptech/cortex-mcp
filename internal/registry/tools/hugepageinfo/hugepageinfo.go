@@ -9,6 +9,10 @@ import (
 	"github.com/flipfloptech/cortex-mcp/internal/sys/memory"
 )
 
+// sysDevicesSystemNodePath is the sysfs node root; a package-level var so
+// tests can point the tool at a fake tree.
+var sysDevicesSystemNodePath = "/sys/devices/system/node"
+
 // Tool implements the registry.Tool interface for get_hugepage_info.
 type Tool struct{}
 
