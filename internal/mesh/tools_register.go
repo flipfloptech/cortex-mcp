@@ -16,6 +16,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/cpupowerstate"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/cputopology"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/diskio"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/ethhardwarestats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/hugepageinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/irqaffinity"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/loadavg"

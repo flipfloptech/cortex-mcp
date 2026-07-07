@@ -565,6 +565,26 @@ Queries network interface card (NIC) buffer rings, queue allocations, and driver
 
 ---
 
+#### `get_eth_hardware_stats`
+*Category: `network` · Runs on: Every Linux node*
+
+Deep audit of ethernet hardware configurations, queue limits, coalescing states, and driver stats.
+
+**Data Sources:**
+- **Primary**: `/sys/class/net/<iface>/statistics/` files for drop/error counters.
+- **Fallback**: `ethtool -g`, `ethtool -c`, and `ethtool -S` command outputs (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **Native Reads**: Directly parses sysfs `/sys/class/net/` counters to obtain network errors, stack drops, and FIFO overruns without subprocess overhead.
+- **Ethtool Parsers**: Decodes ring configurations (`ethtool -g`), interrupt coalescing delay and frame limits (`ethtool -c`), and custom PHY driver statistics (`ethtool -S`).
+- **Drops Count**: Aggregates total RX and TX drops across all monitored interfaces.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/sys/class/net` does not exist and the `ethtool` binary is not in `PATH`.
+- If native statistics directories are unreadable, standard metrics default to `0`. If ethtool commands are blocked, fail, or return `n/a`, the respective config maps/structs are gracefully omitted from the final payload.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
