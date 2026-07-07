@@ -2,7 +2,7 @@
 
 **A self-deploying diagnostic mesh for Linux fleets, exposed to LLMs through the [Model Context Protocol](https://modelcontextprotocol.io).**
 
-`cortex-mcp` is a single static Go binary that deploys itself across a fleet of Linux hosts over SSH, wires the hosts into an encrypted peer-to-peer mesh, and presents the entire fleet to an MCP client (Claude, IDEs, agents) as one server with four meta-tools. Behind those meta-tools sit **63 read-only diagnostic tools** covering CPU, memory, storage, network fabric (Ethernet/InfiniBand/LNet), kernel, hardware health, and HPC/Lustre state — routed automatically to the right node, or fanned out across the fleet with ClusterShell-style nodeset patterns.
+`cortex-mcp` is a single static Go binary that deploys itself across a fleet of Linux hosts over SSH, wires the hosts into an encrypted peer-to-peer mesh, and presents the entire fleet to an MCP client (Claude, IDEs, agents) as one server with four meta-tools. Behind those meta-tools sit **71 read-only diagnostic tools** covering CPU, memory, storage, network fabric (Ethernet/InfiniBand/LNet), kernel, hardware health, and HPC/Lustre state — routed automatically to the right node, or fanned out across the fleet with ClusterShell-style nodeset patterns.
 
 Built with HPC storage clusters in mind (Lustre, DDN EXAScaler role detection, NVMe health, NUMA/EDAC auditing), but useful on any Linux fleet.
 
@@ -19,7 +19,7 @@ MCP client (LLM / IDE)
    ┌──────┼───────────┐
    ▼      ▼           ▼
  node1  node2  …  node[N]     ← each node runs the same binary ("neuron")
- 63 diagnostic tools each, advertised as capabilities via gossip
+ 71 diagnostic tools each, advertised as capabilities via gossip
 ```
 
 - The **gateway is itself a mesh node** — it joins the mesh like any other peer, it just also speaks MCP.
@@ -109,7 +109,7 @@ Dialing falls back automatically: direct TCP → configured proxy → gossiped p
 
 ## Diagnostic tools
 
-64 visible read-only tools (63 host diagnostics + 1 mesh introspection), all returning a uniform envelope `{tool_name, node_id, status: ok|warning|error|degraded, summary, data, metadata}`. Tools self-detect support at startup (`IsSupported`) so only applicable tools are advertised per node.
+72 visible read-only tools (71 host diagnostics + 1 mesh introspection), all returning a uniform envelope `{tool_name, node_id, status: ok|warning|error|degraded, summary, data, metadata}`. Tools self-detect support at startup (`IsSupported`) so only applicable tools are advertised per node.
 
 <details>
 <summary><strong>System (18)</strong></summary>
@@ -118,27 +118,27 @@ Dialing falls back automatically: direct TCP → configured proxy → gossiped p
 </details>
 
 <details>
-<summary><strong>Compute (8)</strong></summary>
+<summary><strong>Compute (9)</strong></summary>
 
-`get_cpu_topology`, `get_cpu_power_state`, `get_irq_affinity`, `get_cgroup_limits`, `get_process_list`, `get_process_tree`, `get_thread_wchan`, `get_container_inventory`
+`get_cpu_topology`, `get_cpu_power_state`, `get_irq_affinity`, `get_cgroup_limits`, `get_process_list`, `get_process_tree`, `get_thread_wchan`, `get_container_inventory`, `get_process_states`
 </details>
 
 <details>
-<summary><strong>Memory (6)</strong></summary>
+<summary><strong>Memory (9)</strong></summary>
 
-`get_memory_info`, `get_numa_stats`, `get_buddy_info`, `get_hugepage_info`, `get_slab_info`, `get_process_memory_detail`
+`get_memory_info`, `get_numa_stats`, `get_buddy_info`, `get_hugepage_info`, `get_slab_info`, `get_process_memory_detail`, `get_memory_reclaim_stats`, `get_shared_memory`, `query_oom_events`
 </details>
 
 <details>
-<summary><strong>Network (12)</strong></summary>
+<summary><strong>Network (14)</strong></summary>
 
-`get_network_interfaces`, `get_socket_stats`, `get_routing_table`, `get_routing_rules`, `get_eth_hardware_stats`, `get_nic_ethtool_stats`, `get_infiniband_status`, `get_lnet_status`, `get_bond_status`, `get_arp_neighbors`, `get_conntrack_summary`, `get_firewall_summary`
+`get_network_interfaces`, `get_socket_stats`, `get_routing_table`, `get_routing_rules`, `get_eth_hardware_stats`, `get_nic_ethtool_stats`, `get_infiniband_status`, `get_lnet_status`, `get_bond_status`, `get_arp_neighbors`, `get_conntrack_summary`, `get_firewall_summary`, `get_listening_services`, `get_network_throughput`
 </details>
 
 <details>
-<summary><strong>Storage (13)</strong></summary>
+<summary><strong>Storage (15)</strong></summary>
 
-`get_disk_io_stats`, `get_block_topology`, `get_block_scheduler_info`, `get_mount_usage`, `get_nvme_smart_log`, `get_nfs_client_stats`, `get_lustre_client_stats`, `get_lustre_server_stats`, `get_raid_health`, `get_multipath_status`, `get_smart_health`, `get_zfs_status`, `get_open_files`
+`get_disk_io_stats`, `get_block_topology`, `get_block_scheduler_info`, `get_mount_usage`, `get_nvme_smart_log`, `get_nfs_client_stats`, `get_lustre_client_stats`, `get_lustre_server_stats`, `get_lustre_job_stats`, `get_raid_health`, `get_multipath_status`, `get_smart_health`, `get_zfs_status`, `get_open_files`, `get_filesystem_errors`
 </details>
 
 <details>
