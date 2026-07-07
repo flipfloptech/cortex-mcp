@@ -151,6 +151,15 @@ func BenchmarkBuildSummary(b *testing.B) {
 	}
 }
 
+func BenchmarkWrapped(b *testing.B) {
+	first := ifCounters{rxBytes: 5000, rxPackets: 50, txBytes: 100, txPackets: 1}
+	second := ifCounters{rxBytes: 400, rxPackets: 60, txBytes: 200, txPackets: 2}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = first.wrapped(second)
+	}
+}
+
 func BenchmarkRound1(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = round1(2.333333)
