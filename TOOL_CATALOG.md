@@ -545,6 +545,26 @@ Collects system network socket statistics for active and listening ports.
 
 ---
 
+#### `get_nic_ethtool_stats`
+*Category: `network` · Runs on: Every Linux node*
+
+Queries network interface card (NIC) buffer rings, queue allocations, and driver telemetry.
+
+**Data Sources:**
+- **Primary**: `/sys/class/net/<iface>/statistics/` files for drop/error counters.
+- **Fallback**: `ethtool -g`, `ethtool -l`, and `ethtool -S` command outputs (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **Native Reads**: Directly parses sysfs `/sys/class/net/` counters to obtain network errors, stack drops, and FIFO overruns without subprocess overhead.
+- **Ethtool Parsers**: Decodes ring settings (`ethtool -g`), queue channels configuration (`ethtool -l`), and granular driver statistics (`ethtool -S`) into structured configurations.
+- **Drops Count**: Aggregates total RX and TX drops across all monitored interfaces.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/sys/class/net` does not exist and the `ethtool` binary is not in `PATH`.
+- If native statistics directories are unreadable, standard metrics default to `0`. If ethtool commands are blocked, fail, or return `n/a`, the respective config maps/structs are gracefully omitted from the final payload.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`

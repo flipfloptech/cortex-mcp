@@ -26,6 +26,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nfsclientstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numaedacerrors"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/numastats"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nicethtoolstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/nvmesmartlog"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processlist"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/processtree"
