@@ -484,6 +484,27 @@ Collects NFS client statistics, active server connections, mounted volumes, and 
 
 ---
 
+### Network & Fabric Tools
+
+#### `get_network_interfaces`
+*Category: `network` · Runs on: Every Linux node*
+
+Collects network interface information including MAC addresses, IP configurations (IPv4/IPv6), MTU values, and L2 link operational states.
+
+**Data Sources:**
+- **Primary**: `/sys/class/net/` sysfs directory (excluding loopback `lo`) and Go's standard library `net` package interfaces.
+- **Fallback**: `ip -j addr` command output (executed via shell).
+
+**Mathematical Models / Formatting:**
+- **State Normalization**: Operational states (`operstate`) are normalized to lowercase (e.g. `"up"`, `"down"`, `"unknown"`).
+- **Metric Merging**: Merges speed (Mbps), carrier state, and duplex configuration read from sysfs files with IP configuration returned by the Go runtime or the command fallback.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `/sys/class/net` does not exist and the `ip` binary is not in `PATH`.
+- If standard Go `net` package address resolution fails or misses an interface, the tool falls back to running `ip -j addr` to resolve IPs. Loopback interface `lo` is filtered out by default, but virtual bridges (`virbr*`) and tunnels (`vnet*`) are included.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`
