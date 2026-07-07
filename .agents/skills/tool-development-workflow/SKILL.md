@@ -77,20 +77,30 @@ git checkout -b feat/my-new-tool
 
 ## Phase 1: Tool Definition & Tests (TDD)
 
-Write tests *before* writing the implementation. Create `internal/registry/tools/mytool/mytool_test.go`.
+Write tests *before* writing the implementation (Tests First, Code Second). Create `internal/registry/tools/mytool/mytool_test.go`.
 
-### Required Test Coverage:
+### Required Test Coverage & Scope:
 1. **Contract Compliance Test**: Asserts the tool implements `registry.Tool`, has the correct Name, Category, and Help (which *must* reference data sources).
 2. **Execute Test**: Mocks necessary files or skips the execution if `IsSupported()` returns false, then validates the JSON schema (`res.Data` unmarshals properly) and checks for required logical constraints (e.g., numbers > 0, percentages between 0 and 100).
 3. **Helper Tests**: Any complex parsing or mathematical calculations (like `formatDuration` or parsing sysfs trees) must have their own table-driven tests.
-4. **Mandatory Benchmarking**: EVERY function implemented must have a corresponding benchmark (`func BenchmarkXxx(b *testing.B)`). This is rigidly enforced by the AST `benchcov` validator during integration.
+4. **Happy Paths & Error Paths**: Test normal operation, boundary conditions (empty inputs, zero values), and proper error handling.
+5. **Concurrency & Race Safety**: Verify parallel test execution (`t.Parallel()`) to detect potential data races.
+6. **Timeouts & Cancellation**: Verify that execution respects `context.Context` cancellation and deadline propagation.
+7. **Mandatory Benchmarking**: EVERY function implemented must have a corresponding benchmark (`func BenchmarkXxx(b *testing.B)`). This is rigidly enforced by the AST `benchcov` validator during integration.
+
+### Test Quality Checklist:
+- [ ] Each test has a clear, descriptive name.
+- [ ] Tests are independent — no shared mutable state.
+- [ ] Table-driven tests for parameterized cases.
+- [ ] `t.Parallel()` utilized where safe to expose races.
+- [ ] No `time.Sleep` — use channels, contexts, or sync primitives.
 
 **Commit the tests:**
 `git commit -m "test(registry): define behavior for mytool"`
 
 ## Phase 2: Implementation
 
-Create `internal/registry/tools/mytool/mytool.go`.
+Create `internal/registry/tools/mytool/mytool.go`. Write the minimum code required to satisfy the tests.
 
 1. Implement the `registry.Tool` methods.
 2. Ensure `Parameters()` accurately maps to any input the tool expects (or returns `nil` for diagnostic tools with no parameters).
@@ -103,14 +113,20 @@ Create `internal/registry/tools/mytool/mytool.go`.
    }
    ```
 
+### Implementation Checklist:
+- [ ] All tests pass cleanly (`go test -race` clean).
+- [ ] Error messages wrap context properly (`fmt.Errorf("operation: %w", err)`).
+- [ ] Resources (files, sockets) are properly closed via `defer`.
+- [ ] Speculative abstractions are avoided; code stays simple and direct.
+
+**Commit the implementation:**
+`git commit -m "feat(registry): implement mytool"`
+
 ## Phase 3: Registration & Refinement
 
 1. Open `internal/mesh/tools_register.go`.
 2. Add a blank import for your new package: `_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/mytool"`.
 3. Test locally: `CGO_ENABLED=0 go test -race -v ./internal/registry/...`.
-
-**Commit the implementation:**
-`git commit -m "feat(registry): implement mytool"`
 
 ## Phase 4: Integration Verification
 
@@ -122,6 +138,12 @@ task bench
 ```
 *If `task fmt-check` fails, run `task fmt` and re-run `task check`.*
 *The `task bench` command must be run to ensure all newly added benchmarks are executed and pass the AST `benchcov` requirement.*
+
+### Verification Checklist:
+- [ ] Full project compiles clean: `go build ./...`.
+- [ ] All project tests pass: `go test -race ./...`.
+- [ ] Code is formatted: `task fmt-check`.
+- [ ] Linter is clean: `golangci-lint run ./...` returns zero issues.
 
 ## Phase 5: Documentation
 
@@ -141,6 +163,9 @@ Always merge via fast-forward and clean up the branch to maintain a linear histo
 
 ```bash
 git checkout dev
+git rebase dev          # if dev has diverged
 git merge --ff-only feat/my-new-tool
 git branch -d feat/my-new-tool
 ```
+- **Rebase First**: Keep history linear; avoid merge commits.
+- **Delete Branch**: Delete the local feature branch immediately after a successful merge.
