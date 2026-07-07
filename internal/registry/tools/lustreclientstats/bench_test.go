@@ -114,3 +114,12 @@ inflight: 3
 		_ = parseImport("osc-OST0000", content)
 	}
 }
+
+func BenchmarkParseAdaptiveTimeout(b *testing.B) {
+	content := []byte("service : cur 1 worst 30 (at 1681257150, 85d23h58m54s ago) 1 1 1 1")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = parseAdaptiveTimeout(content)
+	}
+}
+

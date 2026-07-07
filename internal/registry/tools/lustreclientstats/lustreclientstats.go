@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/flipfloptech/cortex-mcp/internal/registry"
 )
+
+var atRegex = regexp.MustCompile(`cur\s+(\d+)\s+worst\s+(\d+)`)
 
 type StatEntry struct {
 	Samples uint64  `json:"samples"`
@@ -22,17 +25,29 @@ type StatEntry struct {
 }
 
 type ReadAheadStats struct {
-	Hits   uint64            `json:"hits"`
-	Misses uint64            `json:"misses"`
-	Other  map[string]uint64 `json:"other,omitempty"`
+	Hits              uint64            `json:"hits"`
+	Misses            uint64            `json:"misses"`
+	HitRatePct        *float64          `json:"hit_rate_pct,omitempty"`
+	MaxReadaheadMB    *uint64           `json:"max_read_ahead_mb,omitempty"`
+	MaxPerFileMB      *uint64           `json:"max_read_ahead_per_file_mb,omitempty"`
+	MaxWholeMB        *uint64           `json:"max_read_ahead_whole_mb,omitempty"`
+	Other             map[string]uint64 `json:"other,omitempty"`
+}
+
+type AdaptiveTimeout struct {
+	Cur   uint32 `json:"cur"`
+	Worst uint32 `json:"worst"`
 }
 
 type TargetImport struct {
-	Name         string `json:"name"`
-	Target       string `json:"target"`
-	State        string `json:"state"`
-	ConnectCount int    `json:"connect_count"`
-	Inflight     int    `json:"inflight"`
+	Name         string           `json:"name"`
+	Target       string           `json:"target"`
+	State        string           `json:"state"`
+	ConnectCount int              `json:"connect_count"`
+	Inflight     int              `json:"inflight"`
+	Timeouts     int              `json:"timeouts"`
+	Active       int              `json:"active"`
+	Adaptive     *AdaptiveTimeout `json:"adaptive,omitempty"`
 }
 
 type FilesystemStats struct {
@@ -47,18 +62,18 @@ type ConnectionsStats struct {
 }
 
 type LustreClientStatsSummary struct {
-	TotalFilesystems      int `json:"total_filesystems"`
-	ActiveMDTConnections  int `json:"active_mdt_connections"`
-	TotalMDTConnections   int `json:"total_mdt_connections"`
-	ActiveOSTConnections  int `json:"active_ost_connections"`
-	TotalOSTConnections   int `json:"total_ost_connections"`
+	TotalFilesystems     int `json:"total_filesystems"`
+	ActiveMDTConnections int `json:"active_mdt_connections"`
+	TotalMDTConnections  int `json:"total_mdt_connections"`
+	ActiveOSTConnections int `json:"active_ost_connections"`
+	TotalOSTConnections  int `json:"total_ost_connections"`
 }
 
 type LustreClientStatsData struct {
-	LustreVersion string                    `json:"lustre_version,omitempty"`
-	Filesystems   []FilesystemStats         `json:"filesystems,omitempty"`
-	Connections   ConnectionsStats          `json:"connections,omitempty"`
-	Summary       LustreClientStatsSummary  `json:"summary"`
+	LustreVersion string                   `json:"lustre_version,omitempty"`
+	Filesystems   []FilesystemStats        `json:"filesystems,omitempty"`
+	Connections   ConnectionsStats         `json:"connections,omitempty"`
+	Summary       LustreClientStatsSummary `json:"summary"`
 }
 
 type LustreClientStatsTool struct {
@@ -207,6 +222,42 @@ func (t *LustreClientStatsTool) Execute(ctx context.Context, args json.RawMessag
 			}
 		}
 
+		// Read max_read_ahead_mb
+		mraPath := t.resolvePath(filepath.Join("llite", client, "max_read_ahead_mb"))
+		if mraPath != "" {
+			mraBytes, err := os.ReadFile(mraPath)
+			if err == nil {
+				val, err := strconv.ParseUint(strings.TrimSpace(string(mraBytes)), 10, 64)
+				if err == nil {
+					fsStats.ReadAhead.MaxReadaheadMB = &val
+				}
+			}
+		}
+
+		// Read max_read_ahead_per_file_mb
+		mrpfPath := t.resolvePath(filepath.Join("llite", client, "max_read_ahead_per_file_mb"))
+		if mrpfPath != "" {
+			mrpfBytes, err := os.ReadFile(mrpfPath)
+			if err == nil {
+				val, err := strconv.ParseUint(strings.TrimSpace(string(mrpfBytes)), 10, 64)
+				if err == nil {
+					fsStats.ReadAhead.MaxPerFileMB = &val
+				}
+			}
+		}
+
+		// Read max_read_ahead_whole_mb
+		mrwPath := t.resolvePath(filepath.Join("llite", client, "max_read_ahead_whole_mb"))
+		if mrwPath != "" {
+			mrwBytes, err := os.ReadFile(mrwPath)
+			if err == nil {
+				val, err := strconv.ParseUint(strings.TrimSpace(string(mrwBytes)), 10, 64)
+				if err == nil {
+					fsStats.ReadAhead.MaxWholeMB = &val
+				}
+			}
+		}
+
 		data.Filesystems = append(data.Filesystems, fsStats)
 	}
 
@@ -218,6 +269,31 @@ func (t *LustreClientStatsTool) Execute(ctx context.Context, args json.RawMessag
 			impBytes, err := os.ReadFile(impPath)
 			if err == nil {
 				imp := parseImport(mdc, impBytes)
+
+				// Read active state
+				actPath := t.resolvePath(filepath.Join("mdc", mdc, "active"))
+				if actPath != "" {
+					actBytes, err := os.ReadFile(actPath)
+					if err == nil {
+						val, err := strconv.Atoi(strings.TrimSpace(string(actBytes)))
+						if err == nil {
+							imp.Active = val
+						}
+					}
+				}
+
+				// Read adaptive timeouts
+				toPath := t.resolvePath(filepath.Join("mdc", mdc, "timeouts"))
+				if toPath != "" {
+					toBytes, err := os.ReadFile(toPath)
+					if err == nil {
+						at, err := parseAdaptiveTimeout(toBytes)
+						if err == nil {
+							imp.Adaptive = at
+						}
+					}
+				}
+
 				data.Connections.MDT = append(data.Connections.MDT, imp)
 			}
 		}
@@ -231,6 +307,31 @@ func (t *LustreClientStatsTool) Execute(ctx context.Context, args json.RawMessag
 			impBytes, err := os.ReadFile(impPath)
 			if err == nil {
 				imp := parseImport(osc, impBytes)
+
+				// Read active state
+				actPath := t.resolvePath(filepath.Join("osc", osc, "active"))
+				if actPath != "" {
+					actBytes, err := os.ReadFile(actPath)
+					if err == nil {
+						val, err := strconv.Atoi(strings.TrimSpace(string(actBytes)))
+						if err == nil {
+							imp.Active = val
+						}
+					}
+				}
+
+				// Read adaptive timeouts
+				toPath := t.resolvePath(filepath.Join("osc", osc, "timeouts"))
+				if toPath != "" {
+					toBytes, err := os.ReadFile(toPath)
+					if err == nil {
+						at, err := parseAdaptiveTimeout(toBytes)
+						if err == nil {
+							imp.Adaptive = at
+						}
+					}
+				}
+
 				data.Connections.OST = append(data.Connections.OST, imp)
 			}
 		}
@@ -241,14 +342,14 @@ func (t *LustreClientStatsTool) Execute(ctx context.Context, args json.RawMessag
 
 	for _, mdt := range data.Connections.MDT {
 		data.Summary.TotalMDTConnections++
-		if strings.ToUpper(mdt.State) == "FULL" {
+		if strings.ToUpper(mdt.State) == "FULL" && mdt.Active == 1 {
 			data.Summary.ActiveMDTConnections++
 		}
 	}
 
 	for _, ost := range data.Connections.OST {
 		data.Summary.TotalOSTConnections++
-		if strings.ToUpper(ost.State) == "FULL" {
+		if strings.ToUpper(ost.State) == "FULL" && ost.Active == 1 {
 			data.Summary.ActiveOSTConnections++
 		}
 	}
@@ -330,11 +431,17 @@ func parseReadAheadStats(data []byte) ReadAheadStats {
 			ra.Other[name] = val
 		}
 	}
+
+	if ra.Hits+ra.Misses > 0 {
+		pct := float64(ra.Hits) / float64(ra.Hits+ra.Misses) * 100.0
+		ra.HitRatePct = &pct
+	}
+
 	return ra
 }
 
 func parseImport(name string, data []byte) TargetImport {
-	imp := TargetImport{Name: name}
+	imp := TargetImport{Name: name, Active: 1} // Active defaults to 1
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -363,7 +470,29 @@ func parseImport(name string, data []byte) TargetImport {
 			if err == nil {
 				imp.Inflight = i
 			}
+		case "timeouts", "timeout":
+			t, err := strconv.Atoi(val)
+			if err == nil {
+				imp.Timeouts = t
+			}
 		}
 	}
 	return imp
+}
+
+func parseAdaptiveTimeout(data []byte) (*AdaptiveTimeout, error) {
+	str := string(data)
+	matches := atRegex.FindStringSubmatch(str)
+	if len(matches) < 3 {
+		return nil, fmt.Errorf("could not parse adaptive timeout data: %q", str)
+	}
+	curVal, err1 := strconv.ParseUint(matches[1], 10, 32)
+	worstVal, err2 := strconv.ParseUint(matches[2], 10, 32)
+	if err1 != nil || err2 != nil {
+		return nil, fmt.Errorf("failed to parse integers from adaptive timeout: cur %v, worst %v", err1, err2)
+	}
+	return &AdaptiveTimeout{
+		Cur:   uint32(curVal),
+		Worst: uint32(worstVal),
+	}, nil
 }

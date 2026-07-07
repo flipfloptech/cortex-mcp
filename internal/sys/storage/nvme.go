@@ -52,23 +52,56 @@ func DiscoverNVMeDevices(sysfsRoot string) ([]string, error) {
 }
 
 func ParseNVMeOutput(jsonData []byte, devName string) (*NVMeDrive, error) {
-	var log nvmeSmartLog
-	if err := json.Unmarshal(jsonData, &log); err != nil {
-		return nil, err
+	// First check if this is smartctl output structure
+	var smartctl struct {
+		SmartHealthLog *struct {
+			CriticalWarning int `json:"critical_warning"`
+			Temperature     int `json:"temperature"`
+			AvailableSpare  int `json:"available_spare"`
+			PercentUsed     int `json:"percentage_used"`
+			MediaErrors     int `json:"media_errors"`
+		} `json:"nvme_smart_health_information_log"`
 	}
 
-	drive := &NVMeDrive{
-		DeviceName:        devName,
-		PercentUsed:       log.PercentUsed,
-		AvailableSparePct: log.AvailSpare,
-		MediaErrors:       log.MediaErrors,
-		CriticalWarning:   log.CriticalWarning,
-		WarningReasons:    []string{},
-	}
+	var drive *NVMeDrive
+	if err := json.Unmarshal(jsonData, &smartctl); err == nil && smartctl.SmartHealthLog != nil {
+		log := smartctl.SmartHealthLog
+		drive = &NVMeDrive{
+			DeviceName:        devName,
+			PercentUsed:       log.PercentUsed,
+			AvailableSparePct: log.AvailableSpare,
+			MediaErrors:       log.MediaErrors,
+			CriticalWarning:   log.CriticalWarning,
+			WarningReasons:    []string{},
+		}
+		// Temperature unit heuristic
+		if log.Temperature > 200 {
+			drive.TemperatureC = log.Temperature - 273
+		} else {
+			drive.TemperatureC = log.Temperature
+		}
+	} else {
+		// Fallback to nvme-cli structure
+		var log nvmeSmartLog
+		if err := json.Unmarshal(jsonData, &log); err != nil {
+			return nil, err
+		}
 
-	// Temperature in NVMe smart-log is often reported in Kelvin.
-	// 0 Kelvin is absolute zero (-273.15C). Kelvins are generally absolute, no negatives.
-	drive.TemperatureC = log.Temperature - 273
+		drive = &NVMeDrive{
+			DeviceName:        devName,
+			PercentUsed:       log.PercentUsed,
+			AvailableSparePct: log.AvailSpare,
+			MediaErrors:       log.MediaErrors,
+			CriticalWarning:   log.CriticalWarning,
+			WarningReasons:    []string{},
+		}
+		// Temperature unit heuristic
+		if log.Temperature > 200 {
+			drive.TemperatureC = log.Temperature - 273
+		} else {
+			drive.TemperatureC = log.Temperature
+		}
+	}
 
 	if drive.TemperatureC > 75 {
 		drive.WarningReasons = append(drive.WarningReasons, fmt.Sprintf("Thermal Warning: Temperature is %d°C (Throttling likely)", drive.TemperatureC))

@@ -85,16 +85,19 @@ func TestParseReadAheadStats(t *testing.T) {
 	t.Parallel()
 
 	input := `
-hits 3340631 samples [pages]
-misses 32901120 samples [pages]
+hits 500 samples [pages]
+misses 100 samples [pages]
 readpage_backwards 15 samples [pages]
 `
 	ra := parseReadAheadStats([]byte(input))
-	if ra.Hits != 3340631 {
-		t.Errorf("Hits = %d, want 3340631", ra.Hits)
+	if ra.Hits != 500 {
+		t.Errorf("Hits = %d, want 500", ra.Hits)
 	}
-	if ra.Misses != 32901120 {
-		t.Errorf("Misses = %d, want 32901120", ra.Misses)
+	if ra.Misses != 100 {
+		t.Errorf("Misses = %d, want 100", ra.Misses)
+	}
+	if ra.HitRatePct == nil || *ra.HitRatePct != 83.33333333333334 {
+		t.Errorf("HitRatePct = %f (raw: %v), want 83.33333333333334", *ra.HitRatePct, *ra.HitRatePct)
 	}
 	if val, ok := ra.Other["readpage_backwards"]; !ok || val != 15 {
 		t.Errorf("readpage_backwards mismatch: got %d (ok: %t)", val, ok)
@@ -116,6 +119,7 @@ import:
     rpcs:
         inflight: 3
         queued: 0
+        timeouts: 12
 `
 	imp := parseImport("lustre-OST0000-osc-ffff880123456780", []byte(input))
 	if imp.Name != "lustre-OST0000-osc-ffff880123456780" {
@@ -132,6 +136,29 @@ import:
 	}
 	if imp.Inflight != 3 {
 		t.Errorf("Inflight = %d, want 3", imp.Inflight)
+	}
+	if imp.Timeouts != 12 {
+		t.Errorf("Timeouts = %d, want 12", imp.Timeouts)
+	}
+}
+
+func TestParseAdaptiveTimeout(t *testing.T) {
+	t.Parallel()
+
+	input := "service : cur 1 worst 30 (at 1681257150, 85d23h58m54s ago) 1 1 1 1"
+	at, err := parseAdaptiveTimeout([]byte(input))
+	if err != nil {
+		t.Fatalf("failed to parse adaptive timeout: %v", err)
+	}
+
+	if at == nil {
+		t.Fatal("expected non-nil adaptive timeout struct")
+	}
+	if at.Cur != 1 {
+		t.Errorf("Cur = %d, want 1", at.Cur)
+	}
+	if at.Worst != 30 {
+		t.Errorf("Worst = %d, want 30", at.Worst)
 	}
 }
 
@@ -171,6 +198,17 @@ misses 100 samples [pages]
 		t.Fatalf("failed to write read_ahead_stats: %v", err)
 	}
 
+	// Write readahead parameters
+	if err := os.WriteFile(filepath.Join(lliteDir, "max_read_ahead_mb"), []byte("1024\n"), 0644); err != nil {
+		t.Fatalf("failed to write max_read_ahead_mb: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lliteDir, "max_read_ahead_per_file_mb"), []byte("256\n"), 0644); err != nil {
+		t.Fatalf("failed to write max_read_ahead_per_file_mb: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lliteDir, "max_read_ahead_whole_mb"), []byte("64\n"), 0644); err != nil {
+		t.Fatalf("failed to write max_read_ahead_whole_mb: %v", err)
+	}
+
 	oscDir := filepath.Join(sysfsRoot, "osc", "osc-OST0000")
 	if err := os.MkdirAll(oscDir, 0755); err != nil {
 		t.Fatalf("failed to create osc dir: %v", err)
@@ -180,10 +218,22 @@ misses 100 samples [pages]
 target: lustre-OST0000_UUID
 state: FULL
 connect_count: 1
-inflight: 0
+rpcs:
+    inflight: 3
+    queued: 0
+    timeouts: 12
 `
 	if err := os.WriteFile(filepath.Join(oscDir, "import"), []byte(importData), 0644); err != nil {
 		t.Fatalf("failed to write import: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(oscDir, "active"), []byte("1\n"), 0644); err != nil {
+		t.Fatalf("failed to write active: %v", err)
+	}
+
+	timeoutsData := "service : cur 1 worst 30 (at 1681257150, 85d23h58m54s ago) 1 1 1 1"
+	if err := os.WriteFile(filepath.Join(oscDir, "timeouts"), []byte(timeoutsData), 0644); err != nil {
+		t.Fatalf("failed to write timeouts: %v", err)
 	}
 
 	tool := &LustreClientStatsTool{
@@ -223,6 +273,18 @@ inflight: 0
 	if fs.ReadAhead.Hits != 500 {
 		t.Errorf("Hits = %d, want 500", fs.ReadAhead.Hits)
 	}
+	if fs.ReadAhead.HitRatePct == nil || *fs.ReadAhead.HitRatePct != 83.33333333333334 {
+		t.Errorf("HitRatePct = %f (raw: %v), want 83.33333333333334", *fs.ReadAhead.HitRatePct, *fs.ReadAhead.HitRatePct)
+	}
+	if fs.ReadAhead.MaxReadaheadMB == nil || *fs.ReadAhead.MaxReadaheadMB != 1024 {
+		t.Errorf("MaxReadaheadMB = %v, want 1024", fs.ReadAhead.MaxReadaheadMB)
+	}
+	if fs.ReadAhead.MaxPerFileMB == nil || *fs.ReadAhead.MaxPerFileMB != 256 {
+		t.Errorf("MaxPerFileMB = %v, want 256", fs.ReadAhead.MaxPerFileMB)
+	}
+	if fs.ReadAhead.MaxWholeMB == nil || *fs.ReadAhead.MaxWholeMB != 64 {
+		t.Errorf("MaxWholeMB = %v, want 64", fs.ReadAhead.MaxWholeMB)
+	}
 
 	if len(data.Connections.OST) != 1 {
 		t.Fatalf("expected 1 OST connection, got %d", len(data.Connections.OST))
@@ -231,5 +293,14 @@ inflight: 0
 	ost := data.Connections.OST[0]
 	if ost.Target != "lustre-OST0000_UUID" || ost.State != "FULL" {
 		t.Errorf("OST target/state mismatch: %+v", ost)
+	}
+	if ost.Timeouts != 12 {
+		t.Errorf("OST Timeouts = %d, want 12", ost.Timeouts)
+	}
+	if ost.Active != 1 {
+		t.Errorf("OST Active = %d, want 1", ost.Active)
+	}
+	if ost.Adaptive == nil || ost.Adaptive.Cur != 1 || ost.Adaptive.Worst != 30 {
+		t.Errorf("OST Adaptive timeout mismatch: %+v", ost.Adaptive)
 	}
 }

@@ -441,6 +441,29 @@ Provides instantaneous capacity and inode exhaustion metrics for all active, phy
 
 ---
 
+#### `get_lustre_client_stats`
+*Category: `storage` · Runs on: Lustre Client nodes*
+
+Collects Lustre client stats, read-ahead performance, and active MDT/OST connections.
+
+**Data Sources:**
+- **Lustre Version**: `/sys/fs/lustre/version` (or `/proc/fs/lustre/version`).
+- **Filesystem Stats**: `/sys/fs/lustre/llite/<client>/stats` (or `/proc/...`).
+- **Read-Ahead Stats**: `/sys/fs/lustre/llite/<client>/read_ahead_stats` (or `/proc/...`).
+- **Readahead Tunables**: `max_read_ahead_mb`, `max_read_ahead_per_file_mb`, and `max_read_ahead_whole_mb` files in `/sys/fs/lustre/llite/<client>/`.
+- **Connections & Timeouts**: `/sys/fs/lustre/{osc,mdc}/*/import`, `/sys/fs/lustre/{osc,mdc}/*/active`, and `/sys/fs/lustre/{osc,mdc}/*/timeouts`.
+
+**Mathematical Models / Formatting:**
+- **Hit Rate**: Computes read-ahead cache hit rate: `hits / (hits + misses) * 100`.
+- **Active Connections Check**: Computes ratio of active/total MDT and OST connections based on `state` (must be `FULL`) and `active` status (must be `1`).
+- **RPC Timeouts**: Extracts worst-case and current adaptive timeouts (`cur`, `worst`), alongside raw RPC timeouts from import files.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if neither `/sys/fs/lustre` nor `/proc/fs/lustre` exists.
+- If specific files (like `timeouts` or readahead parameters) are missing, the tool degrades gracefully by omitting them or reporting defaults, returning a partial results structure instead of failing.
+
+---
+
 ### Mesh Infrastructure Tools
 
 #### `get_mesh_topology`

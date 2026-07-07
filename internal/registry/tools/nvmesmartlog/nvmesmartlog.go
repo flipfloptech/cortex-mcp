@@ -12,6 +12,12 @@ import (
 	"github.com/flipfloptech/cortex-mcp/internal/sys/storage"
 )
 
+var (
+	execCommand  = exec.CommandContext
+	execLookPath = exec.LookPath
+	sysfsRoot    = "/sys"
+)
+
 type Tool struct{}
 
 func New() *Tool {
@@ -46,8 +52,8 @@ func (t *Tool) Parameters() []registry.ToolParam {
 }
 
 func (t *Tool) IsSupported() (bool, string) {
-	_, err1 := exec.LookPath("nvme")
-	_, err2 := exec.LookPath("smartctl")
+	_, err1 := execLookPath("nvme")
+	_, err2 := execLookPath("smartctl")
 	if err1 != nil && err2 != nil {
 		return false, "Neither 'nvme' nor 'smartctl' binary found in $PATH"
 	}
@@ -81,7 +87,16 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 		}
 	}
 
-	devices, err := storage.DiscoverNVMeDevices("/sys")
+	_, errNVMe := execLookPath("nvme")
+	_, errSmartctl := execLookPath("smartctl")
+	hasNVMe := errNVMe == nil
+	hasSmartctl := errSmartctl == nil
+
+	if !hasNVMe && !hasSmartctl {
+		return registry.NewErrorResult(t.Name(), "Neither 'nvme' nor 'smartctl' binary found in $PATH"), nil
+	}
+
+	devices, err := storage.DiscoverNVMeDevices(sysfsRoot)
 	if err != nil {
 		return registry.NewErrorResult(t.Name(), fmt.Sprintf("failed to discover devices: %v", err)), nil
 	}
@@ -96,44 +111,86 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage) (*registry.Too
 			continue
 		}
 
-		cmdArgs := []string{"smart-log", "/dev/" + dev, "-o", "json"}
-		var cmd *exec.Cmd
+		var out []byte
+		var err error
+		var parsed bool
+		var drive *storage.NVMeDrive
 
-		// If not running as root, attempt to use non-interactive sudo if available
-		if os.Geteuid() != 0 {
-			if _, err := exec.LookPath("sudo"); err == nil {
-				cmdArgs = append([]string{"-n", "nvme"}, cmdArgs...)
-				cmd = exec.CommandContext(ctx, "sudo", cmdArgs...)
+		if hasNVMe {
+			cmdArgs := []string{"smart-log", "/dev/" + dev, "-o", "json"}
+			var cmd *exec.Cmd
+			if os.Geteuid() != 0 {
+				if _, errLook := execLookPath("sudo"); errLook == nil {
+					cmdArgs = append([]string{"-n", "nvme"}, cmdArgs...)
+					cmd = execCommand(ctx, "sudo", cmdArgs...)
+				} else {
+					cmd = execCommand(ctx, "nvme", cmdArgs...)
+				}
 			} else {
-				cmd = exec.CommandContext(ctx, "nvme", cmdArgs...)
+				cmd = execCommand(ctx, "nvme", cmdArgs...)
 			}
-		} else {
-			cmd = exec.CommandContext(ctx, "nvme", cmdArgs...)
+			out, err = cmd.CombinedOutput()
+			if err == nil {
+				drive, err = storage.ParseNVMeOutput(out, dev)
+				if err == nil {
+					parsed = true
+				}
+			}
 		}
 
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			errStr := strings.ToLower(err.Error())
-			outStr := strings.ToLower(string(out))
+		if !parsed && hasSmartctl {
+			// If previous err was permission denied, skip fallback to avoid repeating permission failures
+			if err != nil {
+				errStr := strings.ToLower(err.Error())
+				outStr := strings.ToLower(string(out))
+				if strings.Contains(errStr, "permission denied") || strings.Contains(outStr, "permission denied") ||
+					strings.Contains(errStr, "operation not permitted") || strings.Contains(outStr, "operation not permitted") ||
+					strings.Contains(outStr, "password is required") {
+					return registry.NewErrorResult(t.Name(), "Unauthorized: Root or passwordless sudo privileges required to execute NVMe ioctls."), nil
+				}
+			}
 
-			if strings.Contains(errStr, "permission denied") || strings.Contains(outStr, "permission denied") ||
-				strings.Contains(errStr, "operation not permitted") || strings.Contains(outStr, "operation not permitted") ||
-				strings.Contains(outStr, "password is required") {
-				return registry.NewErrorResult(t.Name(), "Unauthorized: Root or passwordless sudo privileges required to execute NVMe ioctls."), nil
+			cmdArgs := []string{"-a", "-j", "/dev/" + dev}
+			var cmd *exec.Cmd
+			if os.Geteuid() != 0 {
+				if _, errLook := execLookPath("sudo"); errLook == nil {
+					cmdArgs = append([]string{"-n", "smartctl"}, cmdArgs...)
+					cmd = execCommand(ctx, "sudo", cmdArgs...)
+				} else {
+					cmd = execCommand(ctx, "smartctl", cmdArgs...)
+				}
+			} else {
+				cmd = execCommand(ctx, "smartctl", cmdArgs...)
+			}
+			out, err = cmd.CombinedOutput()
+			if err == nil {
+				drive, err = storage.ParseNVMeOutput(out, dev)
+				if err == nil {
+					parsed = true
+				}
+			}
+		}
+
+		if !parsed {
+			if err != nil {
+				errStr := strings.ToLower(err.Error())
+				outStr := strings.ToLower(string(out))
+				if strings.Contains(errStr, "permission denied") || strings.Contains(outStr, "permission denied") ||
+					strings.Contains(errStr, "operation not permitted") || strings.Contains(outStr, "operation not permitted") ||
+					strings.Contains(outStr, "password is required") {
+					return registry.NewErrorResult(t.Name(), "Unauthorized: Root or passwordless sudo privileges required to execute NVMe ioctls."), nil
+				}
 			}
 			continue
 		}
 
-		drive, err := storage.ParseNVMeOutput(out, dev)
-		if err == nil {
-			drives = append(drives, drive)
-			drivesAudited++
-			if drive.CriticalWarning > 0 {
-				critDetect++
-			}
-			if drive.MediaErrors > 0 {
-				mediaDetect += drive.MediaErrors
-			}
+		drives = append(drives, drive)
+		drivesAudited++
+		if drive.CriticalWarning > 0 {
+			critDetect++
+		}
+		if drive.MediaErrors > 0 {
+			mediaDetect += drive.MediaErrors
 		}
 	}
 
