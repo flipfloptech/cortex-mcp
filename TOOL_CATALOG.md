@@ -384,6 +384,25 @@ Inspect and filter the kernel ring buffer logs.
 
 ---
 
+#### `get_systemd_status`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect unit activation states for specific daemons, list all loaded services, and discover failed systemd units.
+
+**Data Sources:**
+- **Primary Show**: `systemctl show <unit>` (for specific units query)
+- **Primary List**: `systemctl list-units` (for all/failed units query)
+
+**Mathematical Models / Formatting:**
+- **Properties Parser**: Decodes `Key=Value` properties blocks, mapping configuration variables like load/active/sub states, PIDs, and unit file states.
+- **Table Tokenizer**: Evaluates tabular text rows, matching fields by position index and removing failed unit status indicators (`●`, `*`).
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if the `systemctl` binary is not in `PATH`.
+- Omitted properties are returned as blank/empty values.
+
+---
+
 ### Storage Tools
 
 #### `get_block_topology`

@@ -38,6 +38,7 @@ import (
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/socketstats"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/slabinfo"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/sysinfo"
+	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/systemdstatus"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/threadwchan"
 	_ "github.com/flipfloptech/cortex-mcp/internal/registry/tools/uptime"
 )
