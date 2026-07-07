@@ -75,9 +75,13 @@ git pull origin dev
 git checkout -b feat/my-new-tool
 ```
 
-## Phase 1: Tool Definition & Tests (TDD)
+## Phase 0.5: Planning & Secondary Review
 
-Before proceeding, clarify any ambiguous requirements or design choices. Formulate and ask questions to the user if there are any unknowns (e.g., data source locations, structure formats, fallback commands).
+1. **Create/Update Implementation Plan**: Create or update the `implementation_plan.md` artifact outlining the design, data sources, degradation profiles, parameters, and fallback commands.
+2. **Clarify Ambiguities**: If there are any unknowns (e.g., precise file paths, data formats), formulate and ask clarifying questions.
+3. **Secondary Review Step**: Present the plan to the user with `request_feedback = true` and wait for explicit user approval. Do NOT proceed to writing tests or code until the user approves the implementation plan. If changes are requested, update the plan and repeat this review step.
+
+## Phase 1: Tool Definition & Tests (TDD)
 
 Write tests *before* writing the implementation (Tests First, Code Second). Create `internal/registry/tools/mytool/mytool_test.go`.
 
