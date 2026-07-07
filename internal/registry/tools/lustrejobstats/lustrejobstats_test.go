@@ -730,7 +730,7 @@ func TestMbFromBytes(t *testing.T) {
 		{1048576, 1.0},
 		{655360, 0.6},
 		{838860800, 800.0},
-		{52428, 0.1}, // 0.05 MB rounds to 0.1
+		{262144, 0.3}, // 0.25 MB rounds half away from zero to 0.3
 	}
 	for _, tc := range cases {
 		if got := mbFromBytes(tc.in); math.Abs(got-tc.want) > 0.001 {
