@@ -153,10 +153,10 @@ func TestLoggedInSessionsTool_Execute_Utmp(t *testing.T) {
 
 	loginSec := int32(1751888000)
 	dir := writeUtmpFile(t,
-		putUtmpRecord(2, 0, "~", "reboot", "6.1.0", 1751880000, 0), // BOOT_TIME: filtered out
-		putUtmpRecord(7, 4242, "tty2", "alice", "", loginSec, 0),   // local session
+		putUtmpRecord(2, 0, "~", "reboot", "6.1.0", 1751880000, 0),         // BOOT_TIME: filtered out
+		putUtmpRecord(7, 4242, "tty2", "alice", "", loginSec, 0),           // local session
 		putUtmpRecord(7, 5353, "pts/0", "bob", "10.0.0.9", loginSec+60, 0), // remote SSH session
-		putUtmpRecord(8, 999, "pts/9", "gone", "", loginSec, 0),    // DEAD_PROCESS: filtered out
+		putUtmpRecord(8, 999, "pts/9", "gone", "", loginSec, 0),            // DEAD_PROCESS: filtered out
 	)
 
 	tool := &Tool{
