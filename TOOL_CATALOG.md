@@ -341,6 +341,26 @@ Extracts Error Detection and Correction (EDAC) statistics from physical RAM, map
 **Degradation Profile:**
 - `IsSupported()` returns `true` (standard on Linux), but dynamically sets status to `degraded` with a warning message if the EDAC driver (`amd64_edac`, `sb_edac`) is missing or virtualization disables hardware ECC access.
 
+---
+
+#### `query_journalctl`
+*Category: `system` · Runs on: Every Linux node*
+
+Query the systemd journal logs with time-bounds and regex filtering.
+
+**Data Sources:**
+- **Primary**: `journalctl -o json` (logs payload query)
+- **Primary Boots**: `journalctl --list-boots` (system boots list query)
+
+**Mathematical Models / Formatting:**
+- **JSON Parsing**: Directly maps structural keys to rules fields (`__REALTIME_TIMESTAMP`, `MESSAGE`, `SYSLOG_IDENTIFIER`, `_SYSTEMD_UNIT`, `PRIORITY`, `_HOSTNAME`, `_PID`).
+- **Timestamp Formatting**: Parses microsecond Unix timestamps natively in Go to RFC3339 representation with microsecond precision.
+- **Go Regex Engine**: Performs native, PCRE-compliant regexp matching on log payloads to ensure consistent filtering patterns.
+- **Boots Parser**: Evaluates space-separated boot records, extracting boot index, ID, first entry timestamp, and last entry timestamp.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `journalctl` is not in `PATH`.
+- If JSON logs parsing fails or query parameters are invalid, an error result is returned.
 
 ---
 
