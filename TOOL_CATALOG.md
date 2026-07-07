@@ -440,6 +440,25 @@ Inspect loaded Linux kernel modules/drivers, operational states, sizes, memory a
 
 ---
 
+#### `get_kernel_module_info`
+*Category: `system` · Runs on: Every Linux node*
+
+Inspect active operational properties and static packaging metadata for a specific Linux kernel module/driver.
+
+**Data Sources:**
+- **Primary Native (Live State)**: Reads `/sys/module/<name>/coresize`, `initsize`, `initstate`, `refcnt`, `taint`, and lists directories under `/sys/module/<name>/holders/` (to find referencing modules).
+- **Supplement / Fallback (Static Properties)**: Runs the `modinfo` command to extract compiler headers and properties (author, description, license, dependencies, version, aliases, srcversion).
+
+**Mathematical Models / Formatting:**
+- **Modinfo Parser**: Decodes continuation lines and colon-delimited key-value maps from `modinfo` outputs.
+- **Sysfs Mapper**: Parses integer values from sysfs entries representing core/init footprints and active references.
+
+**Degradation Profile:**
+- `IsSupported()` returns `false` if `modinfo` is not in `PATH`.
+- If the module is not currently loaded, the `live_state` field is omitted from the JSON payload (returning static metadata).
+
+---
+
 #### `get_open_file_limits`
 *Category: `system` · Runs on: Every Linux node*
 
