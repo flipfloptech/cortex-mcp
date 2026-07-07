@@ -96,8 +96,26 @@ func (t *NICEthtoolStatsTool) Description() string {
 	return "Ring buffer drops, PHY errors, and driver buffer configurations"
 }
 
+type Args struct {
+	Interface  string   `json:"interface"`
+	Interfaces []string `json:"interfaces"`
+}
+
 func (t *NICEthtoolStatsTool) Parameters() []registry.ToolParam {
-	return nil
+	return []registry.ToolParam{
+		{
+			Name:        "interfaces",
+			Type:        "array",
+			Description: "Optional: List of interfaces to filter by (e.g., ['eth0', 'eth1']).",
+			Required:    false,
+		},
+		{
+			Name:        "interface",
+			Type:        "string",
+			Description: "Optional: A single interface name or comma-separated list to filter by (e.g., 'eth0' or 'eth0,eth1').",
+			Required:    false,
+		},
+	}
 }
 
 func (t *NICEthtoolStatsTool) Hidden() bool { return false }
@@ -115,6 +133,28 @@ func (t *NICEthtoolStatsTool) IsSupported() (bool, string) {
 func (t *NICEthtoolStatsTool) Execute(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
 	start := time.Now()
 
+	var parsedArgs Args
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &parsedArgs)
+	}
+
+	filterSet := make(map[string]bool)
+	if parsedArgs.Interface != "" {
+		parts := strings.Split(parsedArgs.Interface, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				filterSet[p] = true
+			}
+		}
+	}
+	for _, p := range parsedArgs.Interfaces {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			filterSet[p] = true
+		}
+	}
+
 	var entries []NicStatsEntry
 
 	interfaces, err := os.ReadDir(t.sysfsRoot)
@@ -122,6 +162,9 @@ func (t *NICEthtoolStatsTool) Execute(ctx context.Context, args json.RawMessage)
 		for _, iface := range interfaces {
 			name := iface.Name()
 			if name == "lo" {
+				continue
+			}
+			if len(filterSet) > 0 && !filterSet[name] {
 				continue
 			}
 
